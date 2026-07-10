@@ -1,0 +1,41 @@
+[importlinter]
+root_package = serviceflow
+
+; ADR-001: domain modules never import platform (03 par.5 dependency direction).
+[importlinter:contract:domain-not-platform]
+name = Domain modules must not import platform
+type = forbidden
+source_modules =
+    serviceflow.identity
+    serviceflow.customers
+    serviceflow.assets
+    serviceflow.service_orders
+    serviceflow.commercial
+    serviceflow.timeline
+    serviceflow.attachments
+    serviceflow.contacts
+    serviceflow.search
+forbidden_modules =
+    serviceflow.platform
+
+; shared_kernel is the bottom layer: imports nothing from the application.
+[importlinter:contract:shared-kernel-bottom]
+name = shared_kernel imports nothing above it
+type = forbidden
+source_modules =
+    serviceflow.shared_kernel
+forbidden_modules =
+    serviceflow.identity
+    serviceflow.customers
+    serviceflow.assets
+    serviceflow.service_orders
+    serviceflow.commercial
+    serviceflow.timeline
+    serviceflow.attachments
+    serviceflow.contacts
+    serviceflow.search
+    serviceflow.platform
+    serviceflow.main
+    serviceflow.config
+
+; Finer independence contracts tighten in Stage 1 when real module code exists.

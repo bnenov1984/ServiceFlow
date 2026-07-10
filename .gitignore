@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+backend/data/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Local env & OS
+.env
+*.local
+Thumbs.db
+.DS_Store
+
+# Original brief (kept locally, not part of the repo)
+*.odt
+.~lock.*
