@@ -20,3 +20,6 @@ Thumbs.db
 # Original brief (kept locally, not part of the repo)
 *.odt
 .~lock.*
+
+# Spike scratch area
+ops/spike/.work/

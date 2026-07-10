@@ -3,6 +3,15 @@
 Goal of the skeleton: prove the shape, not polish — one signed installer that
 produces a working two-service install with a tray showing **real** health.
 
+## Files here
+
+- `serviceflow.iss` — Inno Setup script (skeleton; payload wired by build pipeline)
+- `winsw-serviceflow-app.xml` — WinSW service definition for the app service
+- `bootstrap/Install-Services.ps1` — idempotent post-install: private PG instance
+  (initdb, generated password, ACL-protected secrets), service registration,
+  firewall rule, health poll before declaring success
+- `bootstrap/Remove-Services.ps1` — uninstall hook; **never touches the data dir**
+
 ## Composition (planned)
 - **Inno Setup** script (pragmatic choice: free, battle-tested, scriptable; WiX is
   the enterprise pattern we skip until something concrete demands MSI).

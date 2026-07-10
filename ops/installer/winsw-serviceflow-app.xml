@@ -1,0 +1,21 @@
+<!-- WinSW service definition for the ServiceFlow app service (walking skeleton).
+     WinSW binary ships beside this file as serviceflow-app-svc.exe (standard WinSW rename). -->
+<service>
+  <id>ServiceFlow-App</id>
+  <name>ServiceFlow Application</name>
+  <description>ServiceFlow service management platform (app + background jobs)</description>
+  <executable>%BASE%\app\python\python.exe</executable>
+  <arguments>-m uvicorn serviceflow.main:app --host 0.0.0.0 --port 8080</arguments>
+  <env name="SERVICEFLOW_DATA_DIR" value="%ProgramData%\ServiceFlow\data" />
+  <workingdirectory>%BASE%\app</workingdirectory>
+  <startmode>Automatic</startmode>
+  <onfailure action="restart" delay="5 sec" />
+  <onfailure action="restart" delay="30 sec" />
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>5</keepFiles>
+  </log>
+  <serviceaccount>
+    <username>NT AUTHORITY\LocalService</username>
+  </serviceaccount>
+</service>
