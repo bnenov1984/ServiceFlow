@@ -23,67 +23,80 @@ doc 10 · Workflow v1.0 = doc 02. All PO-approved. From this point changes requi
 the 07 change process ("сериозна причина", written impact, PO approval, same-commit
 doc/ADR amendment).
 
-## Етап 2 — MVP: основният поток (Клиент → Поръчка → Актив → Задачи → Статуси → Бележки → Приключване)
+## Етап 2 — Core MVP (Клиент → Поръчка → Актив → Задачи → Статуси → Бележки → Приключване)
 
 Goal: a shop can run a repair end-to-end on the four screens. (~8–10 weeks solo)
+Refined by PO 11.07.2026.
 
-- **Тънък identity срез** (not администрация): migration #1 (companies, users,
-  sessions), login + sessions + CSRF, PIN switch, **one seeded owner user**. No user
-  management UI, no invites — every action still has a truthful "who" (BR-5 is not
-  deferrable; the timeline depends on it).
-- Domain core: customers (normalization, duplicate warning), asset types + assets +
-  identifiers, orders + numbering, statuses + full transition matrix (P0-1),
-  timeline via domain events, global search (P0-7).
-- Order operations: tasks (+call flag), notes, diagnosis (approval flow), part/labor
-  lines as data (money math P0-3 — no documents yet), accessories, attachments,
-  contact records.
-- The four screens: intake flow (≤2 min target), Kanban + DnD + conflict handling,
-  order detail, customer profile, dashboard.
-- Приключване: terminal outcomes, delivery dialog (без документи — печатът идва в
+- **login/PIN + seeded Owner** (тънък identity срез, не администрация): migration
+  #1 (companies, users, sessions), login + sessions + CSRF, PIN switch. No user
+  management UI — but every action has a truthful "who" (BR-5).
+- Клиенти (normalization, duplicate warning) · Активи (types, identifiers) ·
+  Сервизни поръчки (numbering) · Статуси + full transition matrix (P0-1) · Задачи
+  (+call flag) · Бележки · diagnosis (approval flow) · part/labor lines as data
+  (money math P0-3 — no documents yet) · accessories · attachments · contact
+  records · **timeline с actor attribution** (domain events) · global search (P0-7).
+- **Приключване**: terminal outcomes, delivery dialog (payments/invoices идват в
   Етап 4), archive flag.
-- Exit criteria: E2E journeys 1, 2, 4 (doc 12 §3) green; a non-developer completes
-  intake→close unassisted.
+  ⚠ **„Повторно отваряне" — OPEN, colides with frozen BR-2** (no reopen; follow-up
+  = нова свързана поръчка). Needs PO decision via the 07 change process before
+  Етап 2 codes it — see the two options in the plan-v2.1 note below.
+- **Минимален приемо-предавателен протокол** (PO change, accepted): one A4 print
+  at intake — shop header, order №, date, customer, asset, complaint, accessories,
+  signature lines. The *extended* protocol (delivery variant, estimate, warranty,
+  terms text) stays in Етап 4.
+- The four screens: intake flow (≤2 min target incl. protocol print), Kanban + DnD
+  + conflict handling, order detail, customer profile, dashboard.
+- Exit criteria: E2E journeys 1, 2, 4 (doc 12 §3) green incl. protocol print
+  snapshot; a non-developer completes intake→close unassisted.
 
-## Етап 3 — Администрация (~4–5 weeks solo)
+## Етап 3 — Operations & Administration (~4–5 weeks solo)
 
-- Потребители и роли: invite/deactivate, Owner/Worker UI, permission matrix
-  enforcement tests.
-- Настройки: фирмени данни, статуси (rename/toggle), warranty defaults.
-- **Архивиране и възстановяване**: backup artifact + nightly restore-verification +
-  restore wizard + bare-metal path (05; P0-4).
-- **Диагностика**: health page + tray, support package, opt-in телеметрия.
-- Платформа: installer (walking skeleton → real), updater pipeline (04; P0-5),
-  license client + grace + read-only (ADR-009), минимален vendor cloud (license
-  API + update feed + admin console, A4 scope).
+- Users/roles: invite/deactivate, Owner/Worker UI, permission matrix enforcement
+  tests.
+- Settings: фирмени данни, статуси (rename/toggle), warranty defaults.
+- **Backup/restore**: artifact + nightly restore-verification + restore wizard +
+  bare-metal path (05; P0-4).
+- **Diagnostics**: health page + tray, support package, opt-in телеметрия.
+- Installer (walking skeleton → real) · updater pipeline (04; P0-5) · licensing
+  (ADR-009: grace + read-only) + минимален vendor cloud (A4 scope) ·
+  **code signing** (cert procured in parallel from Етап 0; wired into the build
+  here).
 
 ## Етап 4 — Commercial Documents (~4–5 weeks solo + accountant gate)
 
-- **Приемо-предавателни протоколи** (intake + delivery print) — first item in the
-  stage: it is the paper the customer leaves with, and the pilot is weak without it.
-- **Оферти** — ⚠ scope flag: defined as *printable estimate from the diagnosis*
-  (находка + препоръка + цена + срок + валидност). If PO means standalone quotes
-  detached from orders, that is new scope needing a decision.
+- **Диагностична оферта към поръчка** (PO-confirmed definition): printable estimate
+  from the order's diagnosis — находка, препоръка, цена, срок, валидност. Not
+  standalone quotes.
+- **Разширени протоколи**: delivery variant, estimate/warranty/terms text blocks,
+  accessories-returned confirmation (extends the Етап-2 minimal protocol).
 - Фактури: draft→issue→annul→reissue, gapless numbering (P0-2), VAT modes, PDF.
 - Плащания: unified record, delivery-dialog settlement, „платена" state.
-- **Gate: счетоводителят преглежда документите преди етапът да е готов (Q2).**
+- **Счетоводен gate: review преди етапът да е готов (Q2).**
 
-## Етап 5 — Hardening & пилот (unchanged from v1.0 Stage 7)
+## Етап 5 — Hardening & Pilot
 
-Reference-VM drills, security pass (11), performance budget (10 §9), one-page
-документация за сервиза, **пилот: един реален сервиз, ≥2 седмици**, fix loop.
-Launch gates unchanged: P0 green · drills green · accountant sign-off · пилотът
-кара седмица без помощ · правен преглед на текстовете.
+Security hardening (11 checklist) · performance budget (10 §9) · **recovery
+drills** (04 §6 + 05 §7 on the reference matrix) · **реален сервиз ≥2 седмици** ·
+обратна връзка + fix loop · release readiness: P0 green, drills green, accountant
+sign-off, пилотът кара седмица без помощ, правен преглед.
 
-## Reconciliation notes (v1.0 → v2.0)
+## Reconciliation notes (v2.1, PO refinement 11.07.2026)
 
-1. Identity split: v1.0 Stage 1 (пълна identity) → тънък срез в Етап 2 + пълна
-   администрация в Етап 3. Причина: PO приоритет на потока; BR-5 запазен чрез
-   seeded owner + PIN.
-2. Протоколът се мести от intake потока (v1.0 Stage 4) в Етап 4 по PO директива —
-   отбелязано, че пилот без протокол е неубедителен, затова е първи там.
-3. Installer/updater/license се местят от „Stage 6" в Етап 3 (администрация),
-   след потока. VM gate-ът остава преди всяка схема.
-4. AI: нищо преди Етап 5+ (PO директива, съвпада с 00 roadmap).
+1. Минималният протокол се връща в Етап 2 (PO change) — разширените протоколи
+   остават в Етап 4.
+2. „Оферти" дефинирани като диагностична оферта към поръчка (PO-confirmed).
+3. ⚠ **OPEN: „повторно отваряне"** противоречи на замразения BR-2 (терминална
+   поръчка не се отваря; гаранционно връщане/продължение = нова свързана поръчка).
+   Options: (a) keep BR-2 — reopen = create linked follow-up order (no doc change);
+   (b) narrow amendment — Owner-only „отключване" в кратък прозорец (напр. 24 ч)
+   само за погрешно приключване, timeline-logged (amends 01 BR-2 + 02 matrix).
+   PO decision required before Етап 2 implements closure.
+4. Identity: тънък срез в Етап 2 (login/PIN/seeded Owner), пълна администрация в
+   Етап 3 — BR-5 запазен.
+5. Gate discipline (PO-confirmed): локалният PASS не замества VM докладите;
+   ADR-002 се затваря само след тях; Етап 2 стартира с миграция №1 след това.
+6. AI: нищо преди основният поток да работи отлично (PO директива).
 
 ## Out of scope — unchanged
 
