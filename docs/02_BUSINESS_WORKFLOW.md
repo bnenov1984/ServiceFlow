@@ -58,7 +58,13 @@ Rules encoded above:
   exit to Отказана requires a recorded rejection.
 - **Анулирана** (mistake) is Owner-only and requires a reason.
 - Terminal statuses accept no further transitions; only payments settling balance,
-  protocol printing and archiving remain possible.
+  protocol printing and archiving remain possible. *(BR-2 amendment, 11.07.2026:)*
+  exception — **Owner-only „Отключване" ≤ 24 h** after the terminal transition,
+  mandatory reason, returns the order to its pre-closure status, timeline event
+  `OrderUnlocked`. Unavailable on archived orders (unarchive first, Owner-only
+  anyway). The UI's „Повторно отваряне" button on terminal orders creates a **new
+  linked follow-up order** (the rule); unlock lives under the Owner menu (the
+  exception).
 
 Timeline events per transition: StatusChanged + specific events (EstimateApproved,
 OrderReady, OrderDelivered…) per 01 §5. Notifications: none in V1 (V1.5 hooks noted).

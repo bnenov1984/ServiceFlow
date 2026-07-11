@@ -105,6 +105,7 @@ Attributes are business attributes, not columns.
 - **Lifecycle:** created at intake → moves through working statuses → exactly one
   terminal outcome (Предадена / Отказана / Неремонтируема / Анулирана) → archived
   (flag). No reopening: warranty return = new order linked to the original.
+  Sole exception: Owner unlock of a mistaken closure within 24 h (BR-2 amendment).
 - **Invariants:**
   - Always has customer + asset + complaint from birth.
   - Status transitions only per the transition matrix (02).
@@ -261,7 +262,8 @@ OrderCreated · DiagnosisRecorded · DiagnosisUpdated · EstimateApprovalRequest
 EstimateApproved · EstimateRejected · StatusChanged · TechnicianAssigned ·
 PartAdded / PartOrdered / PartReceived · TaskCreated / TaskCompleted / TaskReopened ·
 NoteOrContactRecorded · AttachmentAdded · OrderReady · OrderDelivered ·
-OrderCancelled / OrderNotRepairable · InvoiceIssued · InvoiceAnnulled ·
+OrderCancelled / OrderNotRepairable · **OrderUnlocked** (BR-2 admin exception:
+Owner, ≤24 h, reason) · InvoiceIssued · InvoiceAnnulled ·
 PaymentRecorded / PaymentRefunded · WarrantyReturnOpened · CustomerAnonymized
 
 Every event above generates a TimelineEvent. The list also defines the future
@@ -272,8 +274,14 @@ notification surface (V1.5+) without implementing it.
 - BR-1 Nothing bypasses the Service Order: parts, labor, photos, communication and
   invoices exist only in the context of an order (company-level tasks are the single
   exception).
-- BR-2 Exactly one terminal outcome per order; terminal orders are never reopened;
-  follow-up work = new linked order.
+- BR-2 Exactly one terminal outcome per order; terminal orders are not reopened;
+  follow-up work = new linked order. *(Amended 11.07.2026, PO-approved via the 07
+  change process:)* one strictly limited administrative exception — the **Owner may
+  unlock a mistakenly closed order within 24 hours** of the terminal transition,
+  with a mandatory reason; the order returns to the status it held immediately
+  before closure and the unlock is timeline-recorded. Rationale: prevents junk
+  follow-up orders caused by a mis-click without weakening history integrity —
+  the exception is visible, attributed, bounded, and Owner-only.
 - BR-3 Money totals and paid state are always derived (lines, payments) — never
   hand-edited numbers.
 - BR-4 Issued commercial documents are immutable; corrections create new documents.

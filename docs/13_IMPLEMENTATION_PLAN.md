@@ -86,12 +86,10 @@ sign-off, пилотът кара седмица без помощ, правен
 1. Минималният протокол се връща в Етап 2 (PO change) — разширените протоколи
    остават в Етап 4.
 2. „Оферти" дефинирани като диагностична оферта към поръчка (PO-confirmed).
-3. ⚠ **OPEN: „повторно отваряне"** противоречи на замразения BR-2 (терминална
-   поръчка не се отваря; гаранционно връщане/продължение = нова свързана поръчка).
-   Options: (a) keep BR-2 — reopen = create linked follow-up order (no doc change);
-   (b) narrow amendment — Owner-only „отключване" в кратък прозорец (напр. 24 ч)
-   само за погрешно приключване, timeline-logged (amends 01 BR-2 + 02 matrix).
-   PO decision required before Етап 2 implements closure.
+3. ✅ **RESOLVED (PO, 11.07.2026): „повторно отваряне" = (а)+(б)** — rule: reopen
+   creates a linked follow-up order (BR-2 intact); exception: Owner-only unlock of
+   a mistaken closure ≤24 h with reason, timeline-logged. BR-2 amended in 01, matrix
+   note in 02, `OrderUnlocked` added to the event catalog.
 4. Identity: тънък срез в Етап 2 (login/PIN/seeded Owner), пълна администрация в
    Етап 3 — BR-5 запазен.
 5. Gate discipline (PO-confirmed): локалният PASS не замества VM докладите;
