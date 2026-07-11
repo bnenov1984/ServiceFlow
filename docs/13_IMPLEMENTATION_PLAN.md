@@ -1,90 +1,91 @@
 # 13 — Implementation Plan
 
-Status: **Approved by Product Owner 10.07.2026 — Stage 0 in progress** ·
-Date: 10.07.2026 · Basis: everything frozen in 07
-Planned for **one developer**. Durations are honest ranges, not commitments; each
-stage ends runnable and demo-able. No stage starts before its gate.
+Status: **v2.0 — restaged by Product Owner directive 11.07.2026** (supersedes the
+v1.0 stage order; scope unchanged except where flagged) · Basis: everything frozen
+in 07 · Planned for **one developer**; every stage ends runnable.
 
-## Stage 0 — Foundation & the ADR-002 gate (2–3 weeks)
+PO staging directive: freeze first → core operational flow → administration →
+commercial documents. No AI features before the core flow works excellently.
 
-Repo, module skeleton with import-boundary CI (ADR-001), dev environment (Docker
-Compose: app + PostgreSQL), CI pipeline (12 §4), logging/error scaffolding, signed
-build proof.
-**The gate:** bundled-PostgreSQL hardening spike on reference VMs — silent install,
-hard power-off survival, unattended minor upgrade, restore drill. **Pass → Alembic
-migration #1 may exist. Fail → execute SQLite ramp (ADR-002) before any schema.**
-Also here: installer walking skeleton (services + tray showing real health).
+## Етап 0 — Foundation & the ADR-002 gate *(in progress)*
 
-## Stage 1 — Identity & platform spine (2–3 weeks)
+Done: repo, module skeleton + import contracts, CI, health scaffold, spike
+automation, local smoke run PASS, VM orchestrator, installer/bootstrap drafts.
+**Open: the VM matrix run (PO executes, reports back) → gate decision.**
+**No Alembic migration exists until the gate closes.** Code-signing certificate
+procurement runs in parallel (PO task; longest lead time in the project).
 
-Companies/users/sessions schema · login, sessions, CSRF, PIN switch (ADR-008) ·
-i18n scaffold with the bg catalog (ADR-015 CI check live from day one) · jobs runner
-(ADR-006) · /platform/health · audit_log · settings.
-*Acceptance:* two users on two LAN devices, PIN switching attributed in audit;
-health honest about DB/disk.
+## Етап 1 — Замразяване на архитектурата ✅ *(declared 11.07.2026)*
 
-## Stage 2 — Domain core (3–4 weeks)
+Architecture v1.0 = docs 03–07 + ADR-001…015 · Domain model v1.0 = doc 01 ·
+Database schema v1.0 = doc 08 · API contracts v1.0 = doc 09 · UI navigation v1.0 =
+doc 10 · Workflow v1.0 = doc 02. All PO-approved. From this point changes require
+the 07 change process ("сериозна причина", written impact, PO approval, same-commit
+doc/ADR amendment).
 
-Customers (normalization, duplicate warning, archive) · asset types + assets +
-identifiers · orders with numbering, statuses, **full transition matrix + tests
-(P0-1)** · timeline via domain events (ADR-011) · global search (ADR-010, P0-7).
-*Acceptance:* order lifecycle end-to-end via API; timeline complete; search finds
-Иван/Ivan/+359….
+## Етап 2 — MVP: основният поток (Клиент → Поръчка → Актив → Задачи → Статуси → Бележки → Приключване)
 
-## Stage 3 — Order operations (3–4 weeks)
+Goal: a shop can run a repair end-to-end on the four screens. (~8–10 weeks solo)
 
-Diagnosis + approval rules · tasks (+call flag) · part lines with states · labor
-lines · accessories · attachments (storage port, re-encode, thumbnails) · contact
-records · derived money (P0-3).
-*Acceptance:* the full order screen's data model works via API; E2E journey 1
-passes headless.
+- **Тънък identity срез** (not администрация): migration #1 (companies, users,
+  sessions), login + sessions + CSRF, PIN switch, **one seeded owner user**. No user
+  management UI, no invites — every action still has a truthful "who" (BR-5 is not
+  deferrable; the timeline depends on it).
+- Domain core: customers (normalization, duplicate warning), asset types + assets +
+  identifiers, orders + numbering, statuses + full transition matrix (P0-1),
+  timeline via domain events, global search (P0-7).
+- Order operations: tasks (+call flag), notes, diagnosis (approval flow), part/labor
+  lines as data (money math P0-3 — no documents yet), accessories, attachments,
+  contact records.
+- The four screens: intake flow (≤2 min target), Kanban + DnD + conflict handling,
+  order detail, customer profile, dashboard.
+- Приключване: terminal outcomes, delivery dialog (без документи — печатът идва в
+  Етап 4), archive flag.
+- Exit criteria: E2E journeys 1, 2, 4 (doc 12 §3) green; a non-developer completes
+  intake→close unassisted.
 
-## Stage 4 — The four screens (4–5 weeks)
+## Етап 3 — Администрация (~4–5 weeks solo)
 
-App frame + intake flow (10 §3, the 2-minute target measured) · Kanban with DnD +
-conflict handling · order detail · customer profile · dashboard · протокол print
-(intake + delivery) · empty states + first-run checklist.
-*Acceptance:* E2E journeys 1, 2, 4 pass in the browser; a non-developer completes
-intake unassisted (hallway test).
+- Потребители и роли: invite/deactivate, Owner/Worker UI, permission matrix
+  enforcement tests.
+- Настройки: фирмени данни, статуси (rename/toggle), warranty defaults.
+- **Архивиране и възстановяване**: backup artifact + nightly restore-verification +
+  restore wizard + bare-metal path (05; P0-4).
+- **Диагностика**: health page + tray, support package, opt-in телеметрия.
+- Платформа: installer (walking skeleton → real), updater pipeline (04; P0-5),
+  license client + grace + read-only (ADR-009), минимален vendor cloud (license
+  API + update feed + admin console, A4 scope).
 
-## Stage 5 — Commercial documents (3–4 weeks, + accountant gate)
+## Етап 4 — Commercial Documents (~4–5 weeks solo + accountant gate)
 
-Invoices draft→issue→annul→reissue, gapless sequences (P0-2) · payments · VAT modes ·
-invoice PDF · Фактури list · delivery dialog money integration.
-**Gate: Bulgarian accountant reviews document templates, numbering, VAT handling and
-the fiscal-receipt boundary before this stage is called done (Q2 decision).**
-*Acceptance:* E2E journey 3; concurrent-issue test green.
+- **Приемо-предавателни протоколи** (intake + delivery print) — first item in the
+  stage: it is the paper the customer leaves with, and the pilot is weak without it.
+- **Оферти** — ⚠ scope flag: defined as *printable estimate from the diagnosis*
+  (находка + препоръка + цена + срок + валидност). If PO means standalone quotes
+  detached from orders, that is new scope needing a decision.
+- Фактури: draft→issue→annul→reissue, gapless numbering (P0-2), VAT modes, PDF.
+- Плащания: unified record, delivery-dialog settlement, „платена" state.
+- **Gate: счетоводителят преглежда документите преди етапът да е готов (Q2).**
 
-## Stage 6 — Platform & vendor loop (5–6 weeks)
+## Етап 5 — Hardening & пилот (unchanged from v1.0 Stage 7)
 
-Backup artifact + nightly verify + restore wizard + bare-metal path (05; P0-4) ·
-updater pipeline with rehearsal/rollback (04; P0-5) · license client with grace +
-read-only mode (ADR-009) · support package · opt-in telemetry · **vendor cloud
-minimal:** license API, signed update feed, support inbox, minimal admin console
-(A4 scope).
-*Acceptance:* 04 §6 and 05 §7 drills pass automated; a license expiry walkthrough
-degrades to read-only and back.
+Reference-VM drills, security pass (11), performance budget (10 §9), one-page
+документация за сервиза, **пилот: един реален сервиз, ≥2 седмици**, fix loop.
+Launch gates unchanged: P0 green · drills green · accountant sign-off · пилотът
+кара седмица без помощ · правен преглед на текстовете.
 
-## Stage 7 — Hardening & pilot (3–4 weeks + ~4 weeks pilot calendar)
+## Reconciliation notes (v1.0 → v2.0)
 
-Reference-VM matrix drills · security pass (11 checklist) · performance perception
-budget (10 §9) · docs for the shop (one-page install, one-page daily use) · **pilot:
-one real shop, ≥ 2 weeks of real work, weekly check-ins** · fix loop.
-**Launch gates:** P0 list green · drills green · accountant sign-off · pilot shop
-completes a week without developer help · legal texts reviewed.
+1. Identity split: v1.0 Stage 1 (пълна identity) → тънък срез в Етап 2 + пълна
+   администрация в Етап 3. Причина: PO приоритет на потока; BR-5 запазен чрез
+   seeded owner + PIN.
+2. Протоколът се мести от intake потока (v1.0 Stage 4) в Етап 4 по PO директива —
+   отбелязано, че пилот без протокол е неубедителен, затова е първи там.
+3. Installer/updater/license се местят от „Stage 6" в Етап 3 (администрация),
+   след потока. VM gate-ът остава преди всяка схема.
+4. AI: нищо преди Етап 5+ (PO директива, съвпада с 00 roadmap).
 
-## Sequencing logic & risk posture
+## Out of scope — unchanged
 
-Riskiest-first: the two things that could invalidate the plan (PostgreSQL
-invisibility, installer viability) are Stage 0, before any domain code exists. The
-accountant gate sits at Stage 5 where its findings are cheap to absorb. The vendor
-cloud is late (Stage 6) because everything before it runs without licensing.
-Total: **roughly 6–8 months** of focused solo work to pilot, plus pilot calendar.
-If that number needs to shrink, the honest lever is scope (03-era V1.5 candidates),
-never the gates.
-
-## Out of scope for every stage
-
-Anything in 00 §Roadmap V1.5+ · SaaS functionality beyond the C1–C8 constraints ·
-configuration UIs for things seed data covers. The change process (07) guards this
-plan; "it seemed easier while coding" is not a rationale.
+Everything in 00 §Roadmap V1.5+ · SaaS beyond C1–C8 · configuration UIs seed data
+covers. "Seemed easier while coding" is not a rationale (07).

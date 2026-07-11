@@ -37,9 +37,12 @@ Frozen as of this date (changes require the process below):
 5. **Operational designs** — update pipeline (04), backup/verification/restore (05),
    with their acceptance criteria as release gates.
 
-Not frozen (deliberately open until the blueprint documents): database schema
-details, API surface, UI screen specifications, exact package/tooling versions —
-these are produced next and freeze at implementation start.
+**Amendment 11.07.2026 (PO Етап 1 directive):** the blueprint layer is now also
+frozen as v1.0 — Database schema (08), API contracts (09), UI navigation (10).
+Together with 01–06 and the ADRs this completes the Etap-1 freeze; changes from
+here require the process below ("сериозна причина"). Still open: exact
+package/tooling versions and anything the documents explicitly defer to a stage
+gate (e.g. accountant review outcomes).
 
 ## Change process after freeze
 
