@@ -10,7 +10,38 @@ private instance: own data dir under the app's data root, own port (auto-picked,
 non-default), locale `bg_BG`/UTF-8, service registered via `pg_ctl register`
 (runs as a low-privilege service account), app is the only client (localhost only).
 
-## How to run (scripts in `scripts/`, harness in `harness/`)
+## How to run on a reference VM (turnkey)
+
+One-time per VM: install Python 3.12+ and git, clone the repo, then:
+
+```powershell
+cd backend; uv sync --dev; cd ..    # harness needs psycopg
+# full automatable battery + a machine-readable PASS/FAIL report:
+powershell -ExecutionPolicy Bypass -File ops\spike\scripts\Invoke-FullChecklist.ps1
+```
+
+The orchestrator (`Invoke-FullChecklist.ps1`) runs every software-automatable item
+and prints a report to copy back. The remaining items are Prep/Verify pairs so even
+the physical ones are objective:
+
+```powershell
+# real minor upgrade 16.10 -> 16.11 (fully automatic):
+... Invoke-FullChecklist.ps1 -Mode MinorUpgrade
+
+# hard power-off, 10 cycles: Prep -> pull power from hypervisor -> boot -> Verify
+... Invoke-FullChecklist.ps1 -Mode PrepPowerLoss      # then hard power-off
+... Invoke-FullChecklist.ps1 -Mode VerifyPowerLoss    # after boot; repeat x10
+
+# service reboot survival (elevated PowerShell):
+... Invoke-FullChecklist.ps1 -Mode PrepReboot         # then reboot VM
+... Invoke-FullChecklist.ps1 -Mode VerifyReboot
+```
+
+Purely manual items the report lists as MANUAL (uninstall-keeps-data, Windows Update
+reboot, Defender interaction, disk-full, sleep/wake) have their operator action in
+the report's Detail column.
+
+## How to run individual steps (scripts in `scripts/`, harness in `harness/`)
 
 ```powershell
 # one-time

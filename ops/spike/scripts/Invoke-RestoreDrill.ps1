@@ -32,4 +32,6 @@ Pop-Location
 
 & (Join-Path $PSScriptRoot "Stop-Instance.ps1") -Name $target
 if ($verifyExit -ne 0) { throw "DRILL FAILED: restored data did not verify" }
+# Remove the throwaway target so cycles don't accumulate data dirs on the VM.
+Remove-Item -Recurse -Force -Confirm:$false (Get-InstanceDir $target)
 Write-Host "OK: restore drill passed (source '$SourceName' -> '$target')"
