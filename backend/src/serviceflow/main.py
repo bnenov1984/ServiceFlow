@@ -9,6 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from serviceflow import __version__
+from serviceflow.assets.router import router as assets_router
 from serviceflow.config import Settings, get_settings
 from serviceflow.customers.router import router as customers_router
 from serviceflow.identity.router import router as auth_router
@@ -65,6 +66,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health_router, prefix="/api/v1/platform", tags=["platform"])
     app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
     app.include_router(customers_router, prefix="/api/v1/customers", tags=["customers"])
+    app.include_router(assets_router, prefix="/api/v1", tags=["assets"])
     return app
 
 
