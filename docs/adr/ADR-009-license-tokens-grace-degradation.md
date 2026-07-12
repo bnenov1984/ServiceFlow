@@ -1,6 +1,8 @@
 # ADR-009 — Signed License Tokens, 30-Day Grace, Read-Only Degradation
 
-Status: **Accepted (architecture freeze)** · Date: 10.07.2026 · Source: 03 §D9, Q1 decision, approved OQ-A1
+Status: **Superseded by ADR-018 (SaaS subscriptions) — 11.07.2026 pivot (doc 14).
+The read-only + export-always degradation philosophy is carried into ADR-018.
+Parked for the future local edition.** · Date: 10.07.2026 · Source: 03 §D9, Q1, OQ-A1
 
 ## Context
 The commercial model is subscription even for local deployment (PO decision Q1,

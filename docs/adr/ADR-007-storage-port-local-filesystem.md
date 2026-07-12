@@ -1,6 +1,8 @@
 # ADR-007 — Storage Port over Local Filesystem
 
-Status: **Accepted (architecture freeze)** · Date: 10.07.2026 · Source: 03 §D7, 06 §C4
+Status: **Accepted; amended 11.07.2026 (doc 14): the S3-compatible adapter is now
+the primary implementation; local filesystem remains the dev and local-edition
+adapter. The port itself is unchanged.** · Date: 10.07.2026 · Source: 03 §D7, 06 §C4
 
 ## Context
 Attachments (photos dominate: 50–100 GB over 3 years worst case) must be stored

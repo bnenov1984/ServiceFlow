@@ -22,6 +22,15 @@ this ADR set) · Date: 10.07.2026
 | [ADR-013](adr/ADR-013-uuids-and-company-id.md) | UUIDv7-class IDs + company_id on every record from day one | 06 §C1/C3 |
 | [ADR-014](adr/ADR-014-owner-triggered-updates.md) | Owner-triggered updates; rehearsal, auto-backup, auto-rollback | 04 |
 | [ADR-015](adr/ADR-015-i18n-externalization.md) | Full string externalization; Bulgarian-only launch | 03 §3 |
+| [ADR-016](adr/ADR-016-tenant-isolation-enforcement.md) | Tenant isolation: server-derived context + chokepoint + RLS | 14 (pivot) |
+| [ADR-017](adr/ADR-017-cloud-deployment-cd.md) | Cloud deployment (EU host, Docker, managed PG) + CD; supersedes 002/005/014 for SaaS | 14 (pivot) |
+| [ADR-018](adr/ADR-018-subscription-billing.md) | SaaS subscriptions: trial, one monthly plan, provider port, webhook inbox; supersedes 009 | 14 (pivot) |
+
+**Pivot amendment 11.07.2026 ([14_WEB_FIRST_PIVOT.md](14_WEB_FIRST_PIVOT.md)):**
+web-first SaaS is the primary edition; the local edition is parked (ADR-002/005/
+009/014 marked superseded-or-parked; ADR-004/007 amended). Domain, workflow,
+schema, API and UI documents are unchanged by the pivot; documents 04/05/06 remain
+authoritative for the parked local edition and the artifact format.
 
 ## What the freeze covers
 
@@ -53,7 +62,9 @@ during coding" is not a rationale (blueprint Part 1, Development Philosophy).
 
 ## Standing reconsideration gates
 
-- **Stage-0 gate (ADR-002):** bundled-PostgreSQL hardening spike must pass before
-  any Alembic migration exists; otherwise the SQLite ramp executes.
+- ~~Stage-0 gate (ADR-002)~~ — **void since the 11.07.2026 pivot** (managed cloud
+  PostgreSQL; migration #1 unblocked). Re-arms only if the local edition revives.
 - **Pilot gate:** aggregate boundary (01 §4) and search ranking (ADR-010) are
   re-examined against real pilot-shop behavior before commercial launch.
+- **Accountant gate** (Етап 4) and **billing-provider verification** (ADR-018)
+  unchanged.

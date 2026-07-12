@@ -22,4 +22,4 @@ Thumbs.db
 .~lock.*
 
 # Spike scratch area
-ops/spike/.work/
+ops/local-edition/spike/.work/

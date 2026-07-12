@@ -1,8 +1,12 @@
 # 11 — Security & Data Protection Model
 
-Status: **Approved by Product Owner 10.07.2026** · Date: 10.07.2026 · Basis: ADR-008/009, 05, 06, blueprint Part 6
-Pragmatic threat model for a LAN business app — controls sized to real risks, not to
-a compliance checklist.
+Status: **Approved 10.07.2026; ⚠ amended 11.07.2026 by the web-first pivot (doc
+14): the threat model below is written for a LAN app and must be rewritten for an
+internet-facing multi-tenant SaaS before Етап 3 exposes a public host** (new top
+threats: cross-tenant access → ADR-016; credential stuffing/brute force; public
+attack surface; billing webhooks). §2, §3 and §6 remain valid as written; §1's
+likelihood table and §7 are stale. The rewrite is an Етап-3 entry task in plan
+v3.0. · Date: 10.07.2026 · Basis: ADR-008/016/017/018, blueprint Part 6
 
 ## 1. Threat model (what we actually defend against)
 

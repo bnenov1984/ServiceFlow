@@ -1,6 +1,8 @@
 # ADR-014 — Owner-Triggered Updates with Auto-Backup and Rollback
 
-Status: **Accepted (architecture freeze)** · Date: 10.07.2026 · Source: 04 (approved A6 design)
+Status: **Superseded by ADR-017 (vendor-operated CD) — 11.07.2026 pivot (doc 14).
+Expand–contract migrations and rehearse-before-migrate are carried into ADR-017.
+Parked for the future local edition.** · Date: 10.07.2026 · Source: 04 (A6 design)
 
 ## Context
 Updates must reach a fleet of independent, sometimes-offline local installations

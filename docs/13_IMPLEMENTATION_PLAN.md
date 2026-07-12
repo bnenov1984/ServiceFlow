@@ -1,102 +1,83 @@
 # 13 — Implementation Plan
 
-Status: **v2.0 — restaged by Product Owner directive 11.07.2026** (supersedes the
-v1.0 stage order; scope unchanged except where flagged) · Basis: everything frozen
-in 07 · Planned for **one developer**; every stage ends runnable.
+Status: **v3.0 — web-first SaaS restage after the 11.07.2026 pivot (doc 14)**;
+carries the PO stage philosophy of v2.1 (core flow → administration → commercial
+documents → hardening). Planned for one developer; every stage ends runnable.
+BR-2 amendment (reopen rule + Owner unlock) included in Етап 2.
 
-PO staging directive: freeze first → core operational flow → administration →
-commercial documents. No AI features before the core flow works excellently.
+## Етап 0 — Foundation ✅ (revalidated for SaaS)
 
-## Етап 0 — Foundation & the ADR-002 gate *(in progress)*
+Done and kept: repo, module skeleton + import contracts, CI, health scaffold,
+i18n pattern, frontend skeleton. **The ADR-002 VM gate is void — migration #1 is
+unblocked.** Local-edition artifacts parked in `ops/local-edition/`.
+Remaining Етап-0 items (small): dev docker-compose already exists; staging/prod
+host provisioning moves to Етап 3 (nothing before it needs a public host).
 
-Done: repo, module skeleton + import contracts, CI, health scaffold, spike
-automation, local smoke run PASS, VM orchestrator, installer/bootstrap drafts.
-**Open: the VM matrix run (PO executes, reports back) → gate decision.**
-**No Alembic migration exists until the gate closes.** Code-signing certificate
-procurement runs in parallel (PO task; longest lead time in the project).
+## Етап 1 — Замразяване ✅ (amended by doc 14)
 
-## Етап 1 — Замразяване на архитектурата ✅ *(declared 11.07.2026)*
+Frozen set unchanged except the platform layer: ADR-016/017/018 join; 002/005/
+009/014 superseded-or-parked. Domain/workflow/schema/API/UI untouched by the pivot.
 
-Architecture v1.0 = docs 03–07 + ADR-001…015 · Domain model v1.0 = doc 01 ·
-Database schema v1.0 = doc 08 · API contracts v1.0 = doc 09 · UI navigation v1.0 =
-doc 10 · Workflow v1.0 = doc 02. All PO-approved. From this point changes require
-the 07 change process ("сериозна причина", written impact, PO approval, same-commit
-doc/ADR amendment).
+## Етап 2 — Core MVP (Клиент → Поръчка → Актив → Задачи → Статуси → Бележки → Приключване) — ~9–11 weeks
 
-## Етап 2 — Core MVP (Клиент → Поръчка → Актив → Задачи → Статуси → Бележки → Приключване)
+Unchanged from v2.1 **plus tenant enforcement from the first migration**:
 
-Goal: a shop can run a repair end-to-end on the four screens. (~8–10 weeks solo)
-Refined by PO 11.07.2026.
+- Migration #1: companies, users, sessions **+ RLS policies + scoped-query
+  chokepoint (ADR-016)**; login/PIN, seeded Owner **per dev/staging tenant** (self-
+  serve registration idва в Етап 3 — dev/pilot tenants се създават by hand).
+- Isolation tests enter the P0 list now (P0-9): A не вижда B — customers, orders,
+  search, attachments, jobs.
+- Всичко останало от v2.1: клиенти · активи · поръчки · статуси + матрица (P0-1)
+  · задачи · бележки · диагноза · part/labor lines as data (P0-3) · аксесоари ·
+  attachments (S3 adapter на порта; local fs за dev) · contact records · timeline
+  с actor attribution · търсене (P0-7) · приключване + BR-2 unlock изключението ·
+  **минимален приемо-предавателен протокол** · четирите екрана.
+- Exit: E2E journeys 1, 2, 4 green (вкл. protocol print snapshot + isolation
+  suite); non-developer completes intake→close unassisted **в браузър срещу
+  staging**.
 
-- **login/PIN + seeded Owner** (тънък identity срез, не администрация): migration
-  #1 (companies, users, sessions), login + sessions + CSRF, PIN switch. No user
-  management UI — but every action has a truthful "who" (BR-5).
-- Клиенти (normalization, duplicate warning) · Активи (types, identifiers) ·
-  Сервизни поръчки (numbering) · Статуси + full transition matrix (P0-1) · Задачи
-  (+call flag) · Бележки · diagnosis (approval flow) · part/labor lines as data
-  (money math P0-3 — no documents yet) · accessories · attachments · contact
-  records · **timeline с actor attribution** (domain events) · global search (P0-7).
-- **Приключване**: terminal outcomes, delivery dialog (payments/invoices идват в
-  Етап 4), archive flag.
-  ⚠ **„Повторно отваряне" — OPEN, colides with frozen BR-2** (no reopen; follow-up
-  = нова свързана поръчка). Needs PO decision via the 07 change process before
-  Етап 2 codes it — see the two options in the plan-v2.1 note below.
-- **Минимален приемо-предавателен протокол** (PO change, accepted): one A4 print
-  at intake — shop header, order №, date, customer, asset, complaint, accessories,
-  signature lines. The *extended* protocol (delivery variant, estimate, warranty,
-  terms text) stays in Етап 4.
-- The four screens: intake flow (≤2 min target incl. protocol print), Kanban + DnD
-  + conflict handling, order detail, customer profile, dashboard.
-- Exit criteria: E2E journeys 1, 2, 4 (doc 12 §3) green incl. protocol print
-  snapshot; a non-developer completes intake→close unassisted.
+## Етап 3 — SaaS Shell & Administration — ~6–8 weeks
 
-## Етап 3 — Operations & Administration (~4–5 weeks solo)
+- **Hosting + CD (ADR-017):** EU host, staging + production, GitHub Actions
+  pipeline, managed PostgreSQL + tested restores, S3 storage, TLS.
+- **Регистрация и onboarding:** company self-registration, email verification,
+  ≤3-стъпков wizard, «Зареди примерни данни» demo seeding.
+- **Абонаменти и billing (ADR-018):** 14-дневен trial без карта, един месечен
+  план, provider adapter + webhook inbox (P0-10: webhook idempotency), dunning,
+  read-only + export degradation.
+- **Администрация (tenant):** users/roles UI (invite/deactivate, progressive
+  disclosure), settings (фирмени данни, статуси rename/toggle, warranty defaults).
+- **Платформена админ конзола (vendor):** companies + subscriptions overview,
+  extend/suspend/override с причина, audit.
+- **Диагностика:** health endpoint → uptime мониторинг + error tracking; tenant
+  export artifact (ADR-012 — GDPR + бъдеща локална едиция).
 
-- Users/roles: invite/deactivate, Owner/Worker UI, permission matrix enforcement
-  tests.
-- Settings: фирмени данни, статуси (rename/toggle), warranty defaults.
-- **Backup/restore**: artifact + nightly restore-verification + restore wizard +
-  bare-metal path (05; P0-4).
-- **Diagnostics**: health page + tray, support package, opt-in телеметрия.
-- Installer (walking skeleton → real) · updater pipeline (04; P0-5) · licensing
-  (ADR-009: grace + read-only) + минимален vendor cloud (A4 scope) ·
-  **code signing** (cert procured in parallel from Етап 0; wired into the build
-  here).
+## Етап 4 — Commercial Documents — ~4–5 weeks + счетоводен gate
 
-## Етап 4 — Commercial Documents (~4–5 weeks solo + accountant gate)
-
-- **Диагностична оферта към поръчка** (PO-confirmed definition): printable estimate
-  from the order's diagnosis — находка, препоръка, цена, срок, валидност. Not
-  standalone quotes.
-- **Разширени протоколи**: delivery variant, estimate/warranty/terms text blocks,
-  accessories-returned confirmation (extends the Етап-2 minimal protocol).
-- Фактури: draft→issue→annul→reissue, gapless numbering (P0-2), VAT modes, PDF.
-- Плащания: unified record, delivery-dialog settlement, „платена" state.
-- **Счетоводен gate: review преди етапът да е готов (Q2).**
+Unchanged from v2.1: диагностична оферта към поръчка · разширени протоколи ·
+фактури (P0-2 gapless) · плащания · **счетоводен gate**.
 
 ## Етап 5 — Hardening & Pilot
 
-Security hardening (11 checklist) · performance budget (10 §9) · **recovery
-drills** (04 §6 + 05 §7 on the reference matrix) · **реален сервиз ≥2 седмици** ·
-обратна връзка + fix loop · release readiness: P0 green, drills green, accountant
-sign-off, пилотът кара седмица без помощ, правен преглед.
+Security hardening по преработения 11 (internet-facing: rate limiting навсякъде,
+security headers, dependency watch, backup restore drill на хоста) · performance
+budget (10 §9) · recovery drill: възстановяване на цял хост от бекъпи < 2 h
+(ADR-017) · **пилот: реален сервиз ≥2 седмици върху production** · обратна връзка
+· release readiness: P0 green (сега 10 позиции) · счетоводен sign-off · правен
+преглед (условия + privacy за публичен SaaS — **нов, задължителен за публичен
+launch**).
 
-## Reconciliation notes (v2.1, PO refinement 11.07.2026)
+## P0 additions (doc 12 §1 extended by the pivot)
 
-1. Минималният протокол се връща в Етап 2 (PO change) — разширените протоколи
-   остават в Етап 4.
-2. „Оферти" дефинирани като диагностична оферта към поръчка (PO-confirmed).
-3. ✅ **RESOLVED (PO, 11.07.2026): „повторно отваряне" = (а)+(б)** — rule: reopen
-   creates a linked follow-up order (BR-2 intact); exception: Owner-only unlock of
-   a mistaken closure ≤24 h with reason, timeline-logged. BR-2 amended in 01, matrix
-   note in 02, `OrderUnlocked` added to the event catalog.
-4. Identity: тънък срез в Етап 2 (login/PIN/seeded Owner), пълна администрация в
-   Етап 3 — BR-5 запазен.
-5. Gate discipline (PO-confirmed): локалният PASS не замества VM докладите;
-   ADR-002 се затваря само след тях; Етап 2 стартира с миграция №1 след това.
-6. AI: нищо преди основният поток да работи отлично (PO директива).
+- P0-9 tenant isolation suite (ADR-016)
+- P0-10 billing webhook idempotency (ADR-018)
 
-## Out of scope — unchanged
+## Reconciliation notes (v2.1 → v3.0)
 
-Everything in 00 §Roadmap V1.5+ · SaaS beyond C1–C8 · configuration UIs seed data
-covers. "Seemed easier while coding" is not a rationale (07).
+1. VM gate void; миграция №1 отключена веднага (доc 14).
+2. Registration/billing/admin консолидирани в Етап 3 (замества installer/updater/
+   licensing реда; той е паркиран за локалната едиция).
+3. Етап 2 добавя само tenant enforcement — иначе идентичен на v2.1.
+4. Правен преглед на публични условия/privacy добавен като launch gate (нов факт
+   от pivot-а: публичен SaaS = публични правни документи).
+5. Carried billing решения от 10.07 (doc 14 §Carried) важат до вето.

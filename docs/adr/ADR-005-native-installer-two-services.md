@@ -1,6 +1,7 @@
 # ADR-005 — Native Windows Installer, Two Services + Tray App
 
-Status: **Accepted (architecture freeze)** · Date: 10.07.2026 · Source: 03 §D5
+Status: **Parked — 11.07.2026 pivot (doc 14): local edition is a future option.
+Artifacts preserved in ops/local-edition/.** · Date: 10.07.2026 · Source: 03 §D5
 
 ## Context
 Non-technical shop owners must install, run and survive reboots/power loss without a

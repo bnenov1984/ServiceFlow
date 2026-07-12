@@ -1,6 +1,9 @@
 # ADR-002 — Bundled PostgreSQL with SQLite Exit Ramp
 
-Status: **Accepted (architecture freeze), with explicit exit ramp** · Date: 10.07.2026 · Source: 03 §D2
+Status: **Superseded by ADR-017 for the primary (SaaS) edition — 11.07.2026 pivot
+(doc 14). Parked, still authoritative for the future local edition.** The VM
+hardening gate is void for SaaS; the local smoke-run findings (handle isolation,
+data-checksums, UTC pin) remain applied. · Date: 10.07.2026 · Source: 03 §D2
 
 ## Context
 The database must run invisibly on a non-technical shop's Windows PC, and the same

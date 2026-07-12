@@ -10,11 +10,10 @@ data sync. Browser constraint: full PWA installation requires a secure context �
 `localhost` qualifies, plain `http://LAN-IP` does not.
 
 ## Decision
-React 18+ + TypeScript + Vite + Tailwind CSS + TanStack Query, served by the local
-application as an SPA with a web app manifest. PWA scope in V1: installable shell on
-the server machine (localhost), manifest + responsive web app everywhere else. No
-service-worker offline data features. LAN HTTPS provisioning (enabling full PWA on
-client devices) deferred to V1.5 (OQ-A2, approved).
+React 18+ + TypeScript + Vite + Tailwind CSS + TanStack Query, served as an SPA
+with a web app manifest. *(Amended 11.07.2026, doc 14:)* the SaaS runs behind real
+HTTPS, so the LAN secure-context problem vanishes — the PWA install prompt works
+on every device from day one. Still no service-worker offline data features.
 
 ## Alternatives considered
 - **Vue 3 + TS** — comparable capability, smaller local talent pool, no decisive

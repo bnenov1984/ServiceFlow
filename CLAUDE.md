@@ -1,17 +1,19 @@
 # CLAUDE.md — ServiceFlow
 
-Service management platform for Bulgarian repair shops. V1 = local Windows deploy,
-V2 = SaaS on the same core. **All product/architecture decisions live in `docs/` and
-are frozen** — read [docs/07_ADR_INDEX.md](docs/07_ADR_INDEX.md) first; it lists what
-is frozen and the change process. Current stage: see
+**Web-first multi-tenant SaaS** service management platform for Bulgarian repair
+shops; a local edition is parked as a future option (11.07.2026 pivot, docs/14).
+**All product/architecture decisions live in `docs/` and are frozen** — read
+[docs/07_ADR_INDEX.md](docs/07_ADR_INDEX.md) first; it lists what is frozen and
+the change process. Current stage: see
 [docs/13_IMPLEMENTATION_PLAN.md](docs/13_IMPLEMENTATION_PLAN.md) (status line at top).
 
 ## Hard rules (violations are review-blockers)
 
 1. **Pragmatism directive (PO):** no enterprise patterns without a concrete
    ServiceFlow problem; sized for 2–10 person shops and a single maintainer.
-2. **No schema before the gate:** Alembic migration #1 may not exist until
-   `ops/spike/pg-hardening-checklist.md` passes (ADR-002).
+2. **Tenant isolation (ADR-016):** tenant context derives from the session, never
+   from client-supplied IDs; all tenant-table queries go through the scoped
+   chokepoint; RLS policies on every tenant table; isolation tests are P0.
 3. Every table: UUIDv7 `id` (`shared_kernel.ids.new_id`) + `company_id` (ADR-013).
 4. No user-facing literal strings in components — `frontend/src/i18n/bg.ts` keys
    only; backend returns `message_key`, never prose (ADR-015, 09 §1).

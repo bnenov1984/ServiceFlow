@@ -9,7 +9,7 @@ class Settings(BaseSettings):
 
     debug: bool = False
     log_level: str = "INFO"
-    # Unset until the ADR-002 Stage-0 gate passes; health reports it honestly.
+    # Dev: docker-compose.dev.yml Postgres. Staging/prod: managed instance (ADR-017).
     database_url: str | None = None
     data_dir: Path = Path("data")
 

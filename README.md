@@ -1,23 +1,23 @@
 # ServiceFlow
 
-Working name (internal). A browser-based Service Management Platform for Bulgarian
-repair businesses (2–10 people): customers → assets → service orders → repair
-workflow → invoices. **V1 = local Windows deployment; V2 = cloud SaaS on the same
-core.** Guiding principle: simple on the surface, robust underneath — and pragmatic
-everywhere: no enterprise patterns without a concrete ServiceFlow problem; built to
-be maintained by a single developer.
+Working name (internal). A **web-first, multi-tenant SaaS** Service Management
+Platform for Bulgarian repair businesses (2–10 people): customers → assets →
+service orders → repair workflow → invoices. A locally-deployed edition remains a
+**parked future option** ([ops/local-edition](ops/local-edition/README.md)).
+Guiding principle: simple on the surface, robust underneath — and pragmatic
+everywhere: no enterprise patterns without a concrete ServiceFlow problem; built
+to be maintained by a single developer.
 
 ## Status
 
-All documentation (00–13 + ADRs) is **PO-approved**. Implementation is in
-**Stage 0** of [13_IMPLEMENTATION_PLAN.md](docs/13_IMPLEMENTATION_PLAN.md): repo +
-module skeleton + CI are in place; the ADR-002 PostgreSQL hardening spike
-([ops/spike](ops/spike/pg-hardening-checklist.md)) and the installer walking
-skeleton ([ops/installer](ops/installer/README.md)) gate everything further —
-no database schema may exist until the gate passes.
+All documentation (00–14 + ADRs) is **PO-approved**; the 11.07.2026 web-first
+pivot is recorded in [14_WEB_FIRST_PIVOT.md](docs/14_WEB_FIRST_PIVOT.md).
+Implementation follows [13_IMPLEMENTATION_PLAN.md](docs/13_IMPLEMENTATION_PLAN.md)
+v3.0 — next up: **Етап 2, migration #1** (companies, users, sessions + tenant
+isolation per ADR-016).
 
 Layout: `backend/` (FastAPI modular monolith) · `frontend/` (React SPA) · `docs/`
-(the frozen blueprint) · `ops/` (spike + installer) · see [CLAUDE.md](CLAUDE.md)
+(the frozen blueprint) · `ops/local-edition/` (parked) · see [CLAUDE.md](CLAUDE.md)
 for working rules and commands.
 
 ## Documentation map (`docs/`)
