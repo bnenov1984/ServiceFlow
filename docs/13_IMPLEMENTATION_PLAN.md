@@ -32,6 +32,11 @@ Unchanged from v2.1 **plus tenant enforcement from the first migration**:
   attachments (S3 adapter на порта; local fs за dev) · contact records · timeline
   с actor attribution · търсене (P0-7) · приключване + BR-2 unlock изключението ·
   **минимален приемо-предавателен протокол** · четирите екрана.
+- **Frontend gate (PO директива, 11.07.2026):** преди какъвто и да е frontend код
+  се изработва отделен **Frontend Design Document** (детайлизира 10: компонентна
+  йерархия, състояния, data-fetching контракти към 09, дизайн токени, responsive
+  поведение, error/loading/empty състояния per екран) и се одобрява от PO.
+  Frontend-ът се пише само срещу него.
 - Exit: E2E journeys 1, 2, 4 green (вкл. protocol print snapshot + isolation
   suite); non-developer completes intake→close unassisted **в браузър срещу
   staging**.

@@ -5,6 +5,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 # Import every module that defines tables so autogenerate sees the full metadata.
+from serviceflow.customers import models as _customers_models  # noqa: F401
 from serviceflow.identity import models as _identity_models  # noqa: F401
 from serviceflow.shared_kernel.db import Base
 

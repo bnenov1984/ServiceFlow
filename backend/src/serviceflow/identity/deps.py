@@ -56,6 +56,24 @@ def get_tenant(auth: AuthDep) -> TenantContext:
 TenantDep = Annotated[TenantContext, Depends(get_tenant)]
 
 
+def get_tenant_db(db: DbDep, tenant: TenantDep) -> Session:
+    """DB session with the RLS GUC set for this tenant (ADR-016 layer 3).
+
+    Session-scoped set_config survives handler commits; the engine resets it on
+    connection checkin (shared_kernel.db) so pooled connections never leak scope.
+    """
+    from sqlalchemy import text
+
+    db.execute(
+        text("SELECT set_config('app.company_id', :cid, false)"),
+        {"cid": str(tenant.company_id)},
+    )
+    return db
+
+
+TenantDbDep = Annotated[Session, Depends(get_tenant_db)]
+
+
 def require_csrf(request: Request, auth: AuthDep) -> None:
     """Apply to every state-changing endpoint (docs/09 §1)."""
     session, _ = auth

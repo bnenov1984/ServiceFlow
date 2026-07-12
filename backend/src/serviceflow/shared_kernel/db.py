@@ -63,7 +63,23 @@ def scoped[SelectT: Select[Any]](
 
 @lru_cache
 def get_engine(database_url: str) -> Engine:
-    return create_engine(database_url, pool_pre_ping=True)
+    engine = create_engine(database_url, pool_pre_ping=True)
+
+    # Pooled connections must never carry another request's tenant scope
+    # (ADR-016): clear the RLS GUC whenever a connection returns to the pool.
+    from sqlalchemy import event
+
+    @event.listens_for(engine, "checkin")
+    def _reset_tenant_guc(dbapi_conn: Any, _record: Any) -> None:
+        try:
+            cur = dbapi_conn.cursor()
+            cur.execute("RESET app.company_id")
+            cur.close()
+            dbapi_conn.commit()  # psycopg autobegins; leave the connection idle
+        except Exception:  # noqa: BLE001 — a dying connection is the pool's problem
+            pass
+
+    return engine
 
 
 def open_session(database_url: str) -> Iterator[Session]:

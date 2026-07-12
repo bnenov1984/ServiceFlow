@@ -23,6 +23,13 @@ Three layers, cheapest-first:
 Mandatory isolation tests (P0 addition): company A cannot read/update company B's
 customers, orders, attachments, search results; background jobs preserve scope.
 
+**Deployment requirement (found during implementation):** the application must
+connect as a **non-superuser role** — PostgreSQL superusers bypass RLS entirely,
+silently disabling layer 3. The test suite mirrors this (migrates as admin, runs
+the app as an unprivileged role) so a violation fails CI, not production.
+Identity bootstrap tables (users/sessions/companies) are RLS-exempt with queries
+centralized in `identity.service` as the compensating control.
+
 ## Alternatives considered
 - **Schema-per-tenant / database-per-tenant** — stronger isolation, but operational
   cost (migrations × N, backups × N, connection pooling) is disproportionate for

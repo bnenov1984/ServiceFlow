@@ -13,7 +13,9 @@ the change process. Current stage: see
    ServiceFlow problem; sized for 2–10 person shops and a single maintainer.
 2. **Tenant isolation (ADR-016):** tenant context derives from the session, never
    from client-supplied IDs; all tenant-table queries go through the scoped
-   chokepoint; RLS policies on every tenant table; isolation tests are P0.
+   chokepoint; RLS policies on every tenant table (`FORCE`, fail-closed GUC);
+   the app's DB role is **never a superuser** (superusers bypass RLS); isolation
+   tests are P0.
 3. Every table: UUIDv7 `id` (`shared_kernel.ids.new_id`) + `company_id` (ADR-013).
 4. No user-facing literal strings in components — `frontend/src/i18n/bg.ts` keys
    only; backend returns `message_key`, never prose (ADR-015, 09 §1).
