@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from serviceflow import __version__
 from serviceflow.config import Settings, get_settings
+from serviceflow.identity.router import router as auth_router
 from serviceflow.logging_setup import setup_logging
 from serviceflow.platform.health import router as health_router
 
@@ -61,6 +62,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     app.include_router(health_router, prefix="/api/v1/platform", tags=["platform"])
+    app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
     return app
 
 

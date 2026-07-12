@@ -1,9 +1,14 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from serviceflow.main import create_app
 
 
-def test_health_reports_honestly() -> None:
+def test_health_reports_honestly(monkeypatch: pytest.MonkeyPatch) -> None:
+    from serviceflow.config import get_settings
+
+    monkeypatch.delenv("SERVICEFLOW_DATABASE_URL", raising=False)
+    get_settings.cache_clear()
     client = TestClient(create_app())
     resp = client.get("/api/v1/platform/health")
     assert resp.status_code == 200
@@ -14,6 +19,7 @@ def test_health_reports_honestly() -> None:
     assert body["checks"]["backup"] == "not_configured"
     assert body["checks"]["license"] == "not_configured"
     assert "X-Request-ID" in resp.headers
+    get_settings.cache_clear()
 
 
 def test_error_contract_shape() -> None:
