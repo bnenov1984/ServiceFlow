@@ -20,26 +20,35 @@ Frozen set unchanged except the platform layer: ADR-016/017/018 join; 002/005/
 
 ## Етап 2 — Core MVP (Клиент → Поръчка → Актив → Задачи → Статуси → Бележки → Приключване) — ~9–11 weeks
 
-Unchanged from v2.1 **plus tenant enforcement from the first migration**:
+**Backend: ✅ done (migrations #1–#6, commits 31b2038…24a9e40).** Frontend not
+started — gated (see below).
 
 - Migration #1: companies, users, sessions **+ RLS policies + scoped-query
   chokepoint (ADR-016)**; login/PIN, seeded Owner **per dev/staging tenant** (self-
-  serve registration idва в Етап 3 — dev/pilot tenants се създават by hand).
-- Isolation tests enter the P0 list now (P0-9): A не вижда B — customers, orders,
-  search, attachments, jobs.
-- Всичко останало от v2.1: клиенти · активи · поръчки · статуси + матрица (P0-1)
-  · задачи · бележки · диагноза · part/labor lines as data (P0-3) · аксесоари ·
-  attachments (S3 adapter на порта; local fs за dev) · contact records · timeline
-  с actor attribution · търсене (P0-7) · приключване + BR-2 unlock изключението ·
-  **минимален приемо-предавателен протокол** · четирите екрана.
-- **Frontend gate (PO директива, 11.07.2026):** преди какъвто и да е frontend код
-  се изработва отделен **Frontend Design Document** (детайлизира 10: компонентна
-  йерархия, състояния, data-fetching контракти към 09, дизайн токени, responsive
-  поведение, error/loading/empty състояния per екран) и се одобрява от PO.
-  Frontend-ът се пише само срещу него.
-- Exit: E2E journeys 1, 2, 4 green (вкл. protocol print snapshot + isolation
-  suite); non-developer completes intake→close unassisted **в браузър срещу
-  staging**.
+  serve registration idва в Етап 3 — dev/pilot tenants се създават by hand). ✅
+- Isolation tests entered the P0 list (P0-9), growing with every migration:
+  customers, assets, orders, tasks, attachments, contacts all proven cross-tenant
+  isolated (incl. a real RLS-bypass bug found and closed — ADR-016 §finding). ✅
+- Migrations #2–#6, all ✅: клиенти (normalization + duplicate hint) · активи
+  (seeded typed asset types + identifier extraction) · поръчки + статуси + пълна
+  матрица (P0-1, exhaustively tested) · диагноза (in-place, approval persists to
+  the record) · part/labor lines + accessories (BR-3 derived totals) · задачи
+  (извън агрегата, per докс/01 §4) · attachments (storage port ADR-007, local fs
+  adapter, mandatory image re-encoding + HEIC support, thumbnails) · contact
+  records (+ „note" type extension за бележки) · timeline с actor attribution,
+  append-only на ниво база (trigger) · **минимален приемо-предавателен протокол**
+  (server-side PDF, fpdf2 + DejaVu Sans за кирилица) · BR-2 unlock изключението.
+  81/81 backend tests green; ruff/mypy/import-linter clean throughout.
+- **Not yet built (backend):** global search (P0-7) — postponed, no consumer
+  until the frontend needs it; will land alongside the Kanban/dashboard work.
+- **Frontend gate (PO директива, 11.07.2026) — BLOCKS everything below:**
+  преди какъвто и да е frontend код се изработва отделен **Frontend Design
+  Document** (детайлизира 10: компонентна йерархия, състояния, data-fetching
+  контракти към 09, дизайн токени, responsive поведение, error/loading/empty
+  състояния per екран) и се одобрява от PO. Frontend-ът се пише само срещу него.
+- Exit (still open): four screens built against the design doc · search wired in
+  · E2E journeys 1, 2, 4 green (вкл. protocol print snapshot + isolation suite) ·
+  non-developer completes intake→close unassisted **в браузър срещу staging**.
 
 ## Етап 3 — SaaS Shell & Administration — ~6–8 weeks
 
