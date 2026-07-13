@@ -1,0 +1,80 @@
+"""Status model + transition matrix — the frozen docs/02 §1–2 table as code (P0-1).
+
+Kinds drive dashboard/Kanban semantics; display names live in the order_statuses
+seed table (renameable per company in Етап 3). The matrix is deliberately code,
+not configuration: it is fixed, exhaustively tested, and has no per-company
+variation in V1 (docs/08 §What is deliberately absent).
+"""
+
+from enum import StrEnum
+
+
+class Kind(StrEnum):
+    WORKING = "working"
+    WAITING = "waiting"
+    READY = "ready"
+    TERMINAL_SUCCESS = "terminal_success"
+    TERMINAL_FAILURE = "terminal_failure"
+
+
+# code -> (kind, default BG name, sort)
+STATUSES: dict[str, tuple[Kind, str, int]] = {
+    "received": (Kind.WORKING, "Приета", 1),
+    "diagnostics": (Kind.WORKING, "Диагностика", 2),
+    "waiting_customer": (Kind.WAITING, "Чака клиент", 3),
+    "waiting_parts": (Kind.WAITING, "Чака части", 4),
+    "repair": (Kind.WORKING, "Ремонт", 5),
+    "testing": (Kind.WORKING, "Тестване", 6),
+    "ready": (Kind.READY, "Готова", 7),
+    "delivered": (Kind.TERMINAL_SUCCESS, "Предадена", 8),
+    "declined": (Kind.TERMINAL_FAILURE, "Отказана", 9),
+    "unrepairable": (Kind.TERMINAL_FAILURE, "Неремонтируема", 10),
+    "cancelled": (Kind.TERMINAL_FAILURE, "Анулирана", 11),
+}
+
+TERMINAL = {c for c, (k, _, _) in STATUSES.items()
+            if k in (Kind.TERMINAL_SUCCESS, Kind.TERMINAL_FAILURE)}
+OPEN = set(STATUSES) - TERMINAL
+
+OK = "ok"
+WARN = "warn"  # allowed with a skip warning (docs/02 §2)
+NO = "no"
+
+# The docs/02 §2 matrix, verbatim. Rows = from, columns = to.
+_M = {
+    "received":         {"diagnostics": OK, "waiting_customer": WARN, "waiting_parts": WARN,
+                         "repair": WARN, "testing": WARN, "ready": WARN, "delivered": NO,
+                         "declined": OK, "unrepairable": OK, "cancelled": OK},
+    "diagnostics":      {"received": NO, "waiting_customer": OK, "waiting_parts": OK,
+                         "repair": OK, "testing": WARN, "ready": WARN, "delivered": NO,
+                         "declined": OK, "unrepairable": OK, "cancelled": OK},
+    "waiting_customer": {"received": NO, "diagnostics": OK, "waiting_parts": OK,
+                         "repair": OK, "testing": WARN, "ready": WARN, "delivered": NO,
+                         "declined": OK, "unrepairable": OK, "cancelled": OK},
+    "waiting_parts":    {"received": NO, "diagnostics": OK, "waiting_customer": OK,
+                         "repair": OK, "testing": WARN, "ready": WARN, "delivered": NO,
+                         "declined": OK, "unrepairable": OK, "cancelled": OK},
+    "repair":           {"received": NO, "diagnostics": OK, "waiting_customer": OK,
+                         "waiting_parts": OK, "testing": OK, "ready": OK, "delivered": NO,
+                         "declined": NO, "unrepairable": OK, "cancelled": OK},
+    "testing":          {"received": NO, "diagnostics": OK, "waiting_customer": OK,
+                         "waiting_parts": OK, "repair": OK, "ready": OK, "delivered": NO,
+                         "declined": NO, "unrepairable": OK, "cancelled": OK},
+    "ready":            {"received": NO, "diagnostics": NO, "waiting_customer": NO,
+                         "waiting_parts": NO, "repair": OK, "testing": OK,
+                         "delivered": OK, "declined": NO, "unrepairable": NO,
+                         "cancelled": OK},
+}
+
+
+def kind_of(code: str) -> Kind:
+    return STATUSES[code][0]
+
+
+def check_transition(from_code: str, to_code: str) -> str:
+    """Returns OK / WARN / NO. Terminal sources always NO (BR-2; unlock is separate)."""
+    if from_code not in STATUSES or to_code not in STATUSES:
+        return NO
+    if from_code == to_code or from_code in TERMINAL:
+        return NO
+    return _M[from_code].get(to_code, NO)

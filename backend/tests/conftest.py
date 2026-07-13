@@ -75,9 +75,10 @@ def client(migrated_db: str) -> Iterator[TestClient]:
     assert TEST_DB_URL is not None
     engine = get_engine(TEST_DB_URL)
     with engine.begin() as conn:
-        # asset_types is migration seed data — never truncated.
+        # asset_types / order_statuses are migration seed data — never truncated.
         conn.execute(text(
-            "TRUNCATE asset_identifiers, assets, customers, audit_log, sessions, "
+            "TRUNCATE timeline_events, service_orders, document_sequences, "
+            "asset_identifiers, assets, customers, audit_log, sessions, "
             "users, companies RESTART IDENTITY CASCADE"
         ))
     get_settings.cache_clear()

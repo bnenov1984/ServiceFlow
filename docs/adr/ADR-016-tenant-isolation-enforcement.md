@@ -17,8 +17,12 @@ Three layers, cheapest-first:
    query layer that injects `company_id`; raw session queries on tenant tables are
    a review-blocker (DEVELOPMENT_RULES) and grep-able in CI.
 3. **PostgreSQL RLS as defense-in-depth** — row-level security policies on tenant
-   tables keyed to a per-request `SET LOCAL` tenant setting; catches the one query
-   somebody forgets to scope. Enabled in production and in the test suite.
+   tables keyed to a session-level `app.company_id` GUC (`set_config(..., false)`,
+   not transaction-local: a mid-request commit must not lose it — see finding
+   below); catches the one query somebody forgets to scope. Enabled in production
+   and in the test suite. `FORCE ROW LEVEL SECURITY` + a fail-closed policy
+   (`company_id = NULLIF(current_setting('app.company_id', true), '')::uuid`):
+   unset GUC evaluates to NULL, so zero rows rather than an error or full access.
 
 Mandatory isolation tests (P0 addition): company A cannot read/update company B's
 customers, orders, attachments, search results; background jobs preserve scope.
@@ -29,6 +33,22 @@ silently disabling layer 3. The test suite mirrors this (migrates as admin, runs
 the app as an unprivileged role) so a violation fails CI, not production.
 Identity bootstrap tables (users/sessions/companies) are RLS-exempt with queries
 centralized in `identity.service` as the compensating control.
+
+**Second finding (found via a real failing test, `warranty_return`):** a
+service-layer function that calls `db.commit()` twice in one request (once for a
+new order, once for a timeline event on the original order) silently lost RLS
+scope on the second write. Root cause: `db.commit()` releases the pooled
+connection; the checkin hook that resets `app.company_id` (needed so pooled
+connections never leak scope between unrelated sessions) fired between the two
+commits, and the second statement autobegan a fresh transaction on a
+GUC-reset connection. Fix: an SQLAlchemy `Session`-level `after_begin` event
+reads a `session.info["tenant_company_id"]` flag (set once, at the top of the
+request, by the tenant dependency) and reapplies the GUC on every re-begin —
+covering mid-request commits without requiring every service function to
+re-scope by hand. Implemented in `shared_kernel.db` (`bind_tenant_scope` +
+`_reapply_tenant_guc_on_new_transaction`); regression-tested in
+`test_orders.py::test_reopen_via_ui_button_is_a_new_linked_order_not_a_status_change`
+and the append-only trigger check in `test_timeline.py`.
 
 ## Alternatives considered
 - **Schema-per-tenant / database-per-tenant** — stronger isolation, but operational

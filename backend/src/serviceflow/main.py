@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+import serviceflow.timeline.service  # noqa: F401 — registers the timeline subscriber
 from serviceflow import __version__
 from serviceflow.assets.router import router as assets_router
 from serviceflow.config import Settings, get_settings
@@ -15,6 +16,7 @@ from serviceflow.customers.router import router as customers_router
 from serviceflow.identity.router import router as auth_router
 from serviceflow.logging_setup import setup_logging
 from serviceflow.platform.health import router as health_router
+from serviceflow.service_orders.router import router as orders_router
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +69,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
     app.include_router(customers_router, prefix="/api/v1/customers", tags=["customers"])
     app.include_router(assets_router, prefix="/api/v1", tags=["assets"])
+    app.include_router(orders_router, prefix="/api/v1/orders", tags=["orders"])
     return app
 
 

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from serviceflow.config import get_settings
 from serviceflow.identity import service
 from serviceflow.identity.models import AuthSession, User
-from serviceflow.shared_kernel.db import TenantContext, open_session
+from serviceflow.shared_kernel.db import TenantContext, bind_tenant_scope, open_session
 
 SESSION_COOKIE = "sf_session"
 
@@ -57,17 +57,13 @@ TenantDep = Annotated[TenantContext, Depends(get_tenant)]
 
 
 def get_tenant_db(db: DbDep, tenant: TenantDep) -> Session:
-    """DB session with the RLS GUC set for this tenant (ADR-016 layer 3).
+    """DB session with the RLS GUC bound to this tenant (ADR-016 layer 3).
 
-    Session-scoped set_config survives handler commits; the engine resets it on
-    connection checkin (shared_kernel.db) so pooled connections never leak scope.
+    See shared_kernel.db module docstring: bind_tenant_scope() sets it on the
+    current connection AND registers it to be reapplied on any later re-begin
+    within this same request (mid-request commits included).
     """
-    from sqlalchemy import text
-
-    db.execute(
-        text("SELECT set_config('app.company_id', :cid, false)"),
-        {"cid": str(tenant.company_id)},
-    )
+    bind_tenant_scope(db, tenant.company_id)
     return db
 
 
