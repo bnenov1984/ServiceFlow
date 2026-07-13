@@ -7,6 +7,7 @@ import { LoginPage } from "./auth/LoginPage";
 import { useAuth } from "./auth/AuthContext";
 import { EmptyState } from "./components/States";
 import { t } from "./i18n/bg";
+import { IntakePage } from "./intake/IntakePage";
 import { AppShell } from "./shell/AppShell";
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -49,7 +50,7 @@ export function App() {
       >
         <Route index element={<StubScreen titleKey="nav.dashboard" />} />
         <Route path="orders" element={<StubScreen titleKey="nav.orders" />} />
-        <Route path="orders/new" element={<StubScreen titleKey="shell.new_order" />} />
+        <Route path="orders/new" element={<IntakePage />} />
         <Route path="orders/:id" element={<StubScreen titleKey="nav.orders" />} />
         <Route path="customers" element={<StubScreen titleKey="nav.customers" />} />
         <Route path="customers/:id" element={<StubScreen titleKey="nav.customers" />} />
