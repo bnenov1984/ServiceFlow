@@ -11,7 +11,9 @@ from fastapi.responses import JSONResponse
 import serviceflow.timeline.service  # noqa: F401 — registers the timeline subscriber
 from serviceflow import __version__
 from serviceflow.assets.router import router as assets_router
+from serviceflow.attachments.router import router as attachments_router
 from serviceflow.config import Settings, get_settings
+from serviceflow.contacts.router import router as contacts_router
 from serviceflow.customers.router import router as customers_router
 from serviceflow.identity.router import router as auth_router
 from serviceflow.logging_setup import setup_logging
@@ -72,6 +74,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(assets_router, prefix="/api/v1", tags=["assets"])
     app.include_router(orders_router, prefix="/api/v1", tags=["orders"])
     app.include_router(tasks_router, prefix="/api/v1", tags=["tasks"])
+    app.include_router(attachments_router, prefix="/api/v1", tags=["attachments"])
+    app.include_router(contacts_router, prefix="/api/v1", tags=["contacts"])
     return app
 
 

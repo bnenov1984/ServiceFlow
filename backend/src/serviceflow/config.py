@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     # Dev: docker-compose.dev.yml Postgres. Staging/prod: managed instance (ADR-017).
     database_url: str | None = None
     data_dir: Path = Path("data")
+    # Local filesystem adapter (dev/local-edition); S3-compatible in Etap 3 (ADR-007).
+    attachments_max_bytes: int = 10 * 1024 * 1024
+    attachments_max_per_order: int = 20
 
 
 @lru_cache

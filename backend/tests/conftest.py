@@ -58,14 +58,17 @@ def migrated_db() -> str:
 
 
 @pytest.fixture
-def client(migrated_db: str) -> Iterator[TestClient]:
+def client(migrated_db: str, tmp_path) -> Iterator[TestClient]:  # noqa: ANN001
     from serviceflow.config import get_settings
     from serviceflow.main import create_app
     from serviceflow.shared_kernel.db import get_engine
+    from serviceflow.shared_kernel.storage import get_local_storage
 
     os.environ["SERVICEFLOW_DATABASE_URL"] = migrated_db
     os.environ["SERVICEFLOW_DEBUG"] = "true"  # non-Secure cookies for TestClient
+    os.environ["SERVICEFLOW_DATA_DIR"] = str(tmp_path)  # isolate uploaded files/test
     get_settings.cache_clear()
+    get_local_storage.cache_clear()
 
     with TestClient(create_app()) as c:
         yield c
@@ -77,9 +80,10 @@ def client(migrated_db: str) -> Iterator[TestClient]:
     with engine.begin() as conn:
         # asset_types / order_statuses are migration seed data — never truncated.
         conn.execute(text(
-            "TRUNCATE tasks, timeline_events, accessory_items, labor_lines, "
-            "part_lines, diagnoses, service_orders, document_sequences, "
-            "asset_identifiers, assets, customers, audit_log, sessions, "
-            "users, companies RESTART IDENTITY CASCADE"
+            "TRUNCATE contact_records, attachments, tasks, timeline_events, "
+            "accessory_items, labor_lines, part_lines, diagnoses, service_orders, "
+            "document_sequences, asset_identifiers, assets, customers, audit_log, "
+            "sessions, users, companies RESTART IDENTITY CASCADE"
         ))
     get_settings.cache_clear()
+    get_local_storage.cache_clear()
