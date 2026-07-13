@@ -136,6 +136,12 @@ def pin_switch(db: Session, session: AuthSession, target_user_id: uuid.UUID,
     return target
 
 
+def get_company(db: Session, company_id: uuid.UUID) -> Company | None:
+    """Companies are RLS-exempt (ADR-016) — centralizing the lookup here is the
+    documented compensating control; callers must not query Company directly."""
+    return db.get(Company, company_id)
+
+
 def seed_company(db: Session, company_name: str, owner_name: str, owner_email: str,
                  owner_password: str, owner_pin: str | None = None) -> Company:
     """Idempotent dev/staging seed: company + Owner (self-serve registration is Етап 3)."""

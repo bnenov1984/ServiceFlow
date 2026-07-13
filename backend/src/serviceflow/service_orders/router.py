@@ -8,12 +8,14 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from serviceflow.assets import service as assets_service
 from serviceflow.customers import service as customers_service
+from serviceflow.identity import service as identity_service
 from serviceflow.identity.deps import TenantDbDep, TenantDep, require_csrf
-from serviceflow.service_orders import lines, service, statuses
+from serviceflow.service_orders import lines, protocol, service, statuses
 from serviceflow.service_orders.lines import PART_STATES
 from serviceflow.service_orders.models import (
     AccessoryItem,
@@ -473,3 +475,60 @@ def patch_accessory(item_id: uuid.UUID, body: AccessoryPatch, db: TenantDbDep,
         })
     item = lines.mark_accessory_returned(db, tenant, item, body.returned)
     return AccessoryOut.of(item)
+
+
+# --- Protocol (приемо-предавателен протокол) --------------------------------
+# Минимален intake variant only (docs/13 Етап-2 scope note); the delivery
+# variant and extended fields (estimate, warranty, terms) are Етап 4.
+
+@router.get("/orders/{order_id}/protocol.pdf")
+def order_protocol(order_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep,
+                   type: str = "intake") -> Response:  # param name matches docs/09 ?type=
+    if type == "delivery":
+        raise HTTPException(status_code=501, detail={
+            "code": "not_implemented", "message_key": "errors.protocol.delivery_not_available",
+            "params": {},
+        })
+    if type != "intake":
+        raise HTTPException(status_code=400, detail={
+            "code": "invalid_type", "message_key": "errors.protocol.invalid_type", "params": {},
+        })
+
+    order = _get_or_404(db, tenant, order_id)
+    customer = customers_service.get(db, tenant, order.customer_id)
+    asset = assets_service.get(db, tenant, order.asset_id)
+    if customer is None or asset is None:
+        raise _not_found()
+    asset_type = assets_service.get_type(db, asset.asset_type_code)
+    company = identity_service.get_company(db, tenant.company_id)
+    assert asset_type is not None and company is not None
+
+    identifiers = [
+        (fd["label_bg"], str(asset.field_values[fd["key"]]))
+        for fd in asset_type.field_defs
+        if fd.get("identifier_kind") and asset.field_values.get(fd["key"])
+    ]
+    accessory_names = [
+        f"{a.name} x{a.qty}" if a.qty > 1 else a.name
+        for a in lines.list_accessories(db, tenant, order_id)
+    ]
+    requisites = company.requisites or {}
+
+    pdf_bytes = protocol.generate_intake_protocol(protocol.ProtocolData(
+        company_name=company.name,
+        company_address=str(requisites.get("address", "")),
+        company_phone=str(requisites.get("phone", "")),
+        order_number=order.number,
+        created_on=order.created_at.date(),
+        customer_name=customer.name,
+        customer_phone=customer.phone,
+        asset_type_name=asset_type.name_bg,
+        asset_label=asset.label,
+        asset_identifiers=identifiers,
+        complaint=order.complaint,
+        accessories=accessory_names,
+    ))
+    return Response(
+        content=pdf_bytes, media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="protokol-{order.number}.pdf"'},
+    )

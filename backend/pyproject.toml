@@ -16,6 +16,7 @@ dependencies = [
     "pillow>=10.4",
     "pillow-heif>=0.18",
     "python-multipart>=0.0.9",
+    "fpdf2>=2.7",
 ]
 
 [dependency-groups]
@@ -25,6 +26,7 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
     "import-linter>=2.0",
+    "pypdf>=5.0",
 ]
 
 [build-system]
