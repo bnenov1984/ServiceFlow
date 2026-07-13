@@ -77,7 +77,8 @@ def client(migrated_db: str) -> Iterator[TestClient]:
     with engine.begin() as conn:
         # asset_types / order_statuses are migration seed data — never truncated.
         conn.execute(text(
-            "TRUNCATE timeline_events, service_orders, document_sequences, "
+            "TRUNCATE tasks, timeline_events, accessory_items, labor_lines, "
+            "part_lines, diagnoses, service_orders, document_sequences, "
             "asset_identifiers, assets, customers, audit_log, sessions, "
             "users, companies RESTART IDENTITY CASCADE"
         ))

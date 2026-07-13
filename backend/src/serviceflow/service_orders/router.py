@@ -1,7 +1,10 @@
-"""Order endpoints per docs/09 §service orders."""
+"""Order endpoints per docs/09 §service orders. Mounted at /api/v1 (no blanket
+prefix) since docs/09 places some resources flat (/part-lines/{id}) rather than
+nested under /orders — matches the assets router's pattern."""
 
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,8 +13,15 @@ from pydantic import BaseModel, Field
 from serviceflow.assets import service as assets_service
 from serviceflow.customers import service as customers_service
 from serviceflow.identity.deps import TenantDbDep, TenantDep, require_csrf
-from serviceflow.service_orders import service, statuses
-from serviceflow.service_orders.models import ServiceOrder
+from serviceflow.service_orders import lines, service, statuses
+from serviceflow.service_orders.lines import PART_STATES
+from serviceflow.service_orders.models import (
+    AccessoryItem,
+    Diagnosis,
+    LaborLine,
+    PartLine,
+    ServiceOrder,
+)
 from serviceflow.timeline import service as timeline_service
 
 router = APIRouter()
@@ -83,6 +93,128 @@ class OrderOut(BaseModel):
         )
 
 
+class DiagnosisOut(BaseModel):
+    observed: str
+    cause: str
+    recommendation: str
+    estimated_cost: float | None
+    estimated_days: int | None
+    repairable: bool | None
+    approval_required: bool
+    approval: dict[str, Any] | None
+
+    @staticmethod
+    def of(d: Diagnosis) -> "DiagnosisOut":
+        return DiagnosisOut(
+            observed=d.observed, cause=d.cause, recommendation=d.recommendation,
+            estimated_cost=float(d.estimated_cost) if d.estimated_cost is not None else None,
+            estimated_days=d.estimated_days, repairable=d.repairable,
+            approval_required=d.approval_required, approval=d.approval,
+        )
+
+
+class DiagnosisIn(BaseModel):
+    observed: str = Field(default="", max_length=5000)
+    cause: str = Field(default="", max_length=5000)
+    recommendation: str = Field(default="", max_length=5000)
+    estimated_cost: Decimal | None = Field(default=None, ge=0)
+    estimated_days: int | None = Field(default=None, ge=0)
+    repairable: bool | None = None
+    approval_required: bool = False
+
+
+class PartLineOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    qty: int
+    unit_cost: float
+    unit_price: float
+    state: str
+
+    @staticmethod
+    def of(p: PartLine) -> "PartLineOut":
+        return PartLineOut(id=p.id, name=p.name, qty=p.qty,
+                           unit_cost=float(p.unit_cost), unit_price=float(p.unit_price),
+                           state=p.state)
+
+
+class PartLineIn(BaseModel):
+    name: str = Field(min_length=1, max_length=300)
+    qty: int = Field(default=1, ge=1)
+    unit_cost: Decimal = Field(default=Decimal("0"), ge=0)
+    unit_price: Decimal = Field(default=Decimal("0"), ge=0)
+
+
+class PartLinePatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=300)
+    qty: int | None = Field(default=None, ge=1)
+    unit_cost: Decimal | None = Field(default=None, ge=0)
+    unit_price: Decimal | None = Field(default=None, ge=0)
+    state: str | None = None
+
+
+class LaborLineOut(BaseModel):
+    id: uuid.UUID
+    description: str
+    qty: int
+    unit_price: float
+    duration_min: int | None
+    performed_by: uuid.UUID | None
+
+    @staticmethod
+    def of(line: LaborLine) -> "LaborLineOut":
+        return LaborLineOut(id=line.id, description=line.description, qty=line.qty,
+                            unit_price=float(line.unit_price),
+                            duration_min=line.duration_min, performed_by=line.performed_by)
+
+
+class LaborLineIn(BaseModel):
+    description: str = Field(min_length=1, max_length=500)
+    qty: int = Field(default=1, ge=1)
+    unit_price: Decimal = Field(default=Decimal("0"), ge=0)
+    duration_min: int | None = Field(default=None, ge=0)
+    performed_by: uuid.UUID | None = None
+
+
+class LaborLinePatch(BaseModel):
+    description: str | None = Field(default=None, min_length=1, max_length=500)
+    qty: int | None = Field(default=None, ge=1)
+    unit_price: Decimal | None = Field(default=None, ge=0)
+    duration_min: int | None = Field(default=None, ge=0)
+
+
+class AccessoryOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    qty: int
+    returned: bool
+
+    @staticmethod
+    def of(a: AccessoryItem) -> "AccessoryOut":
+        return AccessoryOut(id=a.id, name=a.name, qty=a.qty, returned=a.returned)
+
+
+class AccessoryIn(BaseModel):
+    name: str = Field(min_length=1, max_length=300)
+    qty: int = Field(default=1, ge=1)
+
+
+class AccessoryPatch(BaseModel):
+    returned: bool
+
+
+class OrderDetailOut(OrderOut):
+    """The docs/09 'full detail' shape — aggregate members only (docs/01 §4);
+    tasks/attachments/contacts/timeline are outside the aggregate, fetched
+    separately."""
+
+    diagnosis: DiagnosisOut | None
+    part_lines: list[PartLineOut]
+    labor_lines: list[LaborLineOut]
+    accessories: list[AccessoryOut]
+    estimated_total: float
+
+
 class TimelineEventOut(BaseModel):
     event_type: str
     actor_user_id: uuid.UUID | None
@@ -109,7 +241,7 @@ def _get_or_404(db: TenantDbDep, tenant: TenantDep, order_id: uuid.UUID) -> Serv
     return order
 
 
-@router.get("")
+@router.get("/orders")
 def list_orders(db: TenantDbDep, tenant: TenantDep, state: str = "open",
                 status_code: str | None = None, technician_id: uuid.UUID | None = None,
                 priority: str | None = None, overdue: bool = False,
@@ -120,7 +252,7 @@ def list_orders(db: TenantDbDep, tenant: TenantDep, state: str = "open",
     )]
 
 
-@router.post("", dependencies=[Depends(require_csrf)], status_code=201)
+@router.post("/orders", dependencies=[Depends(require_csrf)], status_code=201)
 def create_order(body: OrderIn, db: TenantDbDep, tenant: TenantDep) -> OrderOut:
     customer = customers_service.get(db, tenant, body.customer_id)
     if customer is None:
@@ -141,12 +273,23 @@ def create_order(body: OrderIn, db: TenantDbDep, tenant: TenantDep) -> OrderOut:
     return OrderOut.of(order)
 
 
-@router.get("/{order_id}")
-def get_order(order_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep) -> OrderOut:
-    return OrderOut.of(_get_or_404(db, tenant, order_id))
+@router.get("/orders/{order_id}")
+def get_order(order_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep) -> OrderDetailOut:
+    order = _get_or_404(db, tenant, order_id)
+    diagnosis = service.get_diagnosis(db, tenant, order_id)
+    base = OrderOut.of(order)
+    return OrderDetailOut(
+        **base.model_dump(),
+        diagnosis=DiagnosisOut.of(diagnosis) if diagnosis else None,
+        part_lines=[PartLineOut.of(p) for p in lines.list_part_lines(db, tenant, order_id)],
+        labor_lines=[LaborLineOut.of(line)
+                    for line in lines.list_labor_lines(db, tenant, order_id)],
+        accessories=[AccessoryOut.of(a) for a in lines.list_accessories(db, tenant, order_id)],
+        estimated_total=float(lines.order_totals(db, tenant, order_id)),
+    )
 
 
-@router.patch("/{order_id}", dependencies=[Depends(require_csrf)])
+@router.patch("/orders/{order_id}", dependencies=[Depends(require_csrf)])
 def patch_order(order_id: uuid.UUID, body: OrderPatch, db: TenantDbDep,
                 tenant: TenantDep) -> OrderOut:
     order = _get_or_404(db, tenant, order_id)
@@ -167,7 +310,7 @@ def patch_order(order_id: uuid.UUID, body: OrderPatch, db: TenantDbDep,
     return OrderOut.of(order)
 
 
-@router.post("/{order_id}/status", dependencies=[Depends(require_csrf)])
+@router.post("/orders/{order_id}/status", dependencies=[Depends(require_csrf)])
 def change_status(order_id: uuid.UUID, body: StatusChange, db: TenantDbDep,
                   tenant: TenantDep) -> OrderOut:
     order = _get_or_404(db, tenant, order_id)
@@ -181,7 +324,7 @@ def change_status(order_id: uuid.UUID, body: StatusChange, db: TenantDbDep,
     return OrderOut.of(order, warning)
 
 
-@router.post("/{order_id}/unlock", dependencies=[Depends(require_csrf)])
+@router.post("/orders/{order_id}/unlock", dependencies=[Depends(require_csrf)])
 def unlock_order(order_id: uuid.UUID, body: UnlockRequest, db: TenantDbDep,
                  tenant: TenantDep) -> OrderOut:
     order = _get_or_404(db, tenant, order_id)
@@ -191,7 +334,7 @@ def unlock_order(order_id: uuid.UUID, body: UnlockRequest, db: TenantDbDep,
         raise _err(e) from e
 
 
-@router.post("/{order_id}/warranty-return", dependencies=[Depends(require_csrf)],
+@router.post("/orders/{order_id}/warranty-return", dependencies=[Depends(require_csrf)],
              status_code=201)
 def warranty_return(order_id: uuid.UUID, body: WarrantyReturnRequest, db: TenantDbDep,
                     tenant: TenantDep) -> OrderOut:
@@ -202,7 +345,7 @@ def warranty_return(order_id: uuid.UUID, body: WarrantyReturnRequest, db: Tenant
         raise _err(e) from e
 
 
-@router.post("/{order_id}/archive", dependencies=[Depends(require_csrf)])
+@router.post("/orders/{order_id}/archive", dependencies=[Depends(require_csrf)])
 def archive_order(order_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep) -> OrderOut:
     order = _get_or_404(db, tenant, order_id)
     try:
@@ -212,7 +355,7 @@ def archive_order(order_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep) -> Or
     return OrderOut.of(order)
 
 
-@router.get("/{order_id}/timeline")
+@router.get("/orders/{order_id}/timeline")
 def order_timeline(order_id: uuid.UUID, db: TenantDbDep,
                    tenant: TenantDep) -> list[TimelineEventOut]:
     _get_or_404(db, tenant, order_id)
@@ -221,3 +364,112 @@ def order_timeline(order_id: uuid.UUID, db: TenantDbDep,
                          data=e.data, created_at=e.created_at)
         for e in timeline_service.for_order(db, tenant, order_id)
     ]
+
+
+# --- Diagnosis (0..1 per order, edited in place — docs/01 §Diagnosis) ---------
+
+@router.put("/orders/{order_id}/diagnosis", dependencies=[Depends(require_csrf)])
+def put_diagnosis(order_id: uuid.UUID, body: DiagnosisIn, db: TenantDbDep,
+                  tenant: TenantDep) -> DiagnosisOut:
+    order = _get_or_404(db, tenant, order_id)
+    diagnosis = service.put_diagnosis(db, tenant, order, body.model_dump())
+    return DiagnosisOut.of(diagnosis)
+
+
+# --- Part lines ----------------------------------------------------------
+
+@router.get("/orders/{order_id}/part-lines")
+def list_part_lines(order_id: uuid.UUID, db: TenantDbDep,
+                    tenant: TenantDep) -> list[PartLineOut]:
+    _get_or_404(db, tenant, order_id)
+    return [PartLineOut.of(p) for p in lines.list_part_lines(db, tenant, order_id)]
+
+
+@router.post("/orders/{order_id}/part-lines", dependencies=[Depends(require_csrf)],
+             status_code=201)
+def add_part_line(order_id: uuid.UUID, body: PartLineIn, db: TenantDbDep,
+                  tenant: TenantDep) -> PartLineOut:
+    order = _get_or_404(db, tenant, order_id)
+    line = lines.add_part_line(db, tenant, order, name=body.name, qty=body.qty,
+                               unit_cost=body.unit_cost, unit_price=body.unit_price)
+    return PartLineOut.of(line)
+
+
+@router.patch("/part-lines/{line_id}", dependencies=[Depends(require_csrf)])
+def patch_part_line(line_id: uuid.UUID, body: PartLinePatch, db: TenantDbDep,
+                    tenant: TenantDep) -> PartLineOut:
+    line = lines.get_part_line(db, tenant, line_id)
+    if line is None:
+        raise HTTPException(status_code=404, detail={
+            "code": "not_found", "message_key": "errors.part_lines.not_found", "params": {},
+        })
+    if body.state is not None and body.state not in PART_STATES:
+        raise HTTPException(status_code=400, detail={
+            "code": "invalid_state", "message_key": "errors.part_lines.invalid_state",
+            "params": {},
+        })
+    line = lines.update_part_line(db, tenant, line, body.model_dump(exclude_unset=True))
+    return PartLineOut.of(line)
+
+
+# --- Labor lines -----------------------------------------------------------
+
+@router.get("/orders/{order_id}/labor-lines")
+def list_labor_lines(order_id: uuid.UUID, db: TenantDbDep,
+                     tenant: TenantDep) -> list[LaborLineOut]:
+    _get_or_404(db, tenant, order_id)
+    return [LaborLineOut.of(line) for line in lines.list_labor_lines(db, tenant, order_id)]
+
+
+@router.post("/orders/{order_id}/labor-lines", dependencies=[Depends(require_csrf)],
+             status_code=201)
+def add_labor_line(order_id: uuid.UUID, body: LaborLineIn, db: TenantDbDep,
+                   tenant: TenantDep) -> LaborLineOut:
+    order = _get_or_404(db, tenant, order_id)
+    line = lines.add_labor_line(db, tenant, order, description=body.description,
+                                qty=body.qty, unit_price=body.unit_price,
+                                duration_min=body.duration_min,
+                                performed_by=body.performed_by)
+    return LaborLineOut.of(line)
+
+
+@router.patch("/labor-lines/{line_id}", dependencies=[Depends(require_csrf)])
+def patch_labor_line(line_id: uuid.UUID, body: LaborLinePatch, db: TenantDbDep,
+                     tenant: TenantDep) -> LaborLineOut:
+    line = lines.get_labor_line(db, tenant, line_id)
+    if line is None:
+        raise HTTPException(status_code=404, detail={
+            "code": "not_found", "message_key": "errors.labor_lines.not_found", "params": {},
+        })
+    line = lines.update_labor_line(db, tenant, line, body.model_dump(exclude_unset=True))
+    return LaborLineOut.of(line)
+
+
+# --- Accessories -------------------------------------------------------------
+
+@router.get("/orders/{order_id}/accessories")
+def list_accessories(order_id: uuid.UUID, db: TenantDbDep,
+                     tenant: TenantDep) -> list[AccessoryOut]:
+    _get_or_404(db, tenant, order_id)
+    return [AccessoryOut.of(a) for a in lines.list_accessories(db, tenant, order_id)]
+
+
+@router.post("/orders/{order_id}/accessories", dependencies=[Depends(require_csrf)],
+             status_code=201)
+def add_accessory(order_id: uuid.UUID, body: AccessoryIn, db: TenantDbDep,
+                  tenant: TenantDep) -> AccessoryOut:
+    order = _get_or_404(db, tenant, order_id)
+    item = lines.add_accessory(db, tenant, order, name=body.name, qty=body.qty)
+    return AccessoryOut.of(item)
+
+
+@router.patch("/accessories/{item_id}", dependencies=[Depends(require_csrf)])
+def patch_accessory(item_id: uuid.UUID, body: AccessoryPatch, db: TenantDbDep,
+                    tenant: TenantDep) -> AccessoryOut:
+    item = lines.get_accessory(db, tenant, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail={
+            "code": "not_found", "message_key": "errors.accessories.not_found", "params": {},
+        })
+    item = lines.mark_accessory_returned(db, tenant, item, body.returned)
+    return AccessoryOut.of(item)

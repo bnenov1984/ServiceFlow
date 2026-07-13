@@ -10,6 +10,7 @@ from serviceflow.customers import models as _customers_models  # noqa: F401
 from serviceflow.identity import models as _identity_models  # noqa: F401
 from serviceflow.service_orders import models as _service_orders_models  # noqa: F401
 from serviceflow.shared_kernel.db import Base
+from serviceflow.tasks import models as _tasks_models  # noqa: F401
 from serviceflow.timeline import models as _timeline_models  # noqa: F401
 
 config = context.config

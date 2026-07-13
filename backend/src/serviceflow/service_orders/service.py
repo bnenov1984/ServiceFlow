@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from serviceflow.service_orders import statuses
-from serviceflow.service_orders.models import DocumentSequence, ServiceOrder
+from serviceflow.service_orders.models import Diagnosis, DocumentSequence, ServiceOrder
 from serviceflow.shared_kernel.db import TenantContext, scoped
 from serviceflow.shared_kernel.events import DomainEvent, publish
 
@@ -113,6 +113,40 @@ def list_orders(db: Session, ctx: TenantContext, *, state: str = "open",
     return list(db.scalars(stmt.order_by(ServiceOrder.created_at.desc()).limit(limit)))
 
 
+def get_diagnosis(db: Session, ctx: TenantContext, order_id: uuid.UUID) -> Diagnosis | None:
+    return db.scalar(
+        scoped(select(Diagnosis), Diagnosis, ctx).where(Diagnosis.order_id == order_id)
+    )
+
+
+def put_diagnosis(db: Session, ctx: TenantContext, order: ServiceOrder,
+                  fields: dict[str, Any]) -> Diagnosis:
+    """Create-or-replace in place (docs/01: no versioning, timeline carries history)."""
+    diagnosis = get_diagnosis(db, ctx, order.id)
+    is_new = diagnosis is None
+    if diagnosis is None:
+        diagnosis = Diagnosis(company_id=ctx.company_id, order_id=order.id)
+        db.add(diagnosis)
+    for key, value in fields.items():
+        setattr(diagnosis, key, value)
+    cost = float(diagnosis.estimated_cost) if diagnosis.estimated_cost is not None else None
+    _event(db, ctx, order, "diagnosis_recorded" if is_new else "diagnosis_updated", {
+        "recommendation": diagnosis.recommendation, "estimated_cost": cost,
+    })
+    db.commit()
+    return diagnosis
+
+
+def _persist_diagnosis_approval(db: Session, ctx: TenantContext, order: ServiceOrder,
+                                approval: dict[str, Any]) -> None:
+    diagnosis = get_diagnosis(db, ctx, order.id)
+    if diagnosis is None:
+        return  # approval recorded on the order event even if no diagnosis exists yet
+    diagnosis.approval = {
+        **approval, "by_user": str(ctx.user_id), "at": _now().isoformat(),
+    }
+
+
 def change_status(db: Session, ctx: TenantContext, order: ServiceOrder, *, to: str,
                   reason: str | None = None, approval: dict[str, Any] | None = None,
                   warranty_days: int | None = None) -> tuple[ServiceOrder, str | None]:
@@ -134,11 +168,18 @@ def change_status(db: Session, ctx: TenantContext, order: ServiceOrder, *, to: s
     if order.status_code == "waiting_customer":
         if to == "declined":
             _event(db, ctx, order, "estimate_rejected", {"reason": reason})
+            _persist_diagnosis_approval(db, ctx, order, {
+                "approved": False, "reason": reason, "channel": None, "amount": None,
+            })
         elif to not in statuses.TERMINAL:
             if not approval or approval.get("approved") is not True:
                 raise OrderError("errors.orders.approval_required", status=400)
             _event(db, ctx, order, "estimate_approved", {
                 "channel": str(approval.get("channel", "")),
+                "amount": approval.get("amount"),
+            })
+            _persist_diagnosis_approval(db, ctx, order, {
+                "approved": True, "channel": approval.get("channel"),
                 "amount": approval.get("amount"),
             })
 
