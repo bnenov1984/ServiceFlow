@@ -1,0 +1,204 @@
+{
+  "statuses": [
+    {
+      "code": "received",
+      "kind": "working",
+      "name_bg": "Приета",
+      "sort": 1
+    },
+    {
+      "code": "diagnostics",
+      "kind": "working",
+      "name_bg": "Диагностика",
+      "sort": 2
+    },
+    {
+      "code": "waiting_customer",
+      "kind": "waiting",
+      "name_bg": "Чака клиент",
+      "sort": 3
+    },
+    {
+      "code": "waiting_parts",
+      "kind": "waiting",
+      "name_bg": "Чака части",
+      "sort": 4
+    },
+    {
+      "code": "repair",
+      "kind": "working",
+      "name_bg": "Ремонт",
+      "sort": 5
+    },
+    {
+      "code": "testing",
+      "kind": "working",
+      "name_bg": "Тестване",
+      "sort": 6
+    },
+    {
+      "code": "ready",
+      "kind": "ready",
+      "name_bg": "Готова",
+      "sort": 7
+    },
+    {
+      "code": "delivered",
+      "kind": "terminal_success",
+      "name_bg": "Предадена",
+      "sort": 8
+    },
+    {
+      "code": "declined",
+      "kind": "terminal_failure",
+      "name_bg": "Отказана",
+      "sort": 9
+    },
+    {
+      "code": "unrepairable",
+      "kind": "terminal_failure",
+      "name_bg": "Неремонтируема",
+      "sort": 10
+    },
+    {
+      "code": "cancelled",
+      "kind": "terminal_failure",
+      "name_bg": "Анулирана",
+      "sort": 11
+    }
+  ],
+  "matrix": {
+    "received": {
+      "diagnostics": "ok",
+      "waiting_customer": "warn",
+      "waiting_parts": "warn",
+      "repair": "warn",
+      "testing": "warn",
+      "ready": "warn",
+      "delivered": "no",
+      "declined": "ok",
+      "unrepairable": "ok",
+      "cancelled": "ok"
+    },
+    "diagnostics": {
+      "received": "no",
+      "waiting_customer": "ok",
+      "waiting_parts": "ok",
+      "repair": "ok",
+      "testing": "warn",
+      "ready": "warn",
+      "delivered": "no",
+      "declined": "ok",
+      "unrepairable": "ok",
+      "cancelled": "ok"
+    },
+    "waiting_customer": {
+      "received": "no",
+      "diagnostics": "ok",
+      "waiting_parts": "ok",
+      "repair": "ok",
+      "testing": "warn",
+      "ready": "warn",
+      "delivered": "no",
+      "declined": "ok",
+      "unrepairable": "ok",
+      "cancelled": "ok"
+    },
+    "waiting_parts": {
+      "received": "no",
+      "diagnostics": "ok",
+      "waiting_customer": "ok",
+      "repair": "ok",
+      "testing": "warn",
+      "ready": "warn",
+      "delivered": "no",
+      "declined": "ok",
+      "unrepairable": "ok",
+      "cancelled": "ok"
+    },
+    "repair": {
+      "received": "no",
+      "diagnostics": "ok",
+      "waiting_customer": "ok",
+      "waiting_parts": "ok",
+      "testing": "ok",
+      "ready": "ok",
+      "delivered": "no",
+      "declined": "no",
+      "unrepairable": "ok",
+      "cancelled": "ok"
+    },
+    "testing": {
+      "received": "no",
+      "diagnostics": "ok",
+      "waiting_customer": "ok",
+      "waiting_parts": "ok",
+      "repair": "ok",
+      "ready": "ok",
+      "delivered": "no",
+      "declined": "no",
+      "unrepairable": "ok",
+      "cancelled": "ok"
+    },
+    "ready": {
+      "received": "no",
+      "diagnostics": "no",
+      "waiting_customer": "no",
+      "waiting_parts": "no",
+      "repair": "ok",
+      "testing": "ok",
+      "delivered": "ok",
+      "declined": "no",
+      "unrepairable": "no",
+      "cancelled": "ok"
+    },
+    "delivered": {
+      "received": "no",
+      "diagnostics": "no",
+      "waiting_customer": "no",
+      "waiting_parts": "no",
+      "repair": "no",
+      "testing": "no",
+      "ready": "no",
+      "declined": "no",
+      "unrepairable": "no",
+      "cancelled": "no"
+    },
+    "declined": {
+      "received": "no",
+      "diagnostics": "no",
+      "waiting_customer": "no",
+      "waiting_parts": "no",
+      "repair": "no",
+      "testing": "no",
+      "ready": "no",
+      "delivered": "no",
+      "unrepairable": "no",
+      "cancelled": "no"
+    },
+    "unrepairable": {
+      "received": "no",
+      "diagnostics": "no",
+      "waiting_customer": "no",
+      "waiting_parts": "no",
+      "repair": "no",
+      "testing": "no",
+      "ready": "no",
+      "delivered": "no",
+      "declined": "no",
+      "cancelled": "no"
+    },
+    "cancelled": {
+      "received": "no",
+      "diagnostics": "no",
+      "waiting_customer": "no",
+      "waiting_parts": "no",
+      "repair": "no",
+      "testing": "no",
+      "ready": "no",
+      "delivered": "no",
+      "declined": "no",
+      "unrepairable": "no"
+    }
+  }
+}

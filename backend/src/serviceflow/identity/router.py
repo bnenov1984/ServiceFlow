@@ -1,4 +1,9 @@
-"""Auth endpoints per docs/09: login, logout, pin-switch, me."""
+"""Auth endpoints per docs/09: login, logout, pin-switch, me.
+
+users_router (GET /users) е отделен, защото живее на /api/v1/users, не /auth —
+Етап-2 slice: list only (PIN dialog, technician picker); POST/PATCH/deactivate
+са Етап 3 (администрация).
+"""
 
 import uuid
 
@@ -7,10 +12,32 @@ from pydantic import BaseModel, EmailStr, Field
 
 from serviceflow.config import get_settings
 from serviceflow.identity import service
-from serviceflow.identity.deps import SESSION_COOKIE, AuthDep, DbDep, require_csrf
+from serviceflow.identity.deps import (
+    SESSION_COOKIE,
+    AuthDep,
+    DbDep,
+    TenantDep,
+    require_csrf,
+)
 from serviceflow.identity.models import AuthSession, User
 
 router = APIRouter()
+users_router = APIRouter()
+
+
+class UserOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    is_owner: bool
+    is_active: bool
+
+
+@users_router.get("")
+def list_users(db: DbDep, tenant: TenantDep, include_inactive: bool = False) -> list[UserOut]:
+    return [
+        UserOut(id=u.id, name=u.name, is_owner=u.is_owner, is_active=u.is_active)
+        for u in service.list_users(db, tenant.company_id, include_inactive)
+    ]
 
 
 class LoginRequest(BaseModel):

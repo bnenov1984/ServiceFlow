@@ -15,9 +15,12 @@ from serviceflow.attachments.router import router as attachments_router
 from serviceflow.config import Settings, get_settings
 from serviceflow.contacts.router import router as contacts_router
 from serviceflow.customers.router import router as customers_router
+from serviceflow.dashboard.router import router as dashboard_router
 from serviceflow.identity.router import router as auth_router
+from serviceflow.identity.router import users_router
 from serviceflow.logging_setup import setup_logging
 from serviceflow.platform.health import router as health_router
+from serviceflow.search.router import router as search_router
 from serviceflow.service_orders.router import router as orders_router
 from serviceflow.tasks.router import router as tasks_router
 
@@ -76,6 +79,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(tasks_router, prefix="/api/v1", tags=["tasks"])
     app.include_router(attachments_router, prefix="/api/v1", tags=["attachments"])
     app.include_router(contacts_router, prefix="/api/v1", tags=["contacts"])
+    app.include_router(users_router, prefix="/api/v1/users", tags=["users"])
+    app.include_router(dashboard_router, prefix="/api/v1", tags=["dashboard"])
+    app.include_router(search_router, prefix="/api/v1", tags=["search"])
     return app
 
 

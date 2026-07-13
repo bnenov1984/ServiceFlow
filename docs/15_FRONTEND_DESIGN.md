@@ -1,7 +1,9 @@
 # 15 — Frontend Design Document
 
-Status: **Awaiting PO approval — the Frontend gate (13 §Етап 2). No frontend code
-before approval.** · Date: 13.07.2026
+Status: **Approved by Product Owner 13.07.2026.** Checklist resolved: nav items
+Фактури/Настройки = **сиви** („Очаквайте скоро"); всичко останало по подразбиране
+(диалозите, intake partial-failure поведението, idle PIN 5 мин, аксесоар-чиповете
+Зарядно/СИМ/Кутия/Ключ). · Date: 13.07.2026
 Basis: 10 (normative screens/UX), 09 (API contracts), ADR-004 (stack), ADR-015
 (i18n), pragmatism directive. Scope: **Етап 2 only** — login/PIN + the four screens
 + intake + protocol print. Registration, settings, user management, billing UI are

@@ -142,6 +142,16 @@ def get_company(db: Session, company_id: uuid.UUID) -> Company | None:
     return db.get(Company, company_id)
 
 
+def list_users(db: Session, company_id: uuid.UUID,
+               include_inactive: bool = False) -> list[User]:
+    """Users are RLS-exempt (identity bootstrap) — the company filter here IS the
+    isolation, which is why this stays centralized (ADR-016 finding)."""
+    stmt = select(User).where(User.company_id == company_id)
+    if not include_inactive:
+        stmt = stmt.where(User.is_active.is_(True))
+    return list(db.scalars(stmt.order_by(User.name)))
+
+
 def seed_company(db: Session, company_name: str, owner_name: str, owner_email: str,
                  owner_password: str, owner_pin: str | None = None) -> Company:
     """Idempotent dev/staging seed: company + Owner (self-serve registration is Етап 3)."""
