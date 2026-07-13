@@ -1,22 +1,60 @@
-import { useEffect, useState } from "react";
-import { t } from "./i18n/bg";
+/** Route table per docs/15 §4. Screens beyond the shell are stubs until their
+ * FDD build slot (intake → order detail → kanban → dashboard/customers/search). */
 
-type HealthStatus = "checking" | "ok" | "degraded" | "fail" | "unreachable";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import type { ReactNode } from "react";
+import { LoginPage } from "./auth/LoginPage";
+import { useAuth } from "./auth/AuthContext";
+import { EmptyState } from "./components/States";
+import { t } from "./i18n/bg";
+import { AppShell } from "./shell/AppShell";
+
+function RequireAuth({ children }: { children: ReactNode }) {
+  const { me, isLoading } = useAuth();
+  const location = useLocation();
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-slate-500">
+        {t("common.loading")}
+      </div>
+    );
+  }
+  if (!me) {
+    const next = encodeURIComponent(location.pathname + location.search);
+    return <Navigate to={`/login?next=${next}`} replace />;
+  }
+  return <>{children}</>;
+}
+
+function StubScreen({ titleKey }: { titleKey: Parameters<typeof t>[0] }) {
+  return (
+    <div>
+      <h1 className="mb-4 text-2xl font-bold text-slate-900">{t(titleKey)}</h1>
+      <EmptyState text={t("shell.building")} />
+    </div>
+  );
+}
 
 export function App() {
-  const [status, setStatus] = useState<HealthStatus>("checking");
-
-  useEffect(() => {
-    fetch("/api/v1/platform/health")
-      .then((r) => r.json())
-      .then((body: { status: "ok" | "degraded" | "fail" }) => setStatus(body.status))
-      .catch(() => setStatus("unreachable"));
-  }, []);
-
   return (
-    <main style={{ fontFamily: "system-ui", maxWidth: 640, margin: "4rem auto", padding: "0 1rem" }}>
-      <h1>{t("app.name")}</h1>
-      <p>{t(`health.${status}`)}</p>
-    </main>
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route
+        element={
+          <RequireAuth>
+            <AppShell />
+          </RequireAuth>
+        }
+      >
+        <Route index element={<StubScreen titleKey="nav.dashboard" />} />
+        <Route path="orders" element={<StubScreen titleKey="nav.orders" />} />
+        <Route path="orders/new" element={<StubScreen titleKey="shell.new_order" />} />
+        <Route path="orders/:id" element={<StubScreen titleKey="nav.orders" />} />
+        <Route path="customers" element={<StubScreen titleKey="nav.customers" />} />
+        <Route path="customers/:id" element={<StubScreen titleKey="nav.customers" />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Route>
+    </Routes>
   );
 }

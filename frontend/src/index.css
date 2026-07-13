@@ -1,0 +1,14 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Tabular numerals for order numbers and money (docs/15 §3). */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Visible focus everywhere (docs/10 §7). */
+:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}

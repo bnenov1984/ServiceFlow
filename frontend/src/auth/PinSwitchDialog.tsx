@@ -1,0 +1,95 @@
+/**
+ * PIN switch (ADR-008, docs/15 §6.6): pick a user, enter PIN, swap the acting
+ * identity. On success the entire query cache is cleared — a rare, deliberate
+ * full reset so nothing from the previous actor lingers (docs/15 §5.3).
+ */
+
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { t } from "../i18n/bg";
+import { ApiError, api } from "../lib/api";
+import { queryKeys } from "../lib/queryKeys";
+import { Avatar } from "../components/Avatar";
+import { Dialog } from "../components/Dialog";
+import { PinPad } from "../components/PinPad";
+import { useAuth, type Me } from "./AuthContext";
+
+interface UserItem {
+  id: string;
+  name: string;
+  is_owner: boolean;
+  is_active: boolean;
+}
+
+export function PinSwitchDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { me } = useAuth();
+  const queryClient = useQueryClient();
+  const [selected, setSelected] = useState<UserItem | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const { data: users } = useQuery({
+    queryKey: queryKeys.users,
+    queryFn: () => api.get<UserItem[]>("/users"),
+    enabled: open,
+  });
+
+  const submitPin = async (pin: string) => {
+    if (!selected) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post<Me>("/auth/pin-switch", { user_id: selected.id, pin });
+      queryClient.clear();
+      onClose();
+      setSelected(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} title={t("auth.pin_title")}>
+      {!selected ? (
+        <ul className="flex flex-col gap-2">
+          {(users ?? [])
+            .filter((u) => u.id !== me?.user_id)
+            .map((u) => (
+              <li key={u.id}>
+                <button
+                  type="button"
+                  onClick={() => setSelected(u)}
+                  className="flex w-full items-center gap-3 rounded-lg border border-slate-200 px-4 py-3 text-left hover:bg-slate-50 min-h-touch"
+                >
+                  <Avatar name={u.name} />
+                  <span className="font-medium text-slate-800">{u.name}</span>
+                </button>
+              </li>
+            ))}
+        </ul>
+      ) : (
+        <div className="flex flex-col items-center gap-4">
+          <div className="flex items-center gap-3">
+            <Avatar name={selected.name} />
+            <span className="font-medium">{selected.name}</span>
+          </div>
+          <PinPad onSubmit={submitPin} disabled={busy} />
+          {error && (
+            <p role="alert" className="text-sm text-red-700">
+              {error}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => setSelected(null)}
+            className="text-sm text-slate-500 hover:underline"
+          >
+            {t("common.cancel")}
+          </button>
+        </div>
+      )}
+    </Dialog>
+  );
+}

@@ -10,6 +10,10 @@ from serviceflow.config import get_settings
 from serviceflow.identity.service import seed_company
 from serviceflow.shared_kernel.db import open_session
 
+# Windows consoles default to cp1252 — Cyrillic company names crashed the final
+# print after a successful seed. Force UTF-8 for our own output.
+sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+
 
 def main() -> None:
     if len(sys.argv) < 5:
