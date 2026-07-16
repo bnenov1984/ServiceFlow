@@ -1,6 +1,7 @@
 """Asset operations: typed-field validation against seed defs, identifier extraction."""
 
 import uuid
+from collections.abc import Iterable
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -115,6 +116,15 @@ def create(db: Session, ctx: TenantContext, customer_id: uuid.UUID,
 
 def get(db: Session, ctx: TenantContext, asset_id: uuid.UUID) -> Asset | None:
     return db.scalar(scoped(select(Asset), Asset, ctx).where(Asset.id == asset_id))
+
+
+def get_many(db: Session, ctx: TenantContext,
+             asset_ids: Iterable[uuid.UUID]) -> dict[uuid.UUID, Asset]:
+    ids = set(asset_ids)
+    if not ids:
+        return {}
+    rows = db.scalars(scoped(select(Asset), Asset, ctx).where(Asset.id.in_(ids)))
+    return {a.id: a for a in rows}
 
 
 def list_for_customer(db: Session, ctx: TenantContext, customer_id: uuid.UUID,

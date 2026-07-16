@@ -197,7 +197,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/CustomerOut"
+                    "$ref": "#/components/schemas/CustomerListItemOut"
                   },
                   "title": "Response List Customers Api V1 Customers Get"
                 }
@@ -758,6 +758,23 @@
             }
           },
           {
+            "name": "customer_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Customer Id"
+            }
+          },
+          {
             "name": "priority",
             "in": "query",
             "required": false,
@@ -802,7 +819,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/OrderOut"
+                    "$ref": "#/components/schemas/OrderListItemOut"
                   },
                   "title": "Response List Orders Api V1 Orders Get"
                 }
@@ -3148,6 +3165,107 @@
         ],
         "title": "CustomerIn"
       },
+      "CustomerListItemOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          },
+          "phone2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone2"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "is_company": {
+            "type": "boolean",
+            "title": "Is Company"
+          },
+          "company_requisites": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Requisites"
+          },
+          "notes": {
+            "type": "string",
+            "title": "Notes"
+          },
+          "archived": {
+            "type": "boolean",
+            "title": "Archived"
+          },
+          "anonymized": {
+            "type": "boolean",
+            "title": "Anonymized"
+          },
+          "row_version": {
+            "type": "integer",
+            "title": "Row Version"
+          },
+          "duplicate_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Duplicate Ids",
+            "default": []
+          },
+          "active_orders_count": {
+            "type": "integer",
+            "title": "Active Orders Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "phone",
+          "phone2",
+          "email",
+          "is_company",
+          "company_requisites",
+          "notes",
+          "archived",
+          "anonymized",
+          "row_version",
+          "active_orders_count"
+        ],
+        "title": "CustomerListItemOut",
+        "description": "GET /customers only — adds the active-order count the list row needs\n(docs/15 §6.7) without touching CustomerOut's other callers."
+      },
       "CustomerOut": {
         "properties": {
           "id": {
@@ -4084,6 +4202,183 @@
           "complaint"
         ],
         "title": "OrderIn"
+      },
+      "OrderListItemOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "number": {
+            "type": "string",
+            "title": "Number"
+          },
+          "customer_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Customer Id"
+          },
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "complaint": {
+            "type": "string",
+            "title": "Complaint"
+          },
+          "status_code": {
+            "type": "string",
+            "title": "Status Code"
+          },
+          "status_kind": {
+            "type": "string",
+            "title": "Status Kind"
+          },
+          "technician_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Technician Id"
+          },
+          "priority": {
+            "type": "string",
+            "title": "Priority"
+          },
+          "promised_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promised On"
+          },
+          "warranty_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warranty Days"
+          },
+          "origin_order_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Order Id"
+          },
+          "delivered_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivered At"
+          },
+          "terminal_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terminal Reason"
+          },
+          "archived": {
+            "type": "boolean",
+            "title": "Archived"
+          },
+          "row_version": {
+            "type": "integer",
+            "title": "Row Version"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning"
+          },
+          "customer_name": {
+            "type": "string",
+            "title": "Customer Name"
+          },
+          "asset_label": {
+            "type": "string",
+            "title": "Asset Label"
+          },
+          "status_changed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Changed At"
+          },
+          "overdue": {
+            "type": "boolean",
+            "title": "Overdue"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "number",
+          "customer_id",
+          "asset_id",
+          "complaint",
+          "status_code",
+          "status_kind",
+          "technician_id",
+          "priority",
+          "promised_on",
+          "warranty_days",
+          "origin_order_id",
+          "delivered_at",
+          "terminal_reason",
+          "archived",
+          "row_version",
+          "customer_name",
+          "asset_label",
+          "status_changed_at",
+          "overdue"
+        ],
+        "title": "OrderListItemOut",
+        "description": "GET /orders only — adds the joined display fields the Kanban/list board\nneeds (docs/15 §6.3) without touching OrderOut's other callers."
       },
       "OrderOut": {
         "properties": {

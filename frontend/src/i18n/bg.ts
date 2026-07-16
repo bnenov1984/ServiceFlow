@@ -244,6 +244,52 @@ export const bg = {
   "order.event_attachment_added": "Добавена е снимка/файл",
   "order.event_attachment_deleted": "Премахната е снимка/файл",
   "order.event_contact_recorded": "Добавена е бележка/комуникация",
+
+  // --- orders board (docs/15 §6.3) ---
+  "orders.view_kanban": "Табло",
+  "orders.view_list": "Списък",
+  "orders.filter_technician_all": "Всички техници",
+  "orders.filter_priority_all": "Всички приоритети",
+  "orders.filter_priority_high": "Само висок приоритет",
+  "orders.filter_overdue": "Само просрочени",
+  "orders.empty": "Все още няма поръчки. Създайте първата с бутона горе.",
+  "orders.days_in_status": "{days} дни в статус",
+  "orders.badge_overdue": "Просрочена",
+  "orders.badge_priority": "Приоритет",
+  "orders.badge_warranty": "Гаранционна",
+  "orders.technician_unassigned": "Без техник",
+  "orders.column_count": "{count}",
+
+  // --- dashboard (docs/15 §6.2) ---
+  "dashboard.widget_active": "Активни",
+  "dashboard.widget_waiting_parts": "Чака части",
+  "dashboard.widget_ready": "Готови",
+  "dashboard.widget_ready_over_limit": "{count} чакат твърде дълго",
+  "dashboard.widget_overdue": "Просрочени",
+  "dashboard.widget_today_tasks": "Днешни задачи",
+  "dashboard.widget_call_tasks": "Обади се",
+  "dashboard.empty": "Няма нищо спешно. Спокоен ден 👌",
+
+  // --- customers (docs/15 §6.7) ---
+  "customers.search_placeholder": "Търсене по име или телефон…",
+  "customers.empty": "Тук ще виждате всички клиенти. Добавете първия чрез нова поръчка.",
+  "customers.active_orders_count": "{count} активни поръчки",
+  "customer.assets": "Активи",
+  "customer.assets_none": "Няма регистрирани активи.",
+  "customer.new_order_for_asset": "Нова поръчка за този актив",
+  "customer.active_orders": "Активни поръчки",
+  "customer.active_orders_none": "Няма активни поръчки.",
+  "customer.history": "История",
+  "customer.history_none": "Няма приключени поръчки.",
+  "customer.duplicate_warning": "Внимание: има и друг клиент с този телефон.",
+  "customer.anonymize": "Анонимизирай",
+  "customer.anonymize_title": "Анонимизиране на клиент",
+  "customer.anonymize_warning": "Това действие премахва трайно личните данни на клиента (име, телефон, имейл) от системата. Поръчките и историята остават, но без връзка към конкретен човек. Действието не може да бъде отменено.",
+  "customer.anonymize_step1_confirm": "Разбирам, продължи",
+  "customer.anonymize_step2_warning": "Последно потвърждение — това е необратимо.",
+  "customer.anonymize_step2_confirm": "Анонимизирай окончателно",
+  "customer.anonymized_done": "Клиентът е анонимизиран.",
+  "customer.archived_badge": "Архивиран",
 } as const;
 
 export type MessageKey = keyof typeof bg;

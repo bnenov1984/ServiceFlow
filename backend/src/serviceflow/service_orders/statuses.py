@@ -6,6 +6,7 @@ not configuration: it is fixed, exhaustively tested, and has no per-company
 variation in V1 (docs/08 §What is deliberately absent).
 """
 
+from datetime import date
 from enum import StrEnum
 
 
@@ -78,3 +79,11 @@ def check_transition(from_code: str, to_code: str) -> str:
     if from_code == to_code or from_code in TERMINAL:
         return NO
     return _M[from_code].get(to_code, NO)
+
+
+def is_overdue(status_code: str, promised_on: date | None, today: date) -> bool:
+    """Per FR-11.1 / discovery 1.2: promised date past, order still active (not
+    ready/terminal — ready orders are „done, waiting for pickup", not overdue)."""
+    if promised_on is None or promised_on >= today:
+        return False
+    return status_code in OPEN and kind_of(status_code) != Kind.READY

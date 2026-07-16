@@ -1,5 +1,7 @@
-/** ContactsList (docs/15 §6.5, docs/02 §10): call/email/message/visit/note,
- * editable by the author until frozen (end of day, OQ-1 default). */
+/** ContactsList (docs/15 §6.5/§6.7, docs/02 §10): call/email/message/visit/note,
+ * editable by the author until frozen (end of day, OQ-1 default). Shared
+ * between the order detail screen and the customer profile — same component,
+ * a different base resource (docs/15 §6.7: "общият ContactsList компонент"). */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -25,24 +27,28 @@ const TYPE_LABEL: Record<string, Parameters<typeof t>[0]> = {
   note: "order.contact_note",
 };
 
-export function ContactsSection({ orderId }: { orderId: string }) {
+type ContactsSectionProps = { orderId: string; customerId?: undefined }
+  | { orderId?: undefined; customerId: string };
+
+export function ContactsSection({ orderId, customerId }: ContactsSectionProps) {
   const [type, setType] = useState<(typeof TYPES)[number]>("call");
   const [direction, setDirection] = useState<"in" | "out">("out");
   const [summary, setSummary] = useState("");
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
-  const key = queryKeys.orderContacts(orderId);
+  const basePath = orderId ? `/orders/${orderId}` : `/customers/${customerId!}`;
+  const key = orderId ? queryKeys.orderContacts(orderId) : queryKeys.customerContacts(customerId!);
 
   const { data: records } = useQuery({
     queryKey: key,
-    queryFn: () => api.get<ContactRecordOut[]>(`/orders/${orderId}/contact-records`),
+    queryFn: () => api.get<ContactRecordOut[]>(`${basePath}/contact-records`),
   });
 
   const add = async () => {
     if (!summary.trim()) return;
     setError(null);
     try {
-      await api.post(`/orders/${orderId}/contact-records`, {
+      await api.post(`${basePath}/contact-records`, {
         type, summary: summary.trim(), direction: type === "note" ? null : direction,
       });
       setSummary("");

@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from serviceflow.customers import service
 from serviceflow.customers.models import Customer
 from serviceflow.identity.deps import TenantDbDep, TenantDep, require_csrf, require_owner
+from serviceflow.service_orders import service as orders_service
 
 router = APIRouter()
 
@@ -58,6 +59,12 @@ class CustomerOut(BaseModel):
         )
 
 
+class CustomerListItemOut(CustomerOut):
+    """GET /customers only — adds the active-order count the list row needs
+    (docs/15 §6.7) without touching CustomerOut's other callers."""
+    active_orders_count: int
+
+
 def _not_found() -> HTTPException:
     return HTTPException(status_code=404, detail={
         "code": "not_found", "message_key": "errors.customers.not_found", "params": {},
@@ -66,8 +73,15 @@ def _not_found() -> HTTPException:
 
 @router.get("")
 def list_customers(db: TenantDbDep, tenant: TenantDep, q: str | None = None,
-                   include_archived: bool = False) -> list[CustomerOut]:
-    return [CustomerOut.of(c) for c in service.search(db, tenant, q, include_archived)]
+                   include_archived: bool = False) -> list[CustomerListItemOut]:
+    customers = service.search(db, tenant, q, include_archived)
+    counts = orders_service.count_active_by_customer(db, tenant, (c.id for c in customers))
+    return [
+        CustomerListItemOut(
+            **CustomerOut.of(c).model_dump(), active_orders_count=counts.get(c.id, 0),
+        )
+        for c in customers
+    ]
 
 
 @router.post("", dependencies=[Depends(require_csrf)], status_code=201)

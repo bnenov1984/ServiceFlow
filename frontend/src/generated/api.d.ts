@@ -948,6 +948,47 @@ export interface components {
              */
             notes: string;
         };
+        /**
+         * CustomerListItemOut
+         * @description GET /customers only — adds the active-order count the list row needs
+         *     (docs/15 §6.7) without touching CustomerOut's other callers.
+         */
+        CustomerListItemOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Phone */
+            phone: string;
+            /** Phone2 */
+            phone2: string | null;
+            /** Email */
+            email: string | null;
+            /** Is Company */
+            is_company: boolean;
+            /** Company Requisites */
+            company_requisites: {
+                [key: string]: unknown;
+            } | null;
+            /** Notes */
+            notes: string;
+            /** Archived */
+            archived: boolean;
+            /** Anonymized */
+            anonymized: boolean;
+            /** Row Version */
+            row_version: number;
+            /**
+             * Duplicate Ids
+             * @default []
+             */
+            duplicate_ids: string[];
+            /** Active Orders Count */
+            active_orders_count: number;
+        };
         /** CustomerOut */
         CustomerOut: {
             /**
@@ -1268,6 +1309,64 @@ export interface components {
             promised_on?: string | null;
             /** Technician Id */
             technician_id?: string | null;
+        };
+        /**
+         * OrderListItemOut
+         * @description GET /orders only — adds the joined display fields the Kanban/list board
+         *     needs (docs/15 §6.3) without touching OrderOut's other callers.
+         */
+        OrderListItemOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Number */
+            number: string;
+            /**
+             * Customer Id
+             * Format: uuid
+             */
+            customer_id: string;
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Complaint */
+            complaint: string;
+            /** Status Code */
+            status_code: string;
+            /** Status Kind */
+            status_kind: string;
+            /** Technician Id */
+            technician_id: string | null;
+            /** Priority */
+            priority: string;
+            /** Promised On */
+            promised_on: string | null;
+            /** Warranty Days */
+            warranty_days: number | null;
+            /** Origin Order Id */
+            origin_order_id: string | null;
+            /** Delivered At */
+            delivered_at: string | null;
+            /** Terminal Reason */
+            terminal_reason: string | null;
+            /** Archived */
+            archived: boolean;
+            /** Row Version */
+            row_version: number;
+            /** Warning */
+            warning?: string | null;
+            /** Customer Name */
+            customer_name: string;
+            /** Asset Label */
+            asset_label: string;
+            /** Status Changed At */
+            status_changed_at: string | null;
+            /** Overdue */
+            overdue: boolean;
         };
         /** OrderOut */
         OrderOut: {
@@ -1692,7 +1791,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CustomerOut"][];
+                    "application/json": components["schemas"]["CustomerListItemOut"][];
                 };
             };
             /** @description Validation Error */
@@ -2058,6 +2157,7 @@ export interface operations {
                 state?: string;
                 status_code?: string | null;
                 technician_id?: string | null;
+                customer_id?: string | null;
                 priority?: string | null;
                 overdue?: boolean;
                 include_archived?: boolean;
@@ -2074,7 +2174,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OrderOut"][];
+                    "application/json": components["schemas"]["OrderListItemOut"][];
                 };
             };
             /** @description Validation Error */

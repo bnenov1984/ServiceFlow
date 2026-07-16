@@ -3,7 +3,7 @@ prefix) since docs/09 places some resources flat (/part-lines/{id}) rather than
 nested under /orders — matches the assets router's pattern."""
 
 import uuid
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -93,6 +93,15 @@ class OrderOut(BaseModel):
             terminal_reason=o.terminal_reason, archived=o.archived_at is not None,
             row_version=o.row_version, warning=warning,
         )
+
+
+class OrderListItemOut(OrderOut):
+    """GET /orders only — adds the joined display fields the Kanban/list board
+    needs (docs/15 §6.3) without touching OrderOut's other callers."""
+    customer_name: str
+    asset_label: str
+    status_changed_at: datetime | None
+    overdue: bool
 
 
 class DiagnosisOut(BaseModel):
@@ -246,12 +255,27 @@ def _get_or_404(db: TenantDbDep, tenant: TenantDep, order_id: uuid.UUID) -> Serv
 @router.get("/orders")
 def list_orders(db: TenantDbDep, tenant: TenantDep, state: str = "open",
                 status_code: str | None = None, technician_id: uuid.UUID | None = None,
+                customer_id: uuid.UUID | None = None,
                 priority: str | None = None, overdue: bool = False,
-                include_archived: bool = False) -> list[OrderOut]:
-    return [OrderOut.of(o) for o in service.list_orders(
+                include_archived: bool = False) -> list[OrderListItemOut]:
+    orders = service.list_orders(
         db, tenant, state=state, status_code=status_code, technician_id=technician_id,
-        priority=priority, overdue=overdue, include_archived=include_archived,
-    )]
+        customer_id=customer_id, priority=priority, overdue=overdue,
+        include_archived=include_archived,
+    )
+    customers = customers_service.get_many(db, tenant, (o.customer_id for o in orders))
+    assets = assets_service.get_many(db, tenant, (o.asset_id for o in orders))
+    today = datetime.now(UTC).date()
+    return [
+        OrderListItemOut(
+            **OrderOut.of(o).model_dump(),
+            customer_name=customers[o.customer_id].name if o.customer_id in customers else "",
+            asset_label=assets[o.asset_id].label if o.asset_id in assets else "",
+            status_changed_at=o.status_changed_at,
+            overdue=statuses.is_overdue(o.status_code, o.promised_on, today),
+        )
+        for o in orders
+    ]
 
 
 @router.post("/orders", dependencies=[Depends(require_csrf)], status_code=201)

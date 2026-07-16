@@ -6,13 +6,21 @@
  */
 
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { ApiError, api } from "../lib/api";
 import { t } from "../i18n/bg";
 import { useToast } from "../components/Toast";
 import { AssetStep, type ResolvedAsset } from "./AssetStep";
 import { CustomerStep, type ResolvedCustomer } from "./CustomerStep";
 import { OrderStep, type OrderStepValue } from "./OrderStep";
+
+/** docs/15 §6.7 "Нова поръчка за този актив" — the customer profile navigates
+ * here with router state instead of a route param, since intake stays a
+ * single route regardless of where it's entered from. */
+interface IntakeLocationState {
+  preselectedCustomer?: ResolvedCustomer;
+  preselectedAsset?: ResolvedAsset;
+}
 
 interface OrderOut {
   id: string;
@@ -49,8 +57,12 @@ function StepSection({
 }
 
 export function IntakePage() {
-  const [customer, setCustomer] = useState<ResolvedCustomer | null>(null);
-  const [asset, setAsset] = useState<ResolvedAsset | null>(null);
+  const location = useLocation();
+  const preselected = (location.state ?? {}) as IntakeLocationState;
+  const [customer, setCustomer] = useState<ResolvedCustomer | null>(
+    preselected.preselectedCustomer ?? null,
+  );
+  const [asset, setAsset] = useState<ResolvedAsset | null>(preselected.preselectedAsset ?? null);
   const [orderValue, setOrderValue] = useState<OrderStepValue>(DEFAULT_ORDER_VALUE);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);

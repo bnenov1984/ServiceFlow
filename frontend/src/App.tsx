@@ -1,14 +1,17 @@
-/** Route table per docs/15 §4. Screens beyond the shell are stubs until their
- * FDD build slot (intake → order detail → kanban → dashboard/customers/search). */
+/** Route table per docs/15 §4. Every screen except global search (§6.8, still
+ * a header dropdown TODO) is built. */
 
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import type { ReactNode } from "react";
 import { LoginPage } from "./auth/LoginPage";
 import { useAuth } from "./auth/AuthContext";
-import { EmptyState } from "./components/States";
+import { CustomerProfilePage } from "./customers/CustomerProfilePage";
+import { CustomersPage } from "./customers/CustomersPage";
+import { DashboardPage } from "./dashboard/DashboardPage";
 import { t } from "./i18n/bg";
 import { IntakePage } from "./intake/IntakePage";
 import { OrderPage } from "./order/OrderPage";
+import { OrdersPage } from "./orders/OrdersPage";
 import { AppShell } from "./shell/AppShell";
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -29,15 +32,6 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-function StubScreen({ titleKey }: { titleKey: Parameters<typeof t>[0] }) {
-  return (
-    <div>
-      <h1 className="mb-4 text-2xl font-bold text-slate-900">{t(titleKey)}</h1>
-      <EmptyState text={t("shell.building")} />
-    </div>
-  );
-}
-
 export function App() {
   return (
     <Routes>
@@ -49,12 +43,12 @@ export function App() {
           </RequireAuth>
         }
       >
-        <Route index element={<StubScreen titleKey="nav.dashboard" />} />
-        <Route path="orders" element={<StubScreen titleKey="nav.orders" />} />
+        <Route index element={<DashboardPage />} />
+        <Route path="orders" element={<OrdersPage />} />
         <Route path="orders/new" element={<IntakePage />} />
         <Route path="orders/:id" element={<OrderPage />} />
-        <Route path="customers" element={<StubScreen titleKey="nav.customers" />} />
-        <Route path="customers/:id" element={<StubScreen titleKey="nav.customers" />} />
+        <Route path="customers" element={<CustomersPage />} />
+        <Route path="customers/:id" element={<CustomerProfilePage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

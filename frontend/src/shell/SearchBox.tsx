@@ -1,11 +1,29 @@
 /** Header global search (docs/15 §6.8): debounced, grouped, keyboard-navigable. */
 
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
+import { Skeleton } from "../components/States";
 import { t } from "../i18n/bg";
 import { api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Highlights the matched query substring (docs/15 §6.8) — case-insensitive,
+ * safe for Cyrillic since it splits on the literal query text, not word boundaries. */
+function highlightMatch(text: string, query: string): ReactNode {
+  if (!query.trim()) return text;
+  const parts = text.split(new RegExp(`(${escapeRegExp(query.trim())})`, "gi"));
+  if (parts.length === 1) return text;
+  return parts.map((part, i) => (
+    <Fragment key={i}>
+      {part.toLowerCase() === query.trim().toLowerCase() ? <mark className="bg-amber-200 text-inherit">{part}</mark> : part}
+    </Fragment>
+  ));
+}
 
 interface SearchResults {
   customers: { id: string; name: string; phone: string }[];
@@ -110,7 +128,11 @@ export function SearchBox() {
       />
       {open && debounced.trim().length >= 2 && (
         <div className="absolute left-0 right-0 top-full z-40 mt-1 max-h-96 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
-          {hits.length === 0 && !isFetching ? (
+          {isFetching && !data ? (
+            <div className="flex flex-col gap-2 p-3">
+              {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-8" />)}
+            </div>
+          ) : hits.length === 0 ? (
             <p className="px-4 py-3 text-sm text-slate-500">
               {t("search.empty", { q: debounced })}
             </p>
@@ -126,9 +148,9 @@ export function SearchBox() {
               >
                 <span>
                   <span className="mr-2 text-xs uppercase text-slate-400">{hit.group}</span>
-                  <span className="font-medium text-slate-800">{hit.label}</span>
+                  <span className="font-medium text-slate-800">{highlightMatch(hit.label, debounced)}</span>
                 </span>
-                <span className="truncate text-slate-500">{hit.sub}</span>
+                <span className="truncate text-slate-500">{highlightMatch(hit.sub, debounced)}</span>
               </button>
             ))
           )}

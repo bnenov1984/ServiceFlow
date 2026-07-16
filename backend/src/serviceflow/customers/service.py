@@ -2,6 +2,7 @@
 RLS is the second net underneath."""
 
 import uuid
+from collections.abc import Iterable
 from datetime import UTC, datetime
 
 from sqlalchemy import or_, select
@@ -43,6 +44,15 @@ def get(db: Session, ctx: TenantContext, customer_id: uuid.UUID) -> Customer | N
     return db.scalar(
         scoped(select(Customer), Customer, ctx).where(Customer.id == customer_id)
     )
+
+
+def get_many(db: Session, ctx: TenantContext,
+             customer_ids: Iterable[uuid.UUID]) -> dict[uuid.UUID, Customer]:
+    ids = set(customer_ids)
+    if not ids:
+        return {}
+    rows = db.scalars(scoped(select(Customer), Customer, ctx).where(Customer.id.in_(ids)))
+    return {c.id: c for c in rows}
 
 
 def search(db: Session, ctx: TenantContext, q: str | None,

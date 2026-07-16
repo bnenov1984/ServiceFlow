@@ -2,10 +2,11 @@
 warranty returns. Every change publishes a domain event → timeline (ADR-011)."""
 
 import uuid
+from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from serviceflow.service_orders import statuses
@@ -88,6 +89,7 @@ def get(db: Session, ctx: TenantContext, order_id: uuid.UUID) -> ServiceOrder | 
 
 def list_orders(db: Session, ctx: TenantContext, *, state: str = "open",
                 status_code: str | None = None, technician_id: uuid.UUID | None = None,
+                customer_id: uuid.UUID | None = None,
                 priority: str | None = None, overdue: bool = False,
                 include_archived: bool = False, limit: int = 200) -> list[ServiceOrder]:
     stmt = scoped(select(ServiceOrder), ServiceOrder, ctx)
@@ -101,6 +103,8 @@ def list_orders(db: Session, ctx: TenantContext, *, state: str = "open",
         stmt = stmt.where(ServiceOrder.status_code == status_code)
     if technician_id:
         stmt = stmt.where(ServiceOrder.technician_id == technician_id)
+    if customer_id:
+        stmt = stmt.where(ServiceOrder.customer_id == customer_id)
     if priority:
         stmt = stmt.where(ServiceOrder.priority == priority)
     if overdue:
@@ -111,6 +115,24 @@ def list_orders(db: Session, ctx: TenantContext, *, state: str = "open",
             ServiceOrder.status_code.in_(active),
         )
     return list(db.scalars(stmt.order_by(ServiceOrder.created_at.desc()).limit(limit)))
+
+
+def count_active_by_customer(db: Session, ctx: TenantContext,
+                             customer_ids: Iterable[uuid.UUID]) -> dict[uuid.UUID, int]:
+    """Batch count for the customers list row (docs/15 §6.7) — one query, not N."""
+    ids = set(customer_ids)
+    if not ids:
+        return {}
+    rows = db.execute(
+        scoped(select(ServiceOrder.customer_id, func.count()), ServiceOrder, ctx)
+        .where(
+            ServiceOrder.customer_id.in_(ids),
+            ServiceOrder.status_code.in_(statuses.OPEN),
+            ServiceOrder.archived_at.is_(None),
+        )
+        .group_by(ServiceOrder.customer_id)
+    )
+    return {row[0]: row[1] for row in rows}
 
 
 def get_diagnosis(db: Session, ctx: TenantContext, order_id: uuid.UUID) -> Diagnosis | None:
