@@ -102,7 +102,9 @@ export function SearchBox() {
   };
 
   return (
-    <div className="relative w-full max-w-md">
+    // min-w-0: позволява на търсачката да се свива в тесен header, вместо
+    // да избутва потребителския чип извън екрана на мобилни размери.
+    <div className="relative w-full min-w-0 max-w-md">
       <input
         ref={inputRef}
         type="search"

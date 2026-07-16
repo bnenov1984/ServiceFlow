@@ -131,7 +131,10 @@ export function AppShell() {
           </button>
         </nav>
 
-        <main className="flex-1 p-4 md:p-6">
+        {/* min-w-0: без него flex елементът не се свива под ширината на
+            съдържанието си и широки екрани (Kanban) разпъват цялото приложение
+            вместо да скролират в собствения си overflow контейнер. */}
+        <main className="min-w-0 flex-1 p-4 md:p-6">
           <Outlet />
         </main>
       </div>

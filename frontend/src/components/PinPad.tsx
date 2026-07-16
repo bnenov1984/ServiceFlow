@@ -40,13 +40,17 @@ export function PinPad({
             {d}
           </button>
         ))}
+        {/* Глифи вместо текст на служебните бутони: „Потвърди“/„Изтрий“ не се
+            събират в 56px клетка (прецедент: ✕ в Dialog.tsx). */}
         <button
           type="button"
           disabled={disabled || pin.length === 0}
           onClick={() => setPin("")}
-          className="h-14 w-14 rounded-lg bg-slate-100 text-sm hover:bg-slate-200 disabled:opacity-50"
+          aria-label={t("auth.pin_clear")}
+          title={t("auth.pin_clear")}
+          className="h-14 w-14 rounded-lg bg-slate-100 text-xl hover:bg-slate-200 disabled:opacity-50"
         >
-          {t("auth.pin_clear")}
+          ⌫
         </button>
         <button
           type="button"
@@ -63,9 +67,11 @@ export function PinPad({
             onSubmit(pin);
             setPin("");
           }}
-          className="h-14 w-14 rounded-lg bg-blue-600 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+          aria-label={t("auth.pin_confirm")}
+          title={t("auth.pin_confirm")}
+          className="h-14 w-14 rounded-lg bg-blue-600 text-xl font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
         >
-          {t("auth.pin_confirm")}
+          ✓
         </button>
       </div>
     </div>
