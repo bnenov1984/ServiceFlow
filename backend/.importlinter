@@ -2,6 +2,11 @@
 root_package = serviceflow
 
 ; ADR-001: domain modules never import platform (03 par.5 dependency direction).
+; serviceflow.dashboard added 18.07.2026 (docs/business-os/13, Phase 1 audit):
+; it was missing from source_modules, so a dashboard -> platform import was not
+; a violation of any other listed source and went undetected (proven by a
+; mutation test — see BOS-13). Not caught transitively, since forbidden-contract
+; checking only walks forward from declared sources.
 [importlinter:contract:domain-not-platform]
 name = Domain modules must not import platform
 type = forbidden
@@ -16,10 +21,16 @@ source_modules =
     serviceflow.contacts
     serviceflow.search
     serviceflow.tasks
+    serviceflow.dashboard
 forbidden_modules =
     serviceflow.platform
 
 ; shared_kernel is the bottom layer: imports nothing from the application.
+; serviceflow.dashboard added 18.07.2026 (docs/business-os/13, Phase 1 audit):
+; it was missing from forbidden_modules. A mutation test showed this contract
+; still caught a shared_kernel -> dashboard import today (transitively, via
+; dashboard's own imports of already-forbidden modules) — but that detection
+; is incidental, not structural, so dashboard is now listed explicitly too.
 [importlinter:contract:shared-kernel-bottom]
 name = shared_kernel imports nothing above it
 type = forbidden
@@ -36,6 +47,7 @@ forbidden_modules =
     serviceflow.contacts
     serviceflow.search
     serviceflow.tasks
+    serviceflow.dashboard
     serviceflow.platform
     serviceflow.main
     serviceflow.config

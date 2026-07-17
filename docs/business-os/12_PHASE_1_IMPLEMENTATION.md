@@ -139,15 +139,14 @@ the allowlist and re-running the check.
 
 ## 8. Limitations of this implementation
 
-- **R1 (`domain-not-platform`) does not list `serviceflow.dashboard`** in its
-  `source_modules`, even though `dashboard` is a domain package like the
-  others. This is a **pre-existing gap in a contract this phase did not
-  touch** (found during R3 review evidence-gathering, not introduced here) —
-  left as-is per this phase's explicit "avoid unrelated technical debt"
-  scope. In practice `dashboard/router.py` does not import `platform`, so
-  there is no live violation; the gap is a coverage hole, not an active
-  breach. Recommend closing it as a one-line addition whenever `.importlinter`
-  is next touched for an unrelated reason.
+- **Fixed by the Phase 1 verification audit (18.07.2026 — see
+  [13_PHASE_1_VERIFICATION_AUDIT.md](13_PHASE_1_VERIFICATION_AUDIT.md)):**
+  R1 (`domain-not-platform`) and R2 (`shared-kernel-bottom`) both omitted
+  `serviceflow.dashboard`. For R1 this was a genuine silent-miss, proven by a
+  mutation test (a `dashboard -> platform` import passed all three contracts
+  undetected); for R2 the same class of gap existed but was masked by
+  transitive detection through dashboard's other imports. Both contracts now
+  list `serviceflow.dashboard` explicitly.
 - **R5 covers table ownership only**, not read/write access patterns within a
   context (rule R6/R7 territory) — a package inside Service Operations
   reading another Service Operations package's model is still invisible to
