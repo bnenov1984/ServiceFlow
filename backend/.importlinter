@@ -40,4 +40,27 @@ forbidden_modules =
     serviceflow.main
     serviceflow.config
 
+; Business OS Phase 1 (docs/business-os/04 §2 rule R3, ADR-BOS-002): Core
+; (identity, platform) must never import a vertical or shared module. This is
+; already true today (Core imports only shared_kernel/config) — this contract
+; ratchets that fact so it cannot regress silently. See
+; docs/business-os/12_PHASE_1_IMPLEMENTATION.md.
+[importlinter:contract:core-not-modules]
+name = Business OS Core (identity, platform) must not import ServiceFlow modules
+type = forbidden
+source_modules =
+    serviceflow.identity
+    serviceflow.platform
+forbidden_modules =
+    serviceflow.customers
+    serviceflow.assets
+    serviceflow.service_orders
+    serviceflow.commercial
+    serviceflow.timeline
+    serviceflow.attachments
+    serviceflow.contacts
+    serviceflow.search
+    serviceflow.tasks
+    serviceflow.dashboard
+
 ; Finer independence contracts tighten in Stage 1 when real module code exists.
