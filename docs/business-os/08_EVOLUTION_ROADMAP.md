@@ -50,29 +50,47 @@ for the full record (tool selection, verification, failure-message samples).
 - **Timing:** rode alongside Етап-2 frontend work, as planned.
 - **Model:** Sonnet.
 
-## Phase 2 — Additive guard rails (revised per review BOS-11 F4/F5)
+## Phase 2 — Additive guard rails (revised per review BOS-11 F4/F5) ✅
+
+Implemented 18.07.2026 — see [14_PHASE_2_IMPLEMENTATION.md](14_PHASE_2_IMPLEMENTATION.md)
+for the full record.
 
 - **Objective:** the additive-only items:
-  1. frontend ESLint zone rule (R9) — lint config, no key renames;
+  1. frontend boundary rule (R9) — enforced without new tooling;
   2. document the `identity/deps.py` dependency set as "Core contract v1"
      (docstring-level, no new package).
-- **Retimed out of Phase 2 (BOS-11 F4):** the `DomainEvent.order_id` →
-  neutral-subject-reference fix (R8) is real but rides the **next natural touch
-  of the events code** — the second subscriber (search/notifications, Етап 3,
-  per ADR-011's own plan) or the second publisher context (commercial, Етап 4),
-  whichever comes first — **with PO sign-off via the 07 change process**, not
-  as a standalone refactor of working frozen-adjacent code.
-- **Dropped from Phase 2 (BOS-11 F5):** formal i18n key namespacing — keys are
-  already de-facto prefixed; renaming waits for module #2 (Phase 5).
-- **Code impact:** frontend lint config + docstrings only.
+- **Revised during implementation:** the roadmap's original R9 text ("feature
+  folders never import each other") was checked against the real codebase
+  before enforcing it (same ratchet discipline as Phase 1) and found **false**
+  — 9 real cross-feature imports exist (customers/order/orders/shell share
+  real components, none of it a mistake). Enforcing the literal wording would
+  have meant either breaking the build or writing an allowlist covering most
+  of the app — not a guard rail. Implemented instead: the boundary that *does*
+  hold today, `lib/`/`components/`/`i18n/`/`generated/` never import from a
+  feature folder — the frontend's real analogue to R2. R9-as-originally-
+  written (true feature-to-feature isolation) is deferred to Phase 5, when a
+  second module's frontend gives it something real to protect.
+- **Tooling note:** ESLint is not installed in this frontend at all (no
+  config, no devDependency, no lint script/CI step existed before this
+  phase). Installing a whole new lint framework for one boundary check was
+  judged disproportionate (pragmatism directive, CLAUDE.md rule 1); the check
+  is instead a small `vitest` test using Vite's native `import.meta.glob` —
+  zero new dependencies, rides the existing `npm test` CI step.
+- **Code impact:** `frontend/src/architecture.test.ts` (new) +
+  `backend/src/serviceflow/identity/deps.py` (docstring only). No production
+  behavior changed.
 - **DB impact:** none.
-- **Risks:** negligible (additive lint + comments).
-- **Prerequisites:** Phase 1; Етап-2 frontend exit (avoid churn while journeys
-  are being stabilized).
-- **Exit criteria:** ESLint zones enforced in CI; Core contract v1 documented;
-  R8 fix scheduled against its trigger in the backlog.
-- **Model:** Sonnet (the R8 fix, when its trigger fires, is Fable 5 — the event
-  envelope shape is a long-lived contract).
+- **Risks:** none realized; both changes verified additive via mutation
+  testing (a real violation injected and reverted for the frontend check;
+  full backend/frontend suites green before and after).
+- **Prerequisites:** Phase 1 ✅.
+- **Exit criteria:** met — frontend boundary check enforced via existing
+  `npm test`; Core contract v1 documented in `identity/deps.py`; R8 fix
+  remains correctly scheduled against its trigger, not this phase.
+- **Deferred:** R9-as-originally-conceived (full feature-folder isolation) →
+  Phase 5. ESLint itself was not installed — revisit only if a concrete need
+  beyond this one check arises.
+- **Model:** Sonnet.
 
 ## Phase 3 — Core gets a name (package isolation) — **Deferred trigger, not a date**
 

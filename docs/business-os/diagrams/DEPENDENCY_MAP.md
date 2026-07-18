@@ -63,6 +63,6 @@ flowchart TB
 | R5 one writer per table | pytest over `Base.registry.mappers` (`backend/tests/test_architecture.py`) | **Phase 1 ✅ (18.07.2026, baseline)** |
 | R6 free imports inside a context | scoping of R4/R5 (no rule needed) | — |
 | R7 cross-context reads via query contracts | same as R4 | Phase 4 |
-| R8 shared_kernel domain-neutral | review checklist (the one known violation is fixed at the next natural touch of events code — BOS-11 F4) | Phase 2 (checklist) |
-| R9 frontend zones | ESLint import/no-restricted-paths | Phase 2 |
+| R8 shared_kernel domain-neutral | review checklist (the one known violation is fixed at the next natural touch of events code — BOS-11 F4) | trigger-scheduled, not this phase |
+| R9 frontend: leaf dirs ↛ feature folders (revised — see BOS-14) | `vitest` + `import.meta.glob` (`frontend/src/architecture.test.ts`) — no ESLint installed | **Phase 2 ✅ (18.07.2026)** |
 | R10 cross-module transactions justified | review rule; ADR-011 timeline is the documented exemplar | today (convention) |

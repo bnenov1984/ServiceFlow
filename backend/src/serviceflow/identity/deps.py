@@ -1,6 +1,29 @@
 """FastAPI dependencies: DB session, authenticated tenant context, CSRF guard.
 
 Error contract per docs/09 §1: message keys, never prose.
+
+Business OS Core contract v1 (docs/business-os/04 §1, roadmap Phase 2 —
+docstring-level only, no new package). This module is the intended public
+surface for identity/tenancy: any current or future module should depend on
+these names, not on `identity.service` or `identity.models` directly. Stable
+exports:
+
+- `TenantDep` / `get_tenant` — the only constructor of tenant scope
+  (ADR-016); yields a `TenantContext` (company_id, user_id, is_owner). See
+  `shared_kernel.db` for `TenantContext` and the `scoped()` chokepoint.
+- `TenantDbDep` / `get_tenant_db` — a DB session with the RLS GUC already
+  bound to the current tenant (ADR-016 layer 3).
+- `AuthDep` / `get_auth` — the resolved (session, user) pair for the
+  request; reach for this only when a handler needs session/user fields
+  `TenantContext` doesn't carry.
+- `require_csrf`, `require_owner` — request guards for state-changing and
+  owner-only endpoints.
+
+Everything else in `identity` (models, service, security, router) is
+implementation detail, not contract — importing it directly from another
+module is what R3/R4 (docs/business-os/04) exist to prevent. Formalizing this
+contract as its own `business_os.*` package is Phase 3 territory
+(docs/business-os/08), gated on a second real module.
 """
 
 from collections.abc import Iterator
