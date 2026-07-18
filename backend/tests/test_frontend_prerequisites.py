@@ -71,9 +71,10 @@ def test_users_are_tenant_isolated(client: TestClient) -> None:
 # --- GET /dashboard ----------------------------------------------------------
 
 def test_dashboard_counts(client: TestClient) -> None:
-    from datetime import date, timedelta
+    from datetime import UTC, datetime, timedelta
 
     h = _login(client)
+    today = datetime.now(UTC).date()  # server computes "today" in UTC, not local wall-clock
     cid = client.post("/api/v1/customers", headers=h,
                       json={"name": "Иван", "phone": "0888111222"}).json()["id"]
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
@@ -90,14 +91,14 @@ def test_dashboard_counts(client: TestClient) -> None:
     client.post(f"/api/v1/orders/{o2}/status", headers=h, json={"to": "waiting_parts"})
     o3 = order()
     client.post(f"/api/v1/orders/{o3}/status", headers=h, json={"to": "ready"})
-    overdue_date = (date.today() - timedelta(days=3)).isoformat()
+    overdue_date = (today - timedelta(days=3)).isoformat()
     order(promised_on=overdue_date)  # overdue: promised past, still received
 
     client.post(f"/api/v1/orders/{o1}/tasks", headers=h, json={
         "title": "Обади се", "is_call": True,
     })
     client.post(f"/api/v1/orders/{o1}/tasks", headers=h, json={
-        "title": "За днес", "due_on": date.today().isoformat(),
+        "title": "За днес", "due_on": today.isoformat(),
     })
 
     d = client.get("/api/v1/dashboard").json()

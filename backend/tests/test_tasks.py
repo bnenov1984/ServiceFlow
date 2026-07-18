@@ -116,9 +116,10 @@ def test_cross_order_views_today_mine_calls(client: TestClient) -> None:
     import datetime as dt
 
     h = _login(client)
-    today = dt.date.today().isoformat()
-    yesterday = (dt.date.today() - dt.timedelta(days=1)).isoformat()
-    future = (dt.date.today() + dt.timedelta(days=30)).isoformat()
+    now = dt.datetime.now(dt.UTC)  # server computes "today" in UTC, not local wall-clock
+    today = now.date().isoformat()
+    yesterday = (now.date() - dt.timedelta(days=1)).isoformat()
+    future = (now.date() + dt.timedelta(days=30)).isoformat()
 
     client.post("/api/v1/tasks", headers=h, json={"title": "due today", "due_on": today})
     client.post("/api/v1/tasks", headers=h,
