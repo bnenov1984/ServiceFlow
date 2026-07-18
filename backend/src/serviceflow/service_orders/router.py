@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from serviceflow.assets import service as assets_service
 from serviceflow.customers import service as customers_service
-from serviceflow.identity import service as identity_service
+from serviceflow.identity.contracts import get_company_profile
 from serviceflow.identity.deps import TenantDbDep, TenantDep, require_csrf
 from serviceflow.service_orders import lines, protocol, service, statuses
 from serviceflow.service_orders.lines import PART_STATES
@@ -524,8 +524,8 @@ def order_protocol(order_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep,
     if customer is None or asset is None:
         raise _not_found()
     asset_type = assets_service.get_type(db, asset.asset_type_code)
-    company = identity_service.get_company(db, tenant.company_id)
-    assert asset_type is not None and company is not None
+    company = get_company_profile(db, tenant.company_id)
+    assert asset_type is not None
 
     identifiers = [
         (fd["label_bg"], str(asset.field_values[fd["key"]]))

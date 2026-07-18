@@ -2,28 +2,38 @@
 
 Error contract per docs/09 §1: message keys, never prose.
 
-Business OS Core contract v1 (docs/business-os/04 §1, roadmap Phase 2 —
-docstring-level only, no new package). This module is the intended public
-surface for identity/tenancy: any current or future module should depend on
-these names, not on `identity.service` or `identity.models` directly. Stable
-exports:
+Business OS Identity public contract, part 1 of 2 (docs/business-os/16 —
+Phase 3, mechanically enforced; supersedes the Phase 2 "Core contract v1"
+docstring, which was documentation-only). Request-scoped, FastAPI
+`Depends()`-wrapped surface — see `identity.contracts` for the plain
+non-request-scoped counterpart. Verified exports (checked against actual
+external call sites at Phase 3, not just documented — docs/business-os/16
+§consumer matrix):
 
 - `TenantDep` / `get_tenant` — the only constructor of tenant scope
   (ADR-016); yields a `TenantContext` (company_id, user_id, is_owner). See
   `shared_kernel.db` for `TenantContext` and the `scoped()` chokepoint.
+  Used by every router in the codebase.
 - `TenantDbDep` / `get_tenant_db` — a DB session with the RLS GUC already
-  bound to the current tenant (ADR-016 layer 3).
-- `AuthDep` / `get_auth` — the resolved (session, user) pair for the
-  request; reach for this only when a handler needs session/user fields
-  `TenantContext` doesn't carry.
-- `require_csrf`, `require_owner` — request guards for state-changing and
-  owner-only endpoints.
+  bound to the current tenant (ADR-016 layer 3). Same usage breadth.
+- `require_csrf` — request guard for state-changing endpoints. Used by
+  6 of 8 external routers.
+- `require_owner` — request guard for owner-only endpoints. Used by
+  `customers/router.py` today; narrower but real.
+- `AuthDep` / `get_auth` — the resolved (session, user) pair. **No external
+  consumer exists today** (verified by Phase 3 discovery) — used only by
+  `identity.router` itself. Kept available (a handler needing session/user
+  fields `TenantContext` doesn't carry is a legitimate future need), but it
+  is not part of the actively enforced Phase 3 boundary in the sense the
+  other four are: nothing outside `identity` currently depends on it.
 
 Everything else in `identity` (models, service, security, router) is
-implementation detail, not contract — importing it directly from another
-module is what R3/R4 (docs/business-os/04) exist to prevent. Formalizing this
-contract as its own `business_os.*` package is Phase 3 territory
-(docs/business-os/08), gated on a second real module.
+implementation detail — importing it directly from another module is what
+the `identity-public-boundary` import-linter contract (backend/.importlinter)
+mechanically blocks. The internal `identity.service` reference below is kept
+as `_service` (leading underscore), not `service`: this closes the easy
+`from serviceflow.identity.deps import service` re-export bypass (see
+docs/business-os/16 for what this does and does not close).
 """
 
 from collections.abc import Iterator
@@ -33,7 +43,7 @@ from fastapi import Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from serviceflow.config import get_settings
-from serviceflow.identity import service
+from serviceflow.identity import service as _service
 from serviceflow.identity.models import AuthSession, User
 from serviceflow.shared_kernel.db import TenantContext, bind_tenant_scope, open_session
 
@@ -60,7 +70,7 @@ def get_auth(request: Request, db: DbDep) -> tuple[AuthSession, User]:
     raw = request.cookies.get(SESSION_COOKIE)
     if not raw:
         raise _error(401, "not_authenticated", "errors.auth.required")
-    resolved = service.resolve_session(db, raw)
+    resolved = _service.resolve_session(db, raw)
     if resolved is None:
         raise _error(401, "session_invalid", "errors.auth.session_expired")
     return resolved
