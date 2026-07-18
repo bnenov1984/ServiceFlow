@@ -135,3 +135,34 @@ def test_no_table_ownership_violations() -> None:
     (docs/business-os/11_ARCHITECTURE_REVIEW.md) — this test ratchets that."""
     violations = _find_violations(_live_owning_modules(), TABLE_OWNERS)
     assert not violations, "Table ownership violations found:\n" + "\n".join(violations)
+
+
+# --- Identity public boundary (Business OS Phase 3, docs/business-os/16) ---
+#
+# The import-linter `identity-public-boundary` contract (backend/.importlinter)
+# blocks *direct* imports of identity.models/.service/.security/.router from
+# outside identity — see docs/business-os/16 for the mutation-test evidence.
+# What import-linter's `protected` contract type cannot see is a *namespace*
+# property: whether an approved public module (deps.py, contracts.py) itself
+# re-exposes an internal name as one of its own attributes, which would let
+# `from serviceflow.identity.deps import service` work as a bypass. This test
+# checks that property directly — it is not redundant with import-linter,
+# which only tracks import *statements*, not module namespace contents.
+
+
+def test_identity_public_modules_do_not_reexport_internal_service() -> None:
+    """deps.py and contracts.py hold their internal identity.service
+    reference as `_service` (leading underscore), not `service`, precisely so
+    neither module's own namespace exposes an easy re-export of it."""
+    from serviceflow.identity import contracts, deps
+
+    assert not hasattr(deps, "service"), (
+        "identity.deps re-exposes 'service' as a public attribute again — "
+        "this reopens the 'from serviceflow.identity.deps import service' "
+        "boundary bypass documented in docs/business-os/16. Re-alias the "
+        "internal import to `_service`."
+    )
+    assert not hasattr(contracts, "service"), (
+        "identity.contracts re-exposes 'service' as a public attribute "
+        "again — same bypass as above, via contracts.py instead of deps.py."
+    )
