@@ -66,3 +66,4 @@ flowchart TB
 | R8 shared_kernel domain-neutral | review checklist (the one known violation is fixed at the next natural touch of events code — BOS-11 F4) | trigger-scheduled, not this phase |
 | R9 frontend: leaf dirs ↛ feature folders (revised — see BOS-14) | `vitest` + `import.meta.glob` (`frontend/src/architecture.test.ts`) — no ESLint installed | **Phase 2 ✅ (18.07.2026)** |
 | R10 cross-module transactions justified | review rule; ADR-011 timeline is the documented exemplar | today (convention) |
+| R11 identity.deps/.contracts only, not internals | import-linter contract `identity-public-boundary`, `type = protected` (direct-import check, not transitive) | **Phase 2.5 ✅ (18.07.2026)** |

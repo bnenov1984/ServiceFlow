@@ -92,6 +92,44 @@ for the full record.
   beyond this one check arises.
 - **Model:** Sonnet.
 
+## Phase 2.5 — Identity public boundary hardening ✅ (naming note below)
+
+Implemented 18.07.2026 — see
+[16_PHASE_3_IDENTITY_BOUNDARY.md](16_PHASE_3_IDENTITY_BOUNDARY.md).
+
+> **Naming conflict, reported per this document's own conflict-resolution
+> rule:** the implementation task that produced this work named its
+> deliverable doc `16_PHASE_3_IDENTITY_BOUNDARY.md` and called it "Phase 3."
+> That is a *different* piece of work from this roadmap's own "Phase 3"
+> below (package rename to `business_os.*`), which remains entirely
+> untouched and still deferred to its stated trigger. To avoid the roadmap
+> having two different "Phase 3"s, this entry is filed here as **Phase 2.5**
+> — inserted ahead of the original Phase 3 because Identity, specifically,
+> already had concrete non-hypothetical application-level reuse (8 routers)
+> justifying earlier boundary enforcement, per
+> [02_DOMAIN_CLASSIFICATION.md](02_DOMAIN_CLASSIFICATION.md) §3. The
+> document keeps its original filename/number (16, "Phase 3" in its own
+> title) since renaming a delivered, referenced document after the fact
+> risks worse confusion than one cross-referenced naming footnote.
+
+- **Objective:** turn the documented Identity contract (Phase 2's docstring-
+  only "Core contract v1") into a mechanically enforced boundary: external
+  modules may import `identity.deps`/`identity.contracts` only, not
+  `identity.models`/`.service`/`.security`/`.router` directly.
+- **Code impact:** one new file (`identity/contracts.py`), two files edited
+  (`identity/deps.py` — internal re-export closure + docstring accuracy;
+  `service_orders/router.py` — migrated its one real internal-import
+  violation), one new import-linter contract, one new focused test. No
+  behavior change — full suite green before and after (98/98).
+- **DB impact:** none.
+- **Risks:** none realized — exactly one pre-existing violation found and
+  migrated (low risk, single call site, covered by an existing PDF-rendering
+  test); zero baseline/allowlist needed.
+- **Prerequisites:** Phase 1 ✅, Phase 2 ✅, a clean checkpoint verified first.
+- **Exit criteria:** met — see BOS-16 §9 for the full checklist against the
+  originating task's ten acceptance criteria.
+- **Model:** Sonnet (mechanical against a discovered, evidence-backed spec).
+
 ## Phase 3 — Core gets a name (package isolation) — **Deferred trigger, not a date**
 
 - **Objective:** move identity/platform/shared_kernel under a `business_os` (or
