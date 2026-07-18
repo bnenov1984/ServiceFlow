@@ -8,10 +8,15 @@ def test_health_reports_honestly(monkeypatch: pytest.MonkeyPatch) -> None:
     from serviceflow.config import Settings
     from serviceflow.platform import health as health_module
 
-    # Bypass any developer-local backend/.env so this test is hermetic:
-    # pydantic-settings would otherwise pick up a real SERVICEFLOW_DATABASE_URL
-    # from .env and turn the "not_configured" assertion into "ok".
-    monkeypatch.setattr(health_module, "get_settings", lambda: Settings(_env_file=None))
+    # Force database_url=None explicitly rather than relying on the ambient
+    # environment: a developer-local backend/.env can supply a real
+    # SERVICEFLOW_DATABASE_URL (_env_file=None alone guards against that),
+    # and other tests in the same pytest session set the env var directly via
+    # os.environ (conftest.client fixture) without cleaning it up — either
+    # source would otherwise turn "not_configured" into "ok".
+    monkeypatch.setattr(
+        health_module, "get_settings", lambda: Settings(_env_file=None, database_url=None)
+    )
     client = TestClient(create_app())
     resp = client.get("/api/v1/platform/health")
     assert resp.status_code == 200
