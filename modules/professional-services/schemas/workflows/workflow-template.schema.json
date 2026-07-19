@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://businessos.local/ps/workflow-template.schema.json",
+  "title": "Workflow template (ps_workflow_templates + stages) — draft design shape, PS-12",
+  "type": "object",
+  "required": ["name", "stages"],
+  "properties": {
+    "id": {"type": "string", "format": "uuid"},
+    "company_id": {"type": "string", "format": "uuid"},
+    "name": {"type": "string", "minLength": 1, "maxLength": 120},
+    "is_active": {"type": "boolean", "default": true},
+    "stages": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "required": ["name", "category"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1, "maxLength": 80, "description": "org's own words, e.g. Оглед насрочен"},
+          "category": {
+            "enum": ["work", "waiting_client", "waiting_documents", "review", "delivery"],
+            "description": "code-owned; powers dashboards/inactivity across custom vocabularies (ADR-PS-005)"
+          }
+        },
+        "additionalProperties": false
+      },
+      "description": "ordered; copied onto assignments at creation (copy-on-create, PS-12 §5)"
+    }
+  },
+  "additionalProperties": false,
+  "$comment": "Validation warnings (not errors): no delivery-category stage; no work-category stage. Assignment instances copy this shape into ps_assignment_stages."
+}

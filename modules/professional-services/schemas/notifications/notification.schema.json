@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://businessos.local/ps/notification.schema.json",
+  "title": "Notification (ps_notifications) — draft design shape, PS-19",
+  "type": "object",
+  "required": ["id", "company_id", "recipient_user_id", "type", "severity", "message_key", "dedup_key", "created_at"],
+  "properties": {
+    "id": {"type": "string", "format": "uuid"},
+    "company_id": {"type": "string", "format": "uuid"},
+    "recipient_user_id": {"type": "string", "format": "uuid"},
+    "type": {
+      "enum": ["official_deadline_approaching", "internal_target_approaching",
+               "official_deadline_breached", "next_action_overdue",
+               "next_action_overdue_escalation", "no_next_action",
+               "stale_assignment", "waiting_too_long", "undelivered_closeout",
+               "assignment_assigned", "assignment_reassigned", "task_assigned",
+               "document_received", "blocked_state", "payment_overdue",
+               "deadline_changed", "reminder"]
+    },
+    "severity": {"enum": ["info", "warning", "critical"]},
+    "assignment_id": {"type": ["string", "null"], "format": "uuid", "description": "null for daily digests"},
+    "message_key": {"type": "string", "pattern": "^ps\\.", "description": "never prose (ADR-015)"},
+    "params": {"type": "object", "description": "ids + minimal facts; never money amounts (PS-21 §5)"},
+    "dedup_key": {"type": "string", "description": "unique per live (unresolved) notification per recipient, e.g. official_deadline_approaching:<assignment_id>:urgent"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "acknowledged_at": {"type": ["string", "null"], "format": "date-time"},
+    "snoozed_until": {"type": ["string", "null"], "format": "date"},
+    "resolved_at": {"type": ["string", "null"], "format": "date-time", "description": "auto-resolve when cause disappears"},
+    "delivered_channels": {"type": "array", "items": {"enum": ["inapp", "email", "desktop"]}, "default": ["inapp"]}
+  },
+  "additionalProperties": false,
+  "$comment": "breach notifications are not user-optable-out; staleness-class types collapse into per-user daily digests (PS-19 §4)"
+}

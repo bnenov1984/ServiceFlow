@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://businessos.local/ps/deadline-config.schema.json",
+  "title": "Org deadline/inactivity configuration + holiday calendar — draft design shape, PS-13",
+  "type": "object",
+  "required": ["thresholds", "inactivity"],
+  "properties": {
+    "thresholds": {
+      "type": "object",
+      "required": ["attention_days", "urgent_days"],
+      "properties": {
+        "attention_days": {"type": "integer", "minimum": 2, "maximum": 60, "default": 7},
+        "urgent_days": {"type": "integer", "minimum": 1, "maximum": 30, "default": 3}
+      },
+      "additionalProperties": false,
+      "$comment": "invariant: attention_days > urgent_days >= 1; calendar days (working-day arithmetic for thresholds is F-class, ADR-PS-008)"
+    },
+    "inactivity": {
+      "type": "object",
+      "properties": {
+        "stale_working_days": {"type": "integer", "minimum": 1, "default": 5, "description": "I-1 / I-7"},
+        "waiting_working_days": {"type": "integer", "minimum": 1, "default": 10, "description": "I-5"},
+        "closeout_days": {"type": "integer", "minimum": 1, "default": 14, "description": "I-6, calendar days"},
+        "next_action_escalation_days": {"type": "integer", "minimum": 1, "default": 2, "description": "N-3 escalation to managers"}
+      },
+      "additionalProperties": false
+    },
+    "holiday_calendar": {
+      "type": "object",
+      "required": ["year", "dates", "source"],
+      "properties": {
+        "year": {"type": "integer"},
+        "dates": {"type": "array", "items": {"type": "string", "format": "date"}, "description": "non-working days incl. compensatory Mondays; weekends implicit"},
+        "source": {"enum": ["shipped", "org_edited"]}
+      },
+      "additionalProperties": false,
+      "$comment": "one record per (company, year), ps_holiday_calendar; used for badges + working-day staleness arithmetic only — never shifts deadlines"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://businessos.local/ps/assignment-link.schema.json",
+  "title": "Assignment link (ps_assignment_links) — draft design shape, PS-29 / ADR-PS-010",
+  "type": "object",
+  "required": ["id", "company_id", "assignment_id", "relation"],
+  "properties": {
+    "id": {"type": "string", "format": "uuid"},
+    "company_id": {"type": "string", "format": "uuid"},
+    "assignment_id": {"type": "string", "format": "uuid"},
+    "relation": {"enum": ["follow_up_of", "cs_project"]},
+    "target_assignment_id": {"type": ["string", "null"], "format": "uuid", "description": "intra-module: the original assignment (relation follow_up_of)"},
+    "target_module": {"type": ["string", "null"], "enum": ["construction-supervision", null], "description": "cross-module: opaque reference, no FK"},
+    "target_ref": {"type": ["string", "null"], "format": "uuid", "description": "counterpart module's aggregate id; dangling tolerated, rendered degraded"}
+  },
+  "additionalProperties": false,
+  "oneOf": [
+    {"required": ["target_assignment_id"], "properties": {"relation": {"const": "follow_up_of"}, "target_module": {"const": null}, "target_ref": {"const": null}}},
+    {"required": ["target_module", "target_ref"], "properties": {"relation": {"const": "cs_project"}, "target_assignment_id": {"const": null}}}
+  ],
+  "$comment": "exactly one of intra-/cross-module target sets — mirrors the PS-25 check constraint; cross-module data is never copied, only referenced"
+}

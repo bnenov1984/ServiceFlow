@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://businessos.local/ps/assignment.schema.json",
+  "title": "Assignment (ps_assignments) — draft design shape, PS-09/PS-25",
+  "type": "object",
+  "required": ["id", "company_id", "number", "title", "client_id", "service_type_id", "lifecycle_state", "received_on", "currency", "details_kind"],
+  "properties": {
+    "id": {"type": "string", "format": "uuid", "description": "UUIDv7 (shared_kernel.ids.new_id)"},
+    "company_id": {"type": "string", "format": "uuid"},
+    "number": {"type": "string", "pattern": "^[\\p{Lu}А-Я]{1,5}-\\d{4}-\\d{4}$", "description": "e.g. ПОР-2026-0137; unique per (company, year)"},
+    "title": {"type": "string", "minLength": 1, "maxLength": 300},
+    "description": {"type": "string"},
+    "client_id": {"type": "string", "format": "uuid"},
+    "client_contact_id": {"type": ["string", "null"], "format": "uuid"},
+    "service_type_id": {"type": "string", "format": "uuid"},
+    "owner_user_id": {"type": ["string", "null"], "format": "uuid", "description": "null only with explicit unassignment (INV-3)"},
+    "priority": {"enum": ["low", "normal", "high", "urgent"]},
+    "lifecycle_state": {"enum": ["active", "delivered", "completed", "cancelled"]},
+    "current_stage_id": {"type": ["string", "null"], "format": "uuid", "description": "points into ps_assignment_stages (the instance copy)"},
+    "received_on": {"type": "string", "format": "date"},
+    "planned_start_on": {"type": ["string", "null"], "format": "date"},
+    "internal_target_on": {"type": ["string", "null"], "format": "date"},
+    "official_deadline_on": {"type": ["string", "null"], "format": "date"},
+    "official_deadline_time": {"type": ["string", "null"], "pattern": "^\\d{2}:\\d{2}$", "description": "Europe/Sofia wall clock; only with official_deadline_on"},
+    "payment_due_on": {"type": ["string", "null"], "format": "date"},
+    "delivered_at": {"type": ["string", "null"], "format": "date-time"},
+    "delivery_method": {"type": ["string", "null"]},
+    "delivery_recipient": {"type": ["string", "null"]},
+    "completed_at": {"type": ["string", "null"], "format": "date-time"},
+    "completed_by": {"type": ["string", "null"], "format": "uuid"},
+    "cancelled_reason": {"type": ["string", "null"]},
+    "agreed_price": {"type": ["string", "null"], "pattern": "^\\d+\\.\\d{2}$", "description": "numeric(12,2) as string; totals always derived (INV-8)"},
+    "currency": {"type": "string", "default": "BGN"},
+    "details_kind": {"enum": ["none", "court_expertise", "valuation", "construction_acts"]},
+    "details": {
+      "oneOf": [
+        {"$ref": "#/$defs/emptyDetails"},
+        {"$ref": "#/$defs/courtExpertiseDetails"},
+        {"$ref": "#/$defs/valuationDetails"},
+        {"$ref": "#/$defs/constructionActsDetails"}
+      ],
+      "description": "typed JSONB selected by details_kind; versioned with v (PS-25 §3)"
+    },
+    "last_activity_at": {"type": "string", "format": "date-time", "readOnly": true, "description": "derived from ps_activity_events"}
+  },
+  "$defs": {
+    "emptyDetails": {"type": "object", "properties": {"v": {"const": 1}}, "additionalProperties": false},
+    "courtExpertiseDetails": {
+      "type": "object",
+      "required": ["v", "court", "case_number", "case_year"],
+      "properties": {
+        "v": {"const": 1},
+        "court": {"type": "string", "description": "e.g. Районен съд — Варна"},
+        "case_number": {"type": "string"},
+        "case_year": {"type": "integer"},
+        "case_type": {"type": "string", "description": "гражданско / наказателно / …"},
+        "questions": {"type": "array", "items": {"type": "string"}, "description": "задачи на експертизата"},
+        "deposit_amount": {"type": ["string", "null"], "pattern": "^\\d+\\.\\d{2}$"},
+        "deposit_status": {"enum": ["unknown", "pending", "paid", "released"]},
+        "hearing_on": {"type": ["string", "null"], "format": "date", "description": "informational copy; the operative hearing is the appointment next action"},
+        "inspection_required": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "valuationDetails": {
+      "type": "object",
+      "required": ["v", "property_address", "purpose"],
+      "properties": {
+        "v": {"const": 1},
+        "property_address": {"type": "string"},
+        "property_kind": {"type": "string", "description": "апартамент / къща / УПИ / …"},
+        "cadastral_id": {"type": ["string", "null"]},
+        "purpose": {"type": "string", "description": "обезпечение / финансови отчети / изпълнително дело / …"},
+        "orderer_ref": {"type": ["string", "null"], "description": "bank order №"},
+        "inspection_on": {"type": ["string", "null"], "format": "date", "description": "informational; operative inspection is the appointment next action"}
+      },
+      "additionalProperties": false
+    },
+    "constructionActsDetails": {
+      "type": "object",
+      "required": ["v", "project_name"],
+      "properties": {
+        "v": {"const": 1},
+        "project_name": {"type": "string"},
+        "site": {"type": ["string", "null"]},
+        "permit_ref": {"type": ["string", "null"], "description": "разрешение за строеж №/дата"},
+        "investor_name": {"type": ["string", "null"]},
+        "required_acts": {"type": "array", "items": {"type": "string"}, "description": "e.g. обр. 14, обр. 15; production of the acts belongs to the CS module"},
+        "responsible_engineer_user_id": {"type": ["string", "null"], "format": "uuid"}
+      },
+      "additionalProperties": false
+    }
+  }
+}
