@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from business_os.identity.contracts import get_company_profile
 from business_os.identity.deps import TenantDbDep, TenantDep, require_csrf
 from serviceflow.assets import service as assets_service
+from serviceflow.commercial import service as payments_service
 from serviceflow.customers import service as customers_service
 from serviceflow.service_orders import lines, protocol, service, statuses
 from serviceflow.service_orders.lines import PART_STATES
@@ -224,6 +225,8 @@ class OrderDetailOut(OrderOut):
     labor_lines: list[LaborLineOut]
     accessories: list[AccessoryOut]
     estimated_total: float
+    paid_amount: float
+    balance: float
 
 
 class TimelineEventOut(BaseModel):
@@ -312,6 +315,8 @@ def get_order(order_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep) -> OrderD
                     for line in lines.list_labor_lines(db, tenant, order_id)],
         accessories=[AccessoryOut.of(a) for a in lines.list_accessories(db, tenant, order_id)],
         estimated_total=float(lines.order_totals(db, tenant, order_id)),
+        paid_amount=float(payments_service.paid_amount(db, tenant, order_id)),
+        balance=float(payments_service.balance(db, tenant, order_id)),
     )
 
 

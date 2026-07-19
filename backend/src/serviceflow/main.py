@@ -18,6 +18,7 @@ from professional_services.clients.router import router as ps_clients_router
 from serviceflow import __version__
 from serviceflow.assets.router import router as assets_router
 from serviceflow.attachments.router import router as attachments_router
+from serviceflow.commercial.router import router as commercial_router
 from serviceflow.config import Settings, get_settings
 from serviceflow.contacts.router import router as contacts_router
 from serviceflow.customers.router import router as customers_router
@@ -79,6 +80,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(customers_router, prefix="/api/v1/customers", tags=["customers"])
     app.include_router(assets_router, prefix="/api/v1", tags=["assets"])
     app.include_router(orders_router, prefix="/api/v1", tags=["orders"])
+    app.include_router(commercial_router, prefix="/api/v1", tags=["commercial"])
     app.include_router(tasks_router, prefix="/api/v1", tags=["tasks"])
     app.include_router(attachments_router, prefix="/api/v1", tags=["attachments"])
     app.include_router(contacts_router, prefix="/api/v1", tags=["contacts"])
