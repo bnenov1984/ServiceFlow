@@ -18,6 +18,7 @@ from professional_services.clients.router import router as ps_clients_router
 from serviceflow import __version__
 from serviceflow.assets.router import router as assets_router
 from serviceflow.attachments.router import router as attachments_router
+from serviceflow.commercial.contracts import get_payment_summary
 from serviceflow.commercial.router import router as commercial_router
 from serviceflow.config import Settings, get_settings
 from serviceflow.contacts.router import router as contacts_router
@@ -25,10 +26,17 @@ from serviceflow.customers.router import router as customers_router
 from serviceflow.dashboard.router import router as dashboard_router
 from serviceflow.logging_setup import setup_logging
 from serviceflow.search.router import router as search_router
+from serviceflow.service_orders.contracts import register_payment_summary_provider
 from serviceflow.service_orders.router import router as orders_router
 from serviceflow.tasks.router import router as tasks_router
 
 logger = logging.getLogger(__name__)
+
+# Composition-root wiring (docs/business-os/04 rule R4): service_orders owns
+# the PaymentSummaryProvider port and never imports commercial; commercial
+# implements it and never imports service_orders' router/service directly.
+# Only this module — allowed to import everything — connects the two.
+register_payment_summary_provider(get_payment_summary)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

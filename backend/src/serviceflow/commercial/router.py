@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from business_os.identity.deps import TenantDbDep, TenantDep, require_csrf
 from serviceflow.commercial import service
 from serviceflow.commercial.models import Payment
-from serviceflow.service_orders import service as orders_service
+from serviceflow.service_orders import contracts as orders_contracts
 
 router = APIRouter()
 
@@ -58,17 +58,17 @@ def _not_found() -> HTTPException:
              status_code=201)
 def add_payment(order_id: uuid.UUID, body: PaymentIn, db: TenantDbDep,
                 tenant: TenantDep) -> PaymentOut:
-    order = orders_service.get(db, tenant, order_id)
+    order = orders_contracts.get_order_summary(db, tenant, order_id)
     if order is None:
         raise _not_found()
     # Terminal orders still accept payments settling an outstanding balance
     # (docs/01 §ServiceOrder invariants) — only archiving closes the door.
-    if order.archived_at is not None:
+    if order.archived:
         raise HTTPException(status_code=409, detail={
             "code": "order_error", "message_key": "errors.orders.archived", "params": {},
         })
     payment = service.add_payment(
-        db, tenant, order, amount=body.amount, method=body.method,
+        db, tenant, order.id, amount=body.amount, method=body.method,
         is_refund=body.is_refund, note=body.note,
     )
     return PaymentOut.of(payment)

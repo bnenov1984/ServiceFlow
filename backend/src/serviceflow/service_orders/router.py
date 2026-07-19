@@ -14,8 +14,8 @@ from pydantic import BaseModel, Field
 from business_os.identity.contracts import get_company_profile
 from business_os.identity.deps import TenantDbDep, TenantDep, require_csrf
 from serviceflow.assets import service as assets_service
-from serviceflow.commercial import service as payments_service
 from serviceflow.customers import service as customers_service
+from serviceflow.service_orders import contracts as orders_contracts
 from serviceflow.service_orders import lines, protocol, service, statuses
 from serviceflow.service_orders.lines import PART_STATES
 from serviceflow.service_orders.models import (
@@ -307,6 +307,7 @@ def get_order(order_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep) -> OrderD
     order = _get_or_404(db, tenant, order_id)
     diagnosis = service.get_diagnosis(db, tenant, order_id)
     base = OrderOut.of(order)
+    payment_summary = orders_contracts.get_payment_summary(db, tenant, order_id)
     return OrderDetailOut(
         **base.model_dump(),
         diagnosis=DiagnosisOut.of(diagnosis) if diagnosis else None,
@@ -315,8 +316,8 @@ def get_order(order_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep) -> OrderD
                     for line in lines.list_labor_lines(db, tenant, order_id)],
         accessories=[AccessoryOut.of(a) for a in lines.list_accessories(db, tenant, order_id)],
         estimated_total=float(lines.order_totals(db, tenant, order_id)),
-        paid_amount=float(payments_service.paid_amount(db, tenant, order_id)),
-        balance=float(payments_service.balance(db, tenant, order_id)),
+        paid_amount=float(payment_summary.paid_amount),
+        balance=float(payment_summary.balance),
     )
 
 
