@@ -13,8 +13,8 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from serviceflow.identity import security
-from serviceflow.identity.models import AuditLog, AuthSession, Company, User
+from business_os.identity import security
+from business_os.identity.models import AuditLog, AuthSession, Company, User
 
 logger = logging.getLogger(__name__)
 

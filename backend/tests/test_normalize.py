@@ -1,6 +1,6 @@
 """Pure normalization rules (ADR-010) — the P0-7 foundation, no DB needed."""
 
-from serviceflow.shared_kernel.normalize import (
+from business_os.shared_kernel.normalize import (
     normalize_identifier,
     normalize_phone,
     transliterate,

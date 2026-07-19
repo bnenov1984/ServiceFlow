@@ -14,8 +14,8 @@ pytestmark = pytest.mark.skipif(
 
 def _login(client: TestClient, company: str = "Сервиз А",
            email: str = "a@a.bg") -> dict[str, str]:
-    from serviceflow.identity.service import seed_company
-    from serviceflow.shared_kernel.db import open_session
+    from business_os.identity.service import seed_company
+    from business_os.shared_kernel.db import open_session
 
     for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
         seed_company(db, company, "Owner", email, "парола-123")
@@ -145,9 +145,9 @@ def test_cancelled_is_owner_only(client: TestClient) -> None:
     cid, aid = _customer_and_asset(client, h)
     oid = _order(client, h, cid, aid)["id"]
 
-    from serviceflow.identity import security
-    from serviceflow.identity.models import User
-    from serviceflow.shared_kernel.db import open_session
+    from business_os.identity import security
+    from business_os.identity.models import User
+    from business_os.shared_kernel.db import open_session
 
     for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
         from sqlalchemy import select
@@ -229,9 +229,9 @@ def test_warranty_return_requires_delivered_source(client: TestClient) -> None:
 
 
 def test_timeline_records_actor_and_survives_pin_switch(client: TestClient) -> None:
-    from serviceflow.identity import security
-    from serviceflow.identity.models import User
-    from serviceflow.shared_kernel.db import open_session
+    from business_os.identity import security
+    from business_os.identity.models import User
+    from business_os.shared_kernel.db import open_session
 
     h = _login(client)
     cid, aid = _customer_and_asset(client, h)

@@ -13,8 +13,8 @@ pytestmark = pytest.mark.skipif(
 
 def _seed(company: str = "Сервиз А", email: str = "maria@a.bg",
           password: str = "парола-123", pin: str | None = "1234") -> None:
-    from serviceflow.identity.service import seed_company
-    from serviceflow.shared_kernel.db import open_session
+    from business_os.identity.service import seed_company
+    from business_os.shared_kernel.db import open_session
 
     for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
         seed_company(db, company, "Мария", email, password, pin)
@@ -56,7 +56,7 @@ def test_wrong_password_and_message_key_contract(client: TestClient) -> None:
 
 
 def test_login_rate_limit(client: TestClient) -> None:
-    from serviceflow.identity import service
+    from business_os.identity import service
 
     service._failures.clear()
     _seed()
@@ -72,9 +72,9 @@ def test_login_rate_limit(client: TestClient) -> None:
 def test_pin_switch_changes_acting_user(client: TestClient) -> None:
     import os as _os
 
-    from serviceflow.identity import security
-    from serviceflow.identity.models import User
-    from serviceflow.shared_kernel.db import open_session
+    from business_os.identity import security
+    from business_os.identity.models import User
+    from business_os.shared_kernel.db import open_session
 
     _seed()
     me = _login(client)

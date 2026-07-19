@@ -14,8 +14,8 @@ pytestmark = pytest.mark.skipif(
 
 def _login(client: TestClient, company: str = "Сервиз А",
            email: str = "a@a.bg") -> dict[str, str]:
-    from serviceflow.identity.service import seed_company
-    from serviceflow.shared_kernel.db import open_session
+    from business_os.identity.service import seed_company
+    from business_os.shared_kernel.db import open_session
 
     for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
         seed_company(db, company, "Owner", email, "парола-123")
@@ -88,9 +88,9 @@ def test_reassign_uses_explicit_flag_to_allow_unassign(client: TestClient) -> No
     h = _login(client)
     tid = client.post("/api/v1/tasks", headers=h, json={"title": "x"}).json()["id"]
 
-    from serviceflow.identity import security
-    from serviceflow.identity.models import User
-    from serviceflow.shared_kernel.db import open_session
+    from business_os.identity import security
+    from business_os.identity.models import User
+    from business_os.shared_kernel.db import open_session
 
     for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
         from sqlalchemy import select

@@ -11,10 +11,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from business_os.identity.contracts import get_company_profile
+from business_os.identity.deps import TenantDbDep, TenantDep, require_csrf
 from serviceflow.assets import service as assets_service
 from serviceflow.customers import service as customers_service
-from serviceflow.identity.contracts import get_company_profile
-from serviceflow.identity.deps import TenantDbDep, TenantDep, require_csrf
 from serviceflow.service_orders import lines, protocol, service, statuses
 from serviceflow.service_orders.lines import PART_STATES
 from serviceflow.service_orders.models import (

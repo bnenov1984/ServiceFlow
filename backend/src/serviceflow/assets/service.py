@@ -8,9 +8,9 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from business_os.shared_kernel.db import TenantContext, scoped
+from business_os.shared_kernel.normalize import normalize_identifier
 from serviceflow.assets.models import Asset, AssetIdentifier, AssetType
-from serviceflow.shared_kernel.db import TenantContext, scoped
-from serviceflow.shared_kernel.normalize import normalize_identifier
 
 
 class FieldValidationError(Exception):

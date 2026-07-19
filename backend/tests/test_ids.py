@@ -1,6 +1,6 @@
 import time
 
-from serviceflow.shared_kernel.ids import new_id
+from business_os.shared_kernel.ids import new_id
 
 
 def test_uuid7_version_and_variant() -> None:

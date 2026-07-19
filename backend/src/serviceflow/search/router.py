@@ -5,7 +5,7 @@ import uuid
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from serviceflow.identity.deps import TenantDbDep, TenantDep
+from business_os.identity.deps import TenantDbDep, TenantDep
 from serviceflow.search import service
 
 router = APIRouter()

@@ -8,10 +8,10 @@ from datetime import UTC, datetime, time
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from business_os.shared_kernel.db import TenantContext, scoped
+from business_os.shared_kernel.events import DomainEvent, publish
 from serviceflow.contacts.models import ContactRecord
 from serviceflow.service_orders.models import ServiceOrder
-from serviceflow.shared_kernel.db import TenantContext, scoped
-from serviceflow.shared_kernel.events import DomainEvent, publish
 
 COMMUNICATION_TYPES = ("call", "email", "message", "visit")
 ALL_TYPES = (*COMMUNICATION_TYPES, "note")

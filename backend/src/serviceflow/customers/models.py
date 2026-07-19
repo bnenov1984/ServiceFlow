@@ -8,8 +8,8 @@ from sqlalchemy import ForeignKey, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from serviceflow.shared_kernel.db import Base, TimestampMixin
-from serviceflow.shared_kernel.ids import new_id
+from business_os.shared_kernel.db import Base, TimestampMixin
+from business_os.shared_kernel.ids import new_id
 
 
 class Customer(Base, TimestampMixin):

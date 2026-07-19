@@ -32,7 +32,7 @@ implementation detail — importing it directly from another module is what
 the `identity-public-boundary` import-linter contract (backend/.importlinter)
 mechanically blocks. The internal `identity.service` reference below is kept
 as `_service` (leading underscore), not `service`: this closes the easy
-`from serviceflow.identity.deps import service` re-export bypass (see
+`from business_os.identity.deps import service` re-export bypass (see
 docs/business-os/16 for what this does and does not close).
 """
 
@@ -42,10 +42,10 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
+from business_os.identity import service as _service
+from business_os.identity.models import AuthSession, User
+from business_os.shared_kernel.db import TenantContext, bind_tenant_scope, open_session
 from serviceflow.config import get_settings
-from serviceflow.identity import service as _service
-from serviceflow.identity.models import AuthSession, User
-from serviceflow.shared_kernel.db import TenantContext, bind_tenant_scope, open_session
 
 SESSION_COOKIE = "sf_session"
 

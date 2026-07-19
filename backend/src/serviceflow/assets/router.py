@@ -6,10 +6,10 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from business_os.identity.deps import TenantDbDep, TenantDep, require_csrf
 from serviceflow.assets import service
 from serviceflow.assets.models import Asset
 from serviceflow.customers import service as customers_service
-from serviceflow.identity.deps import TenantDbDep, TenantDep, require_csrf
 
 router = APIRouter()
 

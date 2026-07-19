@@ -59,10 +59,10 @@ def migrated_db() -> str:
 
 @pytest.fixture
 def client(migrated_db: str, tmp_path) -> Iterator[TestClient]:  # noqa: ANN001
+    from business_os.shared_kernel.db import get_engine
+    from business_os.shared_kernel.storage import get_local_storage
     from serviceflow.config import get_settings
     from serviceflow.main import create_app
-    from serviceflow.shared_kernel.db import get_engine
-    from serviceflow.shared_kernel.storage import get_local_storage
 
     os.environ["SERVICEFLOW_DATABASE_URL"] = migrated_db
     os.environ["SERVICEFLOW_DEBUG"] = "true"  # non-Secure cookies for TestClient

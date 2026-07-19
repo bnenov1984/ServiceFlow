@@ -16,9 +16,9 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_pin_switch_cannot_cross_companies(client: TestClient) -> None:
-    from serviceflow.identity.models import User
-    from serviceflow.identity.service import seed_company
-    from serviceflow.shared_kernel.db import open_session
+    from business_os.identity.models import User
+    from business_os.identity.service import seed_company
+    from business_os.shared_kernel.db import open_session
 
     url = os.environ["SERVICEFLOW_DATABASE_URL"]
     for db in open_session(url):
@@ -41,9 +41,9 @@ def test_pin_switch_cannot_cross_companies(client: TestClient) -> None:
 
 
 def test_scoped_chokepoint_filters_by_company(client: TestClient) -> None:
-    from serviceflow.identity.models import User
-    from serviceflow.identity.service import seed_company
-    from serviceflow.shared_kernel.db import TenantContext, open_session, scoped
+    from business_os.identity.models import User
+    from business_os.identity.service import seed_company
+    from business_os.shared_kernel.db import TenantContext, open_session, scoped
 
     url = os.environ["SERVICEFLOW_DATABASE_URL"]
     for db in open_session(url):

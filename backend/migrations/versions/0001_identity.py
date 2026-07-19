@@ -1,7 +1,7 @@
 """Migration #1: identity bootstrap — companies, users, sessions, audit_log.
 
 Identity tables are the RLS-exempt tenant bootstrap (queries centralized in
-serviceflow.identity.service — ADR-016 note). RLS policies begin with the first
+business_os.identity.service — ADR-016 note). RLS policies begin with the first
 domain-table migration. pg_trgm enabled here once for the search work ahead
 (ADR-010).
 

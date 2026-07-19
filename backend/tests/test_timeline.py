@@ -14,8 +14,8 @@ pytestmark = pytest.mark.skipif(
 def test_timeline_events_reject_update_and_delete(client: TestClient) -> None:
     from sqlalchemy.exc import ProgrammingError
 
-    from serviceflow.identity.service import seed_company
-    from serviceflow.shared_kernel.db import bind_tenant_scope, open_session
+    from business_os.identity.service import seed_company
+    from business_os.shared_kernel.db import bind_tenant_scope, open_session
     from serviceflow.timeline.models import TimelineEvent
 
     company_id = None

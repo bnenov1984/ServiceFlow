@@ -8,11 +8,11 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from business_os.shared_kernel.db import TenantContext, scoped
+from business_os.shared_kernel.events import DomainEvent, publish
+from business_os.shared_kernel.storage import StoragePort
 from serviceflow.attachments import media
 from serviceflow.attachments.models import Attachment
-from serviceflow.shared_kernel.db import TenantContext, scoped
-from serviceflow.shared_kernel.events import DomainEvent, publish
-from serviceflow.shared_kernel.storage import StoragePort
 
 ALLOWED_MIMES = {"image/jpeg", "image/png", "image/webp", "image/heic", "application/pdf"}
 ALLOWED_STAGES = ("reception", "progress", "completed", "other")

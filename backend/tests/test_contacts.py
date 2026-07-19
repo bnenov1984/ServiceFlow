@@ -14,8 +14,8 @@ pytestmark = pytest.mark.skipif(
 
 def _login(client: TestClient, company: str = "Сервиз А",
            email: str = "a@a.bg") -> dict[str, str]:
-    from serviceflow.identity.service import seed_company
-    from serviceflow.shared_kernel.db import open_session
+    from business_os.identity.service import seed_company
+    from business_os.shared_kernel.db import open_session
 
     for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
         seed_company(db, company, "Owner", email, "парола-123")
@@ -107,8 +107,8 @@ def test_edit_allowed_for_author_before_frozen(client: TestClient) -> None:
 def test_edit_blocked_once_frozen(client: TestClient) -> None:
     import os as _os
 
-    from serviceflow.identity.service import seed_company
-    from serviceflow.shared_kernel.db import open_session
+    from business_os.identity.service import seed_company
+    from business_os.shared_kernel.db import open_session
 
     for db in open_session(_os.environ["SERVICEFLOW_DATABASE_URL"]):
         seed_company(db, "Сервиз А", "Owner", "a@a.bg", "парола-123")
@@ -138,9 +138,9 @@ def test_edit_blocked_once_frozen(client: TestClient) -> None:
 
 
 def test_edit_blocked_for_non_author(client: TestClient) -> None:
-    from serviceflow.identity import security
-    from serviceflow.identity.models import User
-    from serviceflow.shared_kernel.db import open_session
+    from business_os.identity import security
+    from business_os.identity.models import User
+    from business_os.shared_kernel.db import open_session
 
     h = _login(client)
     cid = _customer(client, h)

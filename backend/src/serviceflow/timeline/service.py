@@ -5,8 +5,8 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from serviceflow.shared_kernel.db import TenantContext, scoped
-from serviceflow.shared_kernel.events import DomainEvent, subscribe
+from business_os.shared_kernel.db import TenantContext, scoped
+from business_os.shared_kernel.events import DomainEvent, subscribe
 from serviceflow.timeline.models import TimelineEvent
 
 

@@ -10,16 +10,16 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr, Field
 
-from serviceflow.config import get_settings
-from serviceflow.identity import service
-from serviceflow.identity.deps import (
+from business_os.identity import service
+from business_os.identity.deps import (
     SESSION_COOKIE,
     AuthDep,
     DbDep,
     TenantDep,
     require_csrf,
 )
-from serviceflow.identity.models import AuthSession, User
+from business_os.identity.models import AuthSession, User
+from serviceflow.config import get_settings
 
 router = APIRouter()
 users_router = APIRouter()

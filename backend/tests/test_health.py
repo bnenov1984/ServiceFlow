@@ -5,8 +5,8 @@ from serviceflow.main import create_app
 
 
 def test_health_reports_honestly(monkeypatch: pytest.MonkeyPatch) -> None:
+    from business_os.platform import health as health_module
     from serviceflow.config import Settings
-    from serviceflow.platform import health as health_module
 
     # Force database_url=None explicitly rather than relying on the ambient
     # environment: a developer-local backend/.env can supply a real

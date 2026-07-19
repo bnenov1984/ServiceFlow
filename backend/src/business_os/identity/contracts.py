@@ -10,7 +10,7 @@ identity-boundary enforcement (docs/business-os/04 rule set, `core-not-...`
 family in backend/.importlinter) exists to prevent.
 
 Internal identity module kept as `_service` (leading underscore), not
-`service` — this is deliberate: it stops `from serviceflow.identity.contracts
+`service` — this is deliberate: it stops `from business_os.identity.contracts
 import service` from working as a convenient re-export bypass of the
 boundary (see docs/business-os/16 for the residual limitation this does and
 does not close).
@@ -22,7 +22,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from serviceflow.identity import service as _service
+from business_os.identity import service as _service
 
 
 @dataclass(frozen=True)

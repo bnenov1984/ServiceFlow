@@ -12,8 +12,8 @@ pytestmark = pytest.mark.skipif(
 
 
 def _seed_and_login(client: TestClient, company: str, email: str) -> str:
-    from serviceflow.identity.service import seed_company
-    from serviceflow.shared_kernel.db import open_session
+    from business_os.identity.service import seed_company
+    from business_os.shared_kernel.db import open_session
 
     for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
         seed_company(db, company, "Owner", email, "парола-123", "1234")
@@ -94,8 +94,8 @@ def test_rls_blocks_even_unscoped_queries(client: TestClient) -> None:
     """ADR-016 layer 3: a raw query that FORGETS scoped() still cannot cross tenants."""
     from sqlalchemy import select, text
 
+    from business_os.shared_kernel.db import open_session
     from serviceflow.customers.models import Customer
-    from serviceflow.shared_kernel.db import open_session
 
     csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
     client.post("/api/v1/customers", headers={"X-CSRF-Token": csrf}, json={

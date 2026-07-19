@@ -6,9 +6,9 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from business_os.identity.deps import TenantDbDep, TenantDep, require_csrf, require_owner
 from serviceflow.customers import service
 from serviceflow.customers.models import Customer
-from serviceflow.identity.deps import TenantDbDep, TenantDep, require_csrf, require_owner
 from serviceflow.service_orders import service as orders_service
 
 router = APIRouter()

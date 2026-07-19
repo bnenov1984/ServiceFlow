@@ -6,7 +6,7 @@ from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from serviceflow.identity.deps import TenantDbDep, TenantDep, require_csrf
+from business_os.identity.deps import TenantDbDep, TenantDep, require_csrf
 from serviceflow.service_orders import service as orders_service
 from serviceflow.tasks import service
 from serviceflow.tasks.models import Task

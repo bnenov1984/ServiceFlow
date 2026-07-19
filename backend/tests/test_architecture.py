@@ -16,13 +16,13 @@ network, runs in milliseconds.
 
 # Import every module that defines tables so metadata is complete — mirrors
 # migrations/env.py's import list (the same models Alembic autogenerate needs).
+from business_os.identity import models as _identity_models  # noqa: F401
+from business_os.shared_kernel.db import Base
 from serviceflow.assets import models as _assets_models  # noqa: F401
 from serviceflow.attachments import models as _attachments_models  # noqa: F401
 from serviceflow.contacts import models as _contacts_models  # noqa: F401
 from serviceflow.customers import models as _customers_models  # noqa: F401
-from serviceflow.identity import models as _identity_models  # noqa: F401
 from serviceflow.service_orders import models as _service_orders_models  # noqa: F401
-from serviceflow.shared_kernel.db import Base
 from serviceflow.tasks import models as _tasks_models  # noqa: F401
 from serviceflow.timeline import models as _timeline_models  # noqa: F401
 
@@ -34,10 +34,10 @@ from serviceflow.timeline import models as _timeline_models  # noqa: F401
 # this map reflects the *current* code owner (service_orders), not a decision
 # on where it ends up in Етап 4.
 TABLE_OWNERS = {
-    "companies": "serviceflow.identity",
-    "users": "serviceflow.identity",
-    "sessions": "serviceflow.identity",
-    "audit_log": "serviceflow.identity",
+    "companies": "business_os.identity",
+    "users": "business_os.identity",
+    "sessions": "business_os.identity",
+    "audit_log": "business_os.identity",
     "customers": "serviceflow.customers",
     "asset_types": "serviceflow.assets",
     "assets": "serviceflow.assets",
@@ -108,7 +108,7 @@ def test_find_violations_flags_wrong_owner() -> None:
 def test_find_violations_flags_missing_table() -> None:
     """A table declared in TABLE_OWNERS that no longer exists in the live
     schema (e.g. dropped by a migration without updating this map)."""
-    violations = _find_violations(live={}, declared={"ghost_table": "serviceflow.identity"})
+    violations = _find_violations(live={}, declared={"ghost_table": "business_os.identity"})
     assert len(violations) == 1
     assert "ghost_table" in violations[0]
 
@@ -145,7 +145,7 @@ def test_no_table_ownership_violations() -> None:
 # What import-linter's `protected` contract type cannot see is a *namespace*
 # property: whether an approved public module (deps.py, contracts.py) itself
 # re-exposes an internal name as one of its own attributes, which would let
-# `from serviceflow.identity.deps import service` work as a bypass. This test
+# `from business_os.identity.deps import service` work as a bypass. This test
 # checks that property directly — it is not redundant with import-linter,
 # which only tracks import *statements*, not module namespace contents.
 
@@ -154,11 +154,11 @@ def test_identity_public_modules_do_not_reexport_internal_service() -> None:
     """deps.py and contracts.py hold their internal identity.service
     reference as `_service` (leading underscore), not `service`, precisely so
     neither module's own namespace exposes an easy re-export of it."""
-    from serviceflow.identity import contracts, deps
+    from business_os.identity import contracts, deps
 
     assert not hasattr(deps, "service"), (
         "identity.deps re-exposes 'service' as a public attribute again — "
-        "this reopens the 'from serviceflow.identity.deps import service' "
+        "this reopens the 'from business_os.identity.deps import service' "
         "boundary bypass documented in docs/business-os/16. Re-alias the "
         "internal import to `_service`."
     )

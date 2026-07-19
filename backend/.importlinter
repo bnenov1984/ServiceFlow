@@ -1,5 +1,14 @@
 [importlinter]
-root_package = serviceflow
+root_packages =
+    serviceflow
+    business_os
+
+; Business OS Phase 3 (docs/business-os/08_EVOLUTION_ROADMAP.md): Core
+; (identity, platform, shared_kernel) renamed from serviceflow.* to a
+; standalone business_os.* root package. Mechanical only: contracts below are
+; updated for the new package names; their meaning is unchanged from Phases
+; 1-2.5. serviceflow.identity/.platform/.shared_kernel no longer exist —
+; identity is business_os.identity, etc.
 
 ; ADR-001: domain modules never import platform (03 par.5 dependency direction).
 ; serviceflow.dashboard added 18.07.2026 (docs/business-os/13, Phase 1 audit):
@@ -7,11 +16,13 @@ root_package = serviceflow
 ; a violation of any other listed source and went undetected (proven by a
 ; mutation test — see BOS-13). Not caught transitively, since forbidden-contract
 ; checking only walks forward from declared sources.
+; serviceflow.identity removed from source_modules at Phase 3 (was the vertical
+; name for what is now business_os.identity — Core, not a domain module; Core's
+; own relationship to platform is covered by core-not-modules below instead).
 [importlinter:contract:domain-not-platform]
 name = Domain modules must not import platform
 type = forbidden
 source_modules =
-    serviceflow.identity
     serviceflow.customers
     serviceflow.assets
     serviceflow.service_orders
@@ -23,21 +34,17 @@ source_modules =
     serviceflow.tasks
     serviceflow.dashboard
 forbidden_modules =
-    serviceflow.platform
+    business_os.platform
 
 ; shared_kernel is the bottom layer: imports nothing from the application.
-; serviceflow.dashboard added 18.07.2026 (docs/business-os/13, Phase 1 audit):
-; it was missing from forbidden_modules. A mutation test showed this contract
-; still caught a shared_kernel -> dashboard import today (transitively, via
-; dashboard's own imports of already-forbidden modules) — but that detection
-; is incidental, not structural, so dashboard is now listed explicitly too.
 [importlinter:contract:shared-kernel-bottom]
 name = shared_kernel imports nothing above it
 type = forbidden
 source_modules =
-    serviceflow.shared_kernel
+    business_os.shared_kernel
 forbidden_modules =
-    serviceflow.identity
+    business_os.identity
+    business_os.platform
     serviceflow.customers
     serviceflow.assets
     serviceflow.service_orders
@@ -48,7 +55,6 @@ forbidden_modules =
     serviceflow.search
     serviceflow.tasks
     serviceflow.dashboard
-    serviceflow.platform
     serviceflow.main
     serviceflow.config
 
@@ -61,8 +67,8 @@ forbidden_modules =
 name = Business OS Core (identity, platform) must not import ServiceFlow modules
 type = forbidden
 source_modules =
-    serviceflow.identity
-    serviceflow.platform
+    business_os.identity
+    business_os.platform
 forbidden_modules =
     serviceflow.customers
     serviceflow.assets
@@ -75,7 +81,7 @@ forbidden_modules =
     serviceflow.tasks
     serviceflow.dashboard
 
-; Business OS Phase 3 (docs/business-os/16): Identity's public contract is
+; Business OS Phase 2.5 (docs/business-os/16): Identity's public contract is
 ; identity.deps + identity.contracts only. `type = protected` (not
 ; `forbidden`): a `forbidden` contract walks the full transitive closure, so
 ; every external router would be flagged for merely depending on
@@ -85,20 +91,17 @@ forbidden_modules =
 ; find_modules_that_directly_import), which is the right semantic: identity's
 ; own submodules (deps, contracts, and the protected ones importing each
 ; other) stay free; main.py/seed.py (composition root) are explicitly listed
-; since they are not descendants of serviceflow.identity. Zero violations
-; existed at audit time after migrating the one found
-; (service_orders/router.py -> identity.service.get_company, moved to
-; identity.contracts.get_company_profile) — enforced directly, no baseline.
+; since they are not descendants of business_os.identity.
 [importlinter:contract:identity-public-boundary]
 name = External modules must use identity's public contract only
 type = protected
 protected_modules =
-    serviceflow.identity.models
-    serviceflow.identity.service
-    serviceflow.identity.security
-    serviceflow.identity.router
+    business_os.identity.models
+    business_os.identity.service
+    business_os.identity.security
+    business_os.identity.router
 allowed_importers =
-    serviceflow.identity
+    business_os.identity
     serviceflow.main
     serviceflow.seed
 

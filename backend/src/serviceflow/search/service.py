@@ -10,15 +10,15 @@ from dataclasses import dataclass
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from serviceflow.assets.models import Asset, AssetIdentifier
-from serviceflow.customers.models import Customer
-from serviceflow.service_orders.models import ServiceOrder
-from serviceflow.shared_kernel.db import TenantContext, scoped
-from serviceflow.shared_kernel.normalize import (
+from business_os.shared_kernel.db import TenantContext, scoped
+from business_os.shared_kernel.normalize import (
     normalize_identifier,
     normalize_phone,
     transliterate,
 )
+from serviceflow.assets.models import Asset, AssetIdentifier
+from serviceflow.customers.models import Customer
+from serviceflow.service_orders.models import ServiceOrder
 
 GROUP_LIMIT = 5
 MIN_QUERY_LEN = 2

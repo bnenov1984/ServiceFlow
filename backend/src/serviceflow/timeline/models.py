@@ -12,8 +12,8 @@ from sqlalchemy import ForeignKey, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from serviceflow.shared_kernel.db import Base
-from serviceflow.shared_kernel.ids import new_id
+from business_os.shared_kernel.db import Base
+from business_os.shared_kernel.ids import new_id
 
 
 class TimelineEvent(Base):

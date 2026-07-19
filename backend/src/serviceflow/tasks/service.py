@@ -7,10 +7,10 @@ from datetime import UTC, date, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from business_os.shared_kernel.db import TenantContext, scoped
+from business_os.shared_kernel.events import DomainEvent, publish
 from serviceflow.service_orders import statuses
 from serviceflow.service_orders.models import ServiceOrder
-from serviceflow.shared_kernel.db import TenantContext, scoped
-from serviceflow.shared_kernel.events import DomainEvent, publish
 from serviceflow.tasks.models import Task
 
 

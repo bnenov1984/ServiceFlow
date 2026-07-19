@@ -9,6 +9,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 import serviceflow.timeline.service  # noqa: F401 — registers the timeline subscriber
+from business_os.identity.router import router as auth_router
+from business_os.identity.router import users_router
+from business_os.platform.health import router as health_router
 from serviceflow import __version__
 from serviceflow.assets.router import router as assets_router
 from serviceflow.attachments.router import router as attachments_router
@@ -16,10 +19,7 @@ from serviceflow.config import Settings, get_settings
 from serviceflow.contacts.router import router as contacts_router
 from serviceflow.customers.router import router as customers_router
 from serviceflow.dashboard.router import router as dashboard_router
-from serviceflow.identity.router import router as auth_router
-from serviceflow.identity.router import users_router
 from serviceflow.logging_setup import setup_logging
-from serviceflow.platform.health import router as health_router
 from serviceflow.search.router import router as search_router
 from serviceflow.service_orders.router import router as orders_router
 from serviceflow.tasks.router import router as tasks_router

@@ -8,9 +8,9 @@ from datetime import UTC, datetime
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from business_os.shared_kernel.db import TenantContext, scoped
+from business_os.shared_kernel.normalize import normalize_phone, transliterate
 from serviceflow.customers.models import Customer
-from serviceflow.shared_kernel.db import TenantContext, scoped
-from serviceflow.shared_kernel.normalize import normalize_phone, transliterate
 
 
 def _refresh_shadows(customer: Customer) -> None:

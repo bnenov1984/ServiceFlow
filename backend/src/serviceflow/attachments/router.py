@@ -8,12 +8,12 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from business_os.identity.deps import TenantDbDep, TenantDep, require_csrf
+from business_os.shared_kernel.storage import LocalFilesystemStorage, get_local_storage
 from serviceflow.attachments import service
 from serviceflow.attachments.models import Attachment
 from serviceflow.config import get_settings
-from serviceflow.identity.deps import TenantDbDep, TenantDep, require_csrf
 from serviceflow.service_orders import service as orders_service
-from serviceflow.shared_kernel.storage import LocalFilesystemStorage, get_local_storage
 
 router = APIRouter()
 

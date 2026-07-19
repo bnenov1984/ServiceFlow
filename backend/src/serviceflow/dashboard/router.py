@@ -11,10 +11,10 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
-from serviceflow.identity.deps import TenantDbDep, TenantDep
+from business_os.identity.deps import TenantDbDep, TenantDep
+from business_os.shared_kernel.db import TenantContext, scoped
 from serviceflow.service_orders import statuses
 from serviceflow.service_orders.models import ServiceOrder
-from serviceflow.shared_kernel.db import TenantContext, scoped
 from serviceflow.tasks.models import Task
 
 router = APIRouter()

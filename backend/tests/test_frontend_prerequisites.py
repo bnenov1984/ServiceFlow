@@ -16,8 +16,8 @@ pytestmark = pytest.mark.skipif(
 
 def _login(client: TestClient, company: str = "Сервиз А",
            email: str = "a@a.bg") -> dict[str, str]:
-    from serviceflow.identity.service import seed_company
-    from serviceflow.shared_kernel.db import open_session
+    from business_os.identity.service import seed_company
+    from business_os.shared_kernel.db import open_session
 
     for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
         seed_company(db, company, "Мария", email, "парола-123", "1234")
@@ -29,9 +29,9 @@ def _login(client: TestClient, company: str = "Сервиз А",
 def _add_worker(email: str, name: str = "Иво", active: bool = True) -> str:
     from sqlalchemy import select
 
-    from serviceflow.identity import security
-    from serviceflow.identity.models import User
-    from serviceflow.shared_kernel.db import open_session
+    from business_os.identity import security
+    from business_os.identity.models import User
+    from business_os.shared_kernel.db import open_session
 
     for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
         owner = db.scalar(select(User).where(User.email == "a@a.bg"))
