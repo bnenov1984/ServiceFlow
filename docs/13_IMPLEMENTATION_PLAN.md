@@ -71,6 +71,20 @@ started — gated (see below).
 Unchanged from v2.1: диагностична оферта към поръчка · разширени протоколи ·
 фактури (P0-2 gapless) · плащания · **счетоводен gate**.
 
+**Плащания (Payment recording) — ✅ landed 19.07.2026, ahead of the rest of
+Етап 4.** `serviceflow.commercial` (migration #8: `payments`, RLS FORCE +
+tenant_isolation) · `POST /orders/{id}/payments` · derived `paid_amount`/
+`balance` on order detail (BR-3, reuses `lines.order_totals` — no second money
+formula) · refund = new offsetting record, never a mutation · allowed on
+terminal orders (docs/01 §ServiceOrder exception), blocked only when archived
+· DeliveryDialog records an optional payment inline, delivery still succeeds
+with an open balance · `payment_recorded`/`payment_refunded` timeline events.
+Chosen ahead of Фактура because it needs no numbering, no accountant-reviewed
+VAT rules, and docs/08 already declares `payments.invoice_id` nullable — it
+never required Invoice to exist. **Invoice remains not started**: numbering
+ownership (`document_sequences` — still the one Open item, BOS-05 §1),
+accountant review, VAT modes, immutability, PDF, annul/reissue.
+
 ## Етап 5 — Hardening & Pilot
 
 Security hardening по преработения 11 (internet-facing: rate limiting навсякъде,

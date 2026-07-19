@@ -37,12 +37,13 @@ brevity.
 | `ps_clients` | professional_services.clients | Professional Services Operations (module #3) | Professional Services | clients service only | none — module-local, no shared FK from other modules | Implemented (walking skeleton, 18.07.2026) |
 | `ps_assignments` | professional_services.assignments | Professional Services Operations | Professional Services | assignments service only (stage only via one transition function, same discipline as service_orders) | FK to `ps_clients.id`; `company_id` FK to `companies.id` | Implemented (walking skeleton, 18.07.2026) |
 | `ps_next_actions` | professional_services.actions | Professional Services Operations | Professional Services | actions service only | FK to `ps_assignments.id`, `owner_user_id` FK to `users.id`; deadline risk computed at request time, not persisted | Implemented (walking skeleton, 18.07.2026) |
+| `payments` | commercial | Commercial Documents | Commercial; Service Ops reads derived paid_amount/balance via `commercial.service` (same pattern as `service_orders` reading `customers`/`assets`) | commercial service only | `order_id` FK to `service_orders.id`; `invoice_id` nullable, **no FK yet** — `invoices` doesn't exist (Etap 4 adds `fk_payments_invoice_id_invoices`) | Implemented (Payment recording, 19.07.2026) |
 
 ## 2. Ownership matrix — planned tables (not in any migration yet)
 
 | Table (source) | Proposed owner | Readers | Writers | Status |
 |---|---|---|---|---|
-| `invoices`, `invoice_lines`, `payments` (docs/08 §commercial) | Commercial Documents | Commercial; Service Ops via contract (balance/status per order); platform export | Commercial only | Recommended |
+| `invoices`, `invoice_lines` (docs/08 §commercial) | Commercial Documents | Commercial; Service Ops via contract (balance/status per order); platform export | Commercial only | Recommended — Etap 4 (numbering ownership, accountant review, VAT rules, immutability, PDF, annul/reissue) |
 | `jobs` (docs/08 §platform, ADR-006) | Core: Platform Services | Platform | Platform (modules enqueue via contract) | Recommended |
 | subscription/billing state + webhook inbox (ADR-018) | Core: Platform Services | Platform; admin console | Platform | Confirmed (ADR-018) that it exists; ownership Recommended |
 | export/`backup_runs`, `schema_meta` (docs/08 §platform, ADR-012) | Core: Platform Services | Platform | Platform | Recommended |
@@ -89,7 +90,9 @@ concepts, three owners. Status: Recommended.
 
 **Payment ownership.** Customer payments against orders/invoices → Commercial
 Documents (`payments`, docs/08). Tenant subscription payments → Platform
-Services (provider-side, webhook-recorded). Status: Recommended.
+Services (provider-side, webhook-recorded). Status: Implemented (19.07.2026,
+Payment recording — `invoice_id` nullable, no FK until Etap 4's `invoices`
+table exists; a payment never requires an invoice, docs/01 §Payment).
 
 **Inventory ownership.** Nothing to own — `part_lines` are deliberately
 inventory-free free-text lines (model docstring; discovery S5; docs/08 §4 "no
