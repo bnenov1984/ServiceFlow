@@ -30,7 +30,9 @@ import { describe, expect, it } from "vitest";
 // or renamed — the completeness test below fails loudly if they drift from
 // the real folder listing.
 const LEAF_DIRS = ["lib", "components", "i18n", "generated"];
-const FEATURE_FOLDERS = ["auth", "customers", "dashboard", "intake", "order", "orders", "shell"];
+const FEATURE_FOLDERS = [
+  "auth", "customers", "dashboard", "intake", "order", "orders", "ps", "shell",
+];
 
 const ALL_SOURCE_FILES = import.meta.glob("./**/*.{ts,tsx}", {
   eager: true,

@@ -4,10 +4,12 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+# Import every module that defines tables so autogenerate sees the full metadata.
 from business_os.identity import models as _identity_models  # noqa: F401
 from business_os.shared_kernel.db import Base
-
-# Import every module that defines tables so autogenerate sees the full metadata.
+from professional_services.actions import models as _ps_actions_models  # noqa: F401
+from professional_services.assignments import models as _ps_assignments_models  # noqa: F401
+from professional_services.clients import models as _ps_clients_models  # noqa: F401
 from serviceflow.assets import models as _assets_models  # noqa: F401
 from serviceflow.attachments import models as _attachments_models  # noqa: F401
 from serviceflow.contacts import models as _contacts_models  # noqa: F401

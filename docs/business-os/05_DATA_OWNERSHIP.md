@@ -34,6 +34,9 @@ brevity.
 | `contact_records` | contacts | SF: Service Operations | Service Ops | contacts service | customer + order FKs | Recommended (stays in SF) |
 | `timeline_events` | timeline | SF: Service Operations | Service Ops | timeline subscriber only; DB trigger forbids UPDATE/DELETE | order-anchored by design; see §3 Activity Feed vs Audit Log | Recommended (stays in SF) |
 | `document_sequences` | service_orders (code) / commercial (docs/08) | **Open** — Service Ops keeps it, or Commercial takes it over in Етап 4, or it becomes a Core numbering service | orders service; invoices service (Етап 4) | owning service only (`SELECT … FOR UPDATE` — the single gaplessness point, P0-2) | two contexts will write one table in Етап 4 unless resolved; **first genuinely shared-write table** | **Open — decide in Етап 4 design, PO + dev** |
+| `ps_clients` | professional_services.clients | Professional Services Operations (module #3) | Professional Services | clients service only | none — module-local, no shared FK from other modules | Implemented (walking skeleton, 18.07.2026) |
+| `ps_assignments` | professional_services.assignments | Professional Services Operations | Professional Services | assignments service only (stage only via one transition function, same discipline as service_orders) | FK to `ps_clients.id`; `company_id` FK to `companies.id` | Implemented (walking skeleton, 18.07.2026) |
+| `ps_next_actions` | professional_services.actions | Professional Services Operations | Professional Services | actions service only | FK to `ps_assignments.id`, `owner_user_id` FK to `users.id`; deadline risk computed at request time, not persisted | Implemented (walking skeleton, 18.07.2026) |
 
 ## 2. Ownership matrix — planned tables (not in any migration yet)
 

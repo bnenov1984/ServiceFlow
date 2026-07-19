@@ -21,4 +21,7 @@ export const queryKeys = {
   customerContacts: (id: string) => ["customer", id, "contacts"] as const,
   customerOrders: (id: string, state: string) => ["customer", id, "orders", state] as const,
   search: (q: string) => ["search", q] as const,
+  psClients: ["ps", "clients"] as const,
+  psAssignments: ["ps", "assignments"] as const,
+  psNextActions: ["ps", "next-actions"] as const,
 };

@@ -2,6 +2,7 @@
 root_packages =
     serviceflow
     business_os
+    professional_services
 
 ; Business OS Phase 3 (docs/business-os/08_EVOLUTION_ROADMAP.md): Core
 ; (identity, platform, shared_kernel) renamed from serviceflow.* to a
@@ -57,6 +58,7 @@ forbidden_modules =
     serviceflow.dashboard
     serviceflow.main
     serviceflow.config
+    professional_services
 
 ; Business OS Phase 1 (docs/business-os/04 §2 rule R3, ADR-BOS-002): Core
 ; (identity, platform) must never import a vertical or shared module. This is
@@ -80,6 +82,7 @@ forbidden_modules =
     serviceflow.search
     serviceflow.tasks
     serviceflow.dashboard
+    professional_services
 
 ; Business OS Phase 2.5 (docs/business-os/16): Identity's public contract is
 ; identity.deps + identity.contracts only. `type = protected` (not
@@ -104,5 +107,25 @@ allowed_importers =
     business_os.identity
     serviceflow.main
     serviceflow.seed
+
+; Business OS Phase 3/5 (docs/business-os/17, /modules/professional-services):
+; the second real vertical module. Mirrors core-not-modules' shape: the new
+; module reaches Core through business_os.* only, never serviceflow.*.
+[importlinter:contract:professional-services-boundary]
+name = professional_services must not import serviceflow verticals
+type = forbidden
+source_modules =
+    professional_services
+forbidden_modules =
+    serviceflow.customers
+    serviceflow.assets
+    serviceflow.service_orders
+    serviceflow.commercial
+    serviceflow.timeline
+    serviceflow.attachments
+    serviceflow.contacts
+    serviceflow.search
+    serviceflow.tasks
+    serviceflow.dashboard
 
 ; Finer independence contracts tighten in Stage 1 when real module code exists.

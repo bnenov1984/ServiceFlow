@@ -53,6 +53,9 @@ TABLE_OWNERS = {
     "attachments": "serviceflow.attachments",
     "contact_records": "serviceflow.contacts",
     "timeline_events": "serviceflow.timeline",
+    "ps_clients": "professional_services.clients",
+    "ps_assignments": "professional_services.assignments",
+    "ps_next_actions": "professional_services.actions",
 }
 
 

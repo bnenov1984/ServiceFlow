@@ -12,6 +12,9 @@ import serviceflow.timeline.service  # noqa: F401 — registers the timeline sub
 from business_os.identity.router import router as auth_router
 from business_os.identity.router import users_router
 from business_os.platform.health import router as health_router
+from professional_services.actions.router import router as ps_actions_router
+from professional_services.assignments.router import router as ps_assignments_router
+from professional_services.clients.router import router as ps_clients_router
 from serviceflow import __version__
 from serviceflow.assets.router import router as assets_router
 from serviceflow.attachments.router import router as attachments_router
@@ -82,6 +85,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(users_router, prefix="/api/v1/users", tags=["users"])
     app.include_router(dashboard_router, prefix="/api/v1", tags=["dashboard"])
     app.include_router(search_router, prefix="/api/v1", tags=["search"])
+    app.include_router(ps_clients_router, prefix="/api/v1/ps", tags=["ps-clients"])
+    app.include_router(ps_assignments_router, prefix="/api/v1/ps", tags=["ps-assignments"])
+    app.include_router(ps_actions_router, prefix="/api/v1/ps", tags=["ps-actions"])
     return app
 
 

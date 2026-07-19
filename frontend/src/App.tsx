@@ -12,6 +12,7 @@ import { t } from "./i18n/bg";
 import { IntakePage } from "./intake/IntakePage";
 import { OrderPage } from "./order/OrderPage";
 import { OrdersPage } from "./orders/OrdersPage";
+import { PsPage } from "./ps/PsPage";
 import { AppShell } from "./shell/AppShell";
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -49,6 +50,7 @@ export function App() {
         <Route path="orders/:id" element={<OrderPage />} />
         <Route path="customers" element={<CustomersPage />} />
         <Route path="customers/:id" element={<CustomerProfilePage />} />
+        <Route path="ps" element={<PsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
