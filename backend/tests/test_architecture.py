@@ -14,6 +14,8 @@ Pure introspection of SQLAlchemy metadata: no database connection, no
 network, runs in milliseconds.
 """
 
+from pathlib import Path
+
 # Import every module that defines tables so metadata is complete — mirrors
 # migrations/env.py's import list (the same models Alembic autogenerate needs).
 from business_os.identity import models as _identity_models  # noqa: F401
@@ -171,3 +173,128 @@ def test_identity_public_modules_do_not_reexport_internal_service() -> None:
         "identity.contracts re-exposes 'service' as a public attribute "
         "again — same bypass as above, via contracts.py instead of deps.py."
     )
+
+
+# --- Commercial <-> Service Orders boundary (Invoice decision checkpoint's
+# architecture boundary repair, docs/business-os/04 rule R4: "first binding
+# pair: commercial <-> service_orders") ---------------------------------
+#
+# service_orders.contracts / commercial.contracts are the only sanctioned
+# cross-module surface (backend/.importlinter contracts
+# service-orders-public-boundary / commercial-public-boundary). The tests
+# below exercise import-linter's own contract-checking machinery directly
+# (not a reimplementation of it) against both the real graph and a
+# synthetically-mutated copy, so a regression fails under plain `pytest`,
+# not only under the separate `uv run lint-imports` command a dev might
+# forget to run.
+
+_BACKEND_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _importlinter_report(limit_to_contracts: tuple[str, ...], graph: object = None) -> object:
+    from importlinter import configuration
+    from importlinter.application.use_cases import (
+        _build_graph,  # noqa: SLF001 — same internal `lint_imports` itself calls
+        _build_report,  # noqa: SLF001
+        _register_contract_types,  # noqa: SLF001
+        read_user_options,
+    )
+
+    configuration.configure()
+    user_options = read_user_options(config_filename=str(_BACKEND_ROOT / ".importlinter"))
+    _register_contract_types(user_options)
+    if graph is None:
+        graph = _build_graph(
+            root_package_names=user_options.session_options["root_packages"],
+            cache_dir=None, include_external_packages=False,
+            exclude_type_checking_imports=False, verbose=False,
+        )
+    return _build_report(
+        graph=graph, graph_building_duration=0, user_options=user_options,
+        limit_to_contracts=limit_to_contracts, show_timings=False, verbose=False,
+    )
+
+
+def _real_graph() -> object:
+    import grimp
+    return grimp.build_graph("serviceflow", "business_os", "professional_services",
+                             cache_dir=None)
+
+
+def test_commercial_service_orders_boundary_contracts_currently_kept() -> None:
+    """Regression guard: the two contracts introduced by the architecture
+    boundary repair must stay green under pytest, not just `lint-imports`."""
+    report = _importlinter_report(
+        ("service-orders-public-boundary", "commercial-public-boundary"),
+    )
+    assert not report.contains_failures, (  # type: ignore[attr-defined]
+        "commercial <-> service_orders boundary contracts are broken — "
+        "run `uv run lint-imports` for the full report"
+    )
+
+
+def test_import_linter_catches_forbidden_commercial_to_service_orders_import() -> None:
+    """Proves detection capability (not just current cleanliness): a
+    synthetic direct import of a protected service_orders module from
+    commercial breaks service-orders-public-boundary. Built via
+    graph.add_import on a real graph, not by editing source files, so the
+    test can't accidentally leave a stray import behind."""
+    graph = _real_graph()
+    graph.add_import(  # type: ignore[attr-defined]
+        importer="serviceflow.commercial.service",
+        imported="serviceflow.service_orders.models",
+        line_number=1, line_contents="from serviceflow.service_orders.models import ServiceOrder",
+    )
+    report = _importlinter_report(("service-orders-public-boundary",), graph=graph)
+    assert report.contains_failures  # type: ignore[attr-defined]
+
+
+def test_import_linter_catches_forbidden_service_orders_to_commercial_import() -> None:
+    """Same proof, other direction: service_orders importing a protected
+    commercial module breaks commercial-public-boundary."""
+    graph = _real_graph()
+    graph.add_import(  # type: ignore[attr-defined]
+        importer="serviceflow.service_orders.router",
+        imported="serviceflow.commercial.service",
+        line_number=1, line_contents="from serviceflow.commercial import service",
+    )
+    report = _importlinter_report(("commercial-public-boundary",), graph=graph)
+    assert report.contains_failures  # type: ignore[attr-defined]
+
+
+def test_no_commercial_service_orders_import_cycle() -> None:
+    """commercial depends on service_orders (via .contracts, for order
+    lookups/totals); service_orders must have zero dependency back — proving
+    the edge is one-directional, not a cycle disguised as 'both sides only
+    touch contracts.py'. The paid_amount/balance need is solved by
+    service_orders owning a port that commercial implements and the
+    composition root wires (serviceflow/main.py), not by an import."""
+    graph = _real_graph()
+    commercial_upstream = graph.find_upstream_modules(  # type: ignore[attr-defined]
+        "serviceflow.commercial", as_package=True)
+    service_orders_upstream = graph.find_upstream_modules(  # type: ignore[attr-defined]
+        "serviceflow.service_orders", as_package=True)
+
+    assert any(m.startswith("serviceflow.service_orders") for m in commercial_upstream), (
+        "expected commercial to depend on service_orders (via .contracts) — "
+        "if this fails on purpose, the DTO/port design changed and this "
+        "test needs updating alongside it"
+    )
+    assert not any(m.startswith("serviceflow.commercial") for m in service_orders_upstream), (
+        "service_orders now depends on commercial — this recreates exactly "
+        "the cycle the architecture boundary repair removed"
+    )
+
+
+def test_commercial_service_orders_contracts_do_not_reexport_internals() -> None:
+    """service_orders.contracts and commercial.contracts hold their internal
+    service/lines references as `_service`/`_lines` (leading underscore),
+    mirroring identity's bypass-closing convention above — so neither
+    module's own namespace re-exposes an easy
+    `from serviceflow.commercial.contracts import service` bypass."""
+    from serviceflow.commercial import contracts as commercial_contracts
+    from serviceflow.service_orders import contracts as service_orders_contracts
+
+    assert not hasattr(service_orders_contracts, "service")
+    assert not hasattr(service_orders_contracts, "lines")
+    assert not hasattr(commercial_contracts, "service")

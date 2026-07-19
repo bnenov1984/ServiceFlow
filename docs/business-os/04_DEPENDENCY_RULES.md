@@ -1,9 +1,11 @@
 # BOS-04 — Dependency Rules
 
-Status: **Updated 18.07.2026 (Phase 2.5 implemented, see [08](08_EVOLUTION_ROADMAP.md)
-naming note) — R1, R2, R3, R5, R9 (revised form), R11 are Confirmed/enforced;
-R4, R6–R8, R10 remain Recommended, enforcement gated on their stated
-triggers.** Originally: Phase 0 discovery, 17.07.2026.
+Status: **Updated 20.07.2026 (Invoice decision checkpoint's architecture
+boundary repair) — R1, R2, R3, R4, R5, R9 (revised form), R11 are
+Confirmed/enforced; R6–R8, R10 remain Recommended, enforcement gated on their
+stated triggers.** Previously updated 18.07.2026 (Phase 2.5, see
+[08](08_EVOLUTION_ROADMAP.md) naming note). Originally: Phase 0 discovery,
+17.07.2026.
 
 ## 1. What is enforced today (Confirmed)
 
@@ -24,6 +26,24 @@ run via `uv run pytest` (part of the existing suite, no separate command):
 - **R5 — every table's mapped class lives in its declared owning package**
   (baseline check against [05_DATA_OWNERSHIP.md](05_DATA_OWNERSHIP.md) §1).
   Added in Phase 1.
+- **R4 (its first pair) — commercial and service_orders each expose one
+  `contracts.py` and import nothing else from the other.** Two
+  `backend/.importlinter` `protected` contracts (`service-orders-public-boundary`,
+  `commercial-public-boundary`), same shape as R11's `identity-public-boundary`.
+  The `paid_amount`/`balance` read (service_orders needs data commercial owns)
+  is *not* a second contracts-to-contracts edge — that would still be a cycle
+  in spirit even if import-linter permitted it both ways. Instead
+  service_orders declares a `PaymentSummaryProvider` port in its own
+  `contracts.py`; commercial implements it in its `contracts.py`; the
+  composition root (`serviceflow/main.py`) registers the implementation at
+  import time — the same register-then-dispatch shape
+  `shared_kernel.events.subscribe` already uses for the timeline subscriber.
+  service_orders ends up with zero dependency on commercial in either
+  direction (verified: `grimp` upstream-module check, backend/tests/
+  test_architecture.py `test_no_commercial_service_orders_import_cycle`).
+  Added at the Invoice decision checkpoint's architecture boundary repair,
+  20.07.2026 — ahead of Invoice itself, which was not implemented in that
+  change.
 
 Nothing else is mechanically enforced. In particular, domain modules may
 currently import each other freely (and do: search/dashboard/timeline read other
@@ -60,7 +80,7 @@ flowchart LR
 | R1 | Domain modules never import platform | Confirmed — exists | **Enforced** — existing import-linter contract |
 | R2 | shared_kernel imports nothing above it | Confirmed — exists | **Enforced** — existing import-linter contract |
 | R3 | **Core never imports a vertical or shared module.** Core = identity, platform, shared_kernel (and any future `business_os.*` package) | The definitional Business OS rule; held by inspection before enforcement, zero violations found | **Enforced (Phase 1)** — `backend/.importlinter` contract `core-not-modules`: sources identity, platform → forbidden: customers, assets, service_orders, commercial, tasks, attachments, contacts, timeline, search, dashboard. See [12](12_PHASE_1_IMPLEMENTATION.md). |
-| R4 | **A module may import another module's `contracts` subpackage only, never models/service/router.** First binding pair: commercial ↔ service_orders (Етап 4) | Preserves extraction option (ADR-BOS-003); commercial is greenfield so this costs nothing | Not yet for commercial ↔ service_orders specifically — but the pattern now has a working precedent: R11 implements exactly this shape for identity ↔ everyone else. Reuse its `type = protected` approach when Етап 4 needs it (roadmap Phase 4). |
+| R4 | **A module may import another module's `contracts` subpackage only, never models/service/router.** First binding pair: commercial ↔ service_orders | Preserves extraction option (ADR-BOS-003); closes the cross-import debt the Payment slice incurred (BOS-09 risk R-3 materialized exactly as predicted, then was fixed rather than compounded by Invoice) | **Enforced (Invoice decision checkpoint's architecture boundary repair, 20.07.2026)** — two `backend/.importlinter` `protected` contracts (`service-orders-public-boundary`, `commercial-public-boundary`), same `type = protected` shape R11 already proved for identity. The one asymmetric need (service_orders reading commercial-owned paid_amount/balance) is solved by inversion — a port service_orders owns, commercial implements, the composition root wires — not a second contracts-to-contracts edge. See `backend/tests/test_architecture.py`'s commercial/service_orders boundary tests. |
 | R5 | **No module touches another module's tables** — no raw SQL against, no ORM mapping of, a table it doesn't own | Data-ownership twin of R4 ([05](05_DATA_OWNERSHIP.md)); FKs *to* another module's PK are allowed within a vertical, discouraged across contexts | **Enforced (Phase 1, baseline check)** — `backend/tests/test_architecture.py` walks `Base.registry.mappers` asserting each table's class lives in its declared owning package. See [12](12_PHASE_1_IMPLEMENTATION.md). |
 | R6 | **Within one bounded context, packages may share models.** Service Operations' seven packages (orders, tasks, attachments, contacts, timeline, search, dashboard) and Customers & Assets are one vertical — direct reads stay legal there | Pragmatism directive: don't erect internal bureaucracy inside ServiceFlow | scope R4/R5 contracts to *context edges* only |
 | R7 | **Cross-module reads at a context edge go through declared query contracts** (a typed function in `<module>/contracts.py`), cross-module writes through application services or domain events — never direct | The search/dashboard direct-read pattern must not cross into commercial or module #2 | same tooling as R4 |
@@ -105,8 +125,15 @@ flowchart LR
    (`type = protected`), one real violation migrated, zero baseline needed.
    See [16](16_PHASE_3_IDENTITY_BOUNDARY.md) and the naming note in
    [08](08_EVOLUTION_ROADMAP.md).
-4. **Étап 4 (commercial build):** R4/R7 contracts become real with their first
-   consumer; add the import-linter contracts in the same PR that creates
-   `commercial/`'s first real code.
+4. **Étап 4 (commercial build) — R4 ✅ (20.07.2026), R7 still Recommended:**
+   commercial's first real code (the Payment slice) shipped *without* the R4
+   contracts — exactly the BOS-09 risk R-3 scenario ("commercial built with
+   direct model imports because contracts feel ceremonial"). The Invoice
+   decision checkpoint caught it before Invoice compounded the debt; the
+   architecture boundary repair added the import-linter contracts and
+   retrofitted the Payment slice's direct imports to the contract/port shape
+   described above, one slice later than the original plan called for, not
+   in the same PR. R7 (the general "cross-module reads through
+   `contracts.py`" pattern, beyond this one edge) remains Recommended.
 
 No enforcement is added in Phase 0 (this documentation phase).

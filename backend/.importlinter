@@ -128,4 +128,54 @@ forbidden_modules =
     serviceflow.tasks
     serviceflow.dashboard
 
+; Invoice decision checkpoint, boundary repair (docs/business-os/04 rule R4 —
+; "first binding pair: commercial <-> service_orders"): service_orders'
+; public contract is service_orders.contracts only. `type = protected` (not
+; `forbidden`) for the same reason as identity-public-boundary above: a
+; forbidden contract walks the transitive closure, so importing
+; service_orders.contracts (which legitimately imports .service/.lines
+; internally) would falsely flag every caller. `allowed_importers` lists
+; service_orders itself, the composition root, and the same-bounded-context
+; packages (Service Operations, docs/business-os/05) that already read
+; service_orders models/service directly today under rule R6 — this contract
+; only closes the *cross-context* edge to commercial, not R6's legal
+; within-context sharing.
+[importlinter:contract:service-orders-public-boundary]
+name = External modules must use service_orders' public contract only
+type = protected
+protected_modules =
+    serviceflow.service_orders.models
+    serviceflow.service_orders.service
+    serviceflow.service_orders.lines
+    serviceflow.service_orders.protocol
+    serviceflow.service_orders.statuses
+    serviceflow.service_orders.router
+allowed_importers =
+    serviceflow.service_orders
+    serviceflow.main
+    serviceflow.attachments
+    serviceflow.contacts
+    serviceflow.customers
+    serviceflow.dashboard
+    serviceflow.search
+    serviceflow.tasks
+
+; Same repair, other direction: commercial's public contract is
+; commercial.contracts only. Unlike service_orders, commercial has no
+; same-context siblings reading it directly today, so allowed_importers is
+; just commercial itself and the composition root — service_orders reaches
+; commercial exclusively through the PaymentSummaryProvider port it owns
+; (service_orders.contracts), wired by serviceflow/main.py, never by
+; importing commercial at all.
+[importlinter:contract:commercial-public-boundary]
+name = External modules must use commercial's public contract only
+type = protected
+protected_modules =
+    serviceflow.commercial.models
+    serviceflow.commercial.service
+    serviceflow.commercial.router
+allowed_importers =
+    serviceflow.commercial
+    serviceflow.main
+
 ; Finer independence contracts tighten in Stage 1 when real module code exists.
