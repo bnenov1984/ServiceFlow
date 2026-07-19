@@ -44,3 +44,11 @@ def get_company_profile(db: Session, company_id: uuid.UUID) -> CompanyProfile:
     company = _service.get_company(db, company_id)
     assert company is not None
     return CompanyProfile(name=company.name, requisites=company.requisites)
+
+
+def is_module_active(db: Session, company_id: uuid.UUID, module_key: str) -> bool:
+    """Module activation (BOS-06): `active_modules` inside `companies.settings`
+    JSONB, no dedicated registry table yet (BOS-02 Settings precedent). The
+    sanctioned way for another module's routes to gate themselves — never read
+    `company.settings` directly; wraps `service.is_module_active`."""
+    return _service.is_module_active(db, company_id, module_key)

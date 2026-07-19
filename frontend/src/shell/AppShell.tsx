@@ -120,6 +120,11 @@ export function AppShell() {
           <NavLink to="/customers" className={({ isActive }) => navClass(isActive)}>
             {t("nav.customers")}
           </NavLink>
+          {me?.active_modules.includes("professional-services") && (
+            <NavLink to="/ps" className={({ isActive }) => navClass(isActive)}>
+              {t("nav.professional_services")}
+            </NavLink>
+          )}
           <GrayedNavItem label={t("nav.invoices")} />
           <GrayedNavItem label={t("nav.settings")} />
           <button

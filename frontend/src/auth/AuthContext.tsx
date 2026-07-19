@@ -17,6 +17,7 @@ export interface Me {
   language: string;
   company_id: string;
   csrf_token: string;
+  active_modules: string[];
 }
 
 interface AuthState {

@@ -9,6 +9,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr, Field
+from sqlalchemy.orm import Session
 
 from business_os.identity import service
 from business_os.identity.deps import (
@@ -54,6 +55,7 @@ class MeResponse(BaseModel):
     language: str
     company_id: uuid.UUID
     csrf_token: str
+    active_modules: list[str]
 
 
 class PinSwitchRequest(BaseModel):
@@ -65,11 +67,12 @@ def _client_key(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-def _me(session: AuthSession, user: User) -> MeResponse:
+def _me(db: Session, session: AuthSession, user: User) -> MeResponse:
     return MeResponse(
         user_id=user.id, name=user.name, email=user.email, is_owner=user.is_owner,
         language=user.language, company_id=session.company_id,
         csrf_token=session.csrf_token,
+        active_modules=service.active_modules(db, session.company_id),
     )
 
 
@@ -90,13 +93,13 @@ def login(body: LoginRequest, request: Request, response: Response, db: DbDep) -
     )
     user = db.get(User, session.user_id)
     assert user is not None
-    return _me(session, user)
+    return _me(db, session, user)
 
 
 @router.get("/me")
-def me(auth: AuthDep) -> MeResponse:
+def me(auth: AuthDep, db: DbDep) -> MeResponse:
     session, user = auth
-    return _me(session, user)
+    return _me(db, session, user)
 
 
 @router.post("/logout", dependencies=[Depends(require_csrf)])
@@ -116,4 +119,4 @@ def pin_switch(body: PinSwitchRequest, auth: AuthDep, db: DbDep) -> MeResponse:
         raise HTTPException(status_code=e.status, detail={
             "code": "pin_failed", "message_key": e.message_key, "params": {},
         }) from e
-    return _me(session, target)
+    return _me(db, session, target)

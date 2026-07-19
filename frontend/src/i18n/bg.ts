@@ -10,6 +10,7 @@ export const bg = {
   "nav.dashboard": "Табло",
   "nav.orders": "Поръчки",
   "nav.customers": "Клиенти",
+  "nav.professional_services": "Професионални услуги",
   "nav.invoices": "Фактури",
   "nav.settings": "Настройки",
   "nav.coming_soon": "Очаквайте скоро",

@@ -142,6 +142,41 @@ def get_company(db: Session, company_id: uuid.UUID) -> Company | None:
     return db.get(Company, company_id)
 
 
+def is_module_active(db: Session, company_id: uuid.UUID, module_key: str) -> bool:
+    """Module activation (BOS-06), stored as `active_modules` inside the existing
+    `companies.settings` JSONB — no dedicated table (BOS-02's Settings precedent:
+    one flag, few modules, pilot scale — a registry table is deferred until that
+    stops being true). Centralized here, same discipline as get_company: callers
+    (routers, frontend via /me) must go through this function, never read
+    `company.settings` directly."""
+    company = get_company(db, company_id)
+    if company is None:
+        return False
+    active: list[str] = company.settings.get("active_modules", [])
+    return module_key in active
+
+
+def active_modules(db: Session, company_id: uuid.UUID) -> list[str]:
+    """The full list, for surfaces that need it (e.g. /me's nav-gating field)."""
+    company = get_company(db, company_id)
+    if company is None:
+        return []
+    result: list[str] = company.settings.get("active_modules", [])
+    return result
+
+
+def activate_module(db: Session, company_id: uuid.UUID, module_key: str) -> None:
+    """Idempotent. Reassigns the settings dict (not an in-place mutation) so
+    SQLAlchemy's change tracking picks it up without a MutableDict wrapper."""
+    company = get_company(db, company_id)
+    assert company is not None
+    current: list[str] = list(company.settings.get("active_modules", []))
+    if module_key not in current:
+        current.append(module_key)
+        company.settings = {**company.settings, "active_modules": current}
+        db.commit()
+
+
 def list_users(db: Session, company_id: uuid.UUID,
                include_inactive: bool = False) -> list[User]:
     """Users are RLS-exempt (identity bootstrap) — the company filter here IS the

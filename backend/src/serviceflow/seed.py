@@ -6,7 +6,7 @@ Usage:
 
 import sys
 
-from business_os.identity.service import seed_company
+from business_os.identity.service import activate_module, seed_company
 from business_os.shared_kernel.db import open_session
 from serviceflow.config import get_settings
 
@@ -26,6 +26,7 @@ def main() -> None:
     pin = sys.argv[5] if len(sys.argv) > 5 else None
     for db in open_session(settings.database_url):
         company = seed_company(db, company_name, owner_name, email, password, pin)
+        activate_module(db, company.id, "professional-services")
         print(f"OK: company '{company.name}' ({company.id})")
 
 
