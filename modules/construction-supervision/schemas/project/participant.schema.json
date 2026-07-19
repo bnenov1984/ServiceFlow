@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://businessos.local/cs/v0/participant.schema.json",
+  "title": "Party & Participation (DRAFT v0)",
+  "description": "Firm-level party with typed credentials + project-scoped participation. Grounded in sample credential formats (ДНСК удостоверение, КИИП/КАБ рег. №, дипломи).",
+  "type": "object",
+  "$defs": {
+    "party": {
+      "type": "object",
+      "required": ["kind", "name"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["person", "company"] },
+        "name": { "type": "string" },
+        "eik": {
+          "type": "string",
+          "pattern": "^[0-9]{9}([0-9]{4})?$",
+          "description": "ЕИК/БУЛСТАТ (companies); checksum validated in code"
+        },
+        "address": { "type": "string" },
+        "representative": { "type": "string", "description": "управител/представляващ (companies)" },
+        "credentials": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/credential" }
+        }
+      }
+    },
+    "credential": {
+      "type": "object",
+      "required": ["kind", "number"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["dnsk_certificate", "kiip_registration", "kab_registration", "diploma", "cprs_registration", "mrrb_list_entry", "other"],
+          "description": "dnsk_certificate: удостоверение за оценяване/надзор (form „№ РК-NNNN“); kiip/kab: проектантска правоспособност; mrrb_list_entry: № от заверения списък на консултанта"
+        },
+        "number": { "type": "string" },
+        "issuer": { "type": "string" },
+        "issued_on": { "type": "string", "format": "date" },
+        "valid_until": { "type": "string", "format": "date" },
+        "details": { "type": "object", "description": "kind-specific: specialty, series, ПППр flag…" }
+      }
+    },
+    "participation": {
+      "type": "object",
+      "required": ["party_ref", "role"],
+      "properties": {
+        "party_ref": { "type": "string", "format": "uuid" },
+        "role": {
+          "type": "string",
+          "enum": ["client", "builder", "technical_manager", "designer", "consultant", "supervisor_specialist", "authors_supervision"]
+        },
+        "part": {
+          "type": ["string", "null"],
+          "enum": ["arch", "struct", "el", "vik", "geo", "ee", "fire", "hvac", null],
+          "description": "discipline for part-scoped roles (проектант част СК, специалист СН част Ел…)"
+        },
+        "valid_from": { "type": "string", "format": "date" },
+        "valid_to": { "type": ["string", "null"], "format": "date" },
+        "appointed_by": {
+          "type": "object",
+          "description": "appointing evidence: договор / заповед",
+          "properties": {
+            "kind": { "type": "string", "enum": ["contract", "order", "other"] },
+            "reference": { "type": "string" },
+            "date": { "type": "string", "format": "date" },
+            "source_document_ref": { "type": "string", "format": "uuid" }
+          }
+        },
+        "self_build": {
+          "type": "boolean",
+          "default": false,
+          "description": "строител „по стопански начин“ (seen in samples) — builder role without a company party"
+        }
+      }
+    }
+  }
+}

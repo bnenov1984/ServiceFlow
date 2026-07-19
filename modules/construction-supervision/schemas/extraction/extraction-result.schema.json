@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://businessos.local/cs/v0/extraction-result.schema.json",
+  "title": "Extraction Result Envelope (DRAFT v0)",
+  "description": "The only shape in which parser/OCR/AI output may enter the system (ADR-CS-003 quarantine gate). Results are PROPOSALS: schema-invalid output is discarded; nothing here writes facts — only human acceptance does.",
+  "type": "object",
+  "required": ["source_document_id", "method", "proposals"],
+  "properties": {
+    "source_document_id": { "type": "string", "format": "uuid" },
+    "source_section_id": { "type": ["string", "null"], "format": "uuid", "description": "when extracted from a split bundle section (ADR-CS-005)" },
+    "document_type_key": { "type": ["string", "null"], "description": "classified type, e.g. act_12" },
+    "method": {
+      "type": "string",
+      "enum": ["native_text", "table_parse", "ocr", "ai_text", "ai_vision"]
+    },
+    "model_id": { "type": ["string", "null"], "description": "required when method is ai_*" },
+    "prompt_revision": { "type": ["string", "null"] },
+    "proposals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["fact_path", "value", "confidence"],
+        "properties": {
+          "fact_path": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)*(\\[[0-9]+\\])?$",
+            "description": "taxonomy path, e.g. permit.number, works.lines[3].quantity_executed"
+          },
+          "value": {
+            "type": "object",
+            "required": ["t", "v"],
+            "properties": {
+              "t": { "type": "string", "enum": ["text", "date", "qty", "ident", "enum", "ref"] },
+              "v": {},
+              "unit": { "type": ["string", "null"], "description": "closed unit vocabulary, required when t=qty" }
+            }
+          },
+          "raw_text": { "type": ["string", "null"], "description": "verbatim source text before normalization — kept for review UI and audit" },
+          "anchor": {
+            "type": "object",
+            "required": ["page"],
+            "properties": {
+              "page": { "type": "integer", "minimum": 1 },
+              "bbox": { "type": ["array", "null"], "items": { "type": "number" }, "minItems": 4, "maxItems": 4 },
+              "section_label": { "type": ["string", "null"] }
+            }
+          },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1, "description": "1.0 for deterministic methods; orders review queues, never gates automation (CS-21 §4)" },
+          "conflicts_with_fact_id": { "type": ["string", "null"], "format": "uuid", "description": "set when a confirmed fact holds a different value — renders as conflict proposal (CS-16 §5)" }
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "extractor-level notes (unreadable regions, low DPI…) — surfaced in review UI"
+    }
+  }
+}

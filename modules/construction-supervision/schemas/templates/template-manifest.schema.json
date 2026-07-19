@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://businessos.local/cs/v0/template-manifest.schema.json",
+  "title": "Template Manifest (DRAFT v0)",
+  "description": "Machine-readable half of a template pair (ADR-CS-004). All logic lives here; the .docx holds only placeholders and block markers referenced by id. No expressions ever appear inside Word.",
+  "type": "object",
+  "required": ["document_type", "version", "bindings"],
+  "properties": {
+    "document_type": { "type": "string", "description": "registry key, e.g. act_14" },
+    "version": { "type": "string", "description": "manifest+docx pair version, e.g. 1.0.0" },
+    "effective_from": { "type": "string", "format": "date" },
+    "includes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "shared binding libraries, e.g. common_header_block (CS-11 §1.4)"
+    },
+    "bindings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/binding" }
+    },
+    "conditional_blocks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["block_id", "predicate"],
+        "properties": {
+          "block_id": { "type": "string", "description": "matches {{?block_id}} marker in the .docx" },
+          "predicate": { "$ref": "#/$defs/predicate" },
+          "else_block_id": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "loop_blocks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["block_id", "row_source"],
+        "properties": {
+          "block_id": { "type": "string", "description": "matches {{#block_id}}…{{/block_id}} region" },
+          "row_source": {
+            "type": "string",
+            "description": "registered query key: works_lines, dossier_inventory, participants_by_role…"
+          },
+          "filter": { "type": "object", "description": "declarative row-source parameters (role, part, scope)" },
+          "sort": { "type": "array", "items": { "type": "string" } },
+          "row_bindings": { "type": "array", "items": { "$ref": "#/$defs/binding" } },
+          "empty_behavior": { "type": "string", "enum": ["omit", "placeholder_row", "error"], "default": "error" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "binding": {
+      "type": "object",
+      "required": ["placeholder", "source"],
+      "properties": {
+        "placeholder": { "type": "string", "description": "name inside {{…}} in the .docx" },
+        "source": {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": { "type": "string", "enum": ["fact", "entity", "context", "calc", "composer"] },
+            "path": { "type": "string", "description": "fact taxonomy path or entity attribute path (kind=fact|entity)" },
+            "key": { "type": "string", "description": "registered calc/composer key (kind=calc|composer) — code registry, never an expression (ADR-CS-004 §3)" }
+          }
+        },
+        "required": { "type": "string", "enum": ["hard", "soft"], "default": "hard", "description": "hard: generation refuses when missing (NFR-2); soft: renders visible marker + warning finding" },
+        "format": {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "enum": ["text", "date_bg", "number", "quantity_with_unit", "identifier", "list_inline"] },
+            "pattern": { "type": "string" }
+          }
+        }
+      }
+    },
+    "predicate": {
+      "type": "object",
+      "description": "closed declarative predicate — no free expression language",
+      "required": ["op"],
+      "properties": {
+        "op": { "type": "string", "enum": ["exists", "not_exists", "eq", "ne", "in", "count_gt", "count_eq", "all_of", "any_of"] },
+        "path": { "type": "string" },
+        "value": {},
+        "operands": { "type": "array", "items": { "$ref": "#/$defs/predicate" } }
+      }
+    }
+  }
+}

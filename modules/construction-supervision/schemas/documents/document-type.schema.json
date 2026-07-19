@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://businessos.local/cs/v0/document-type.schema.json",
+  "title": "DocumentType registry entry (DRAFT v0)",
+  "description": "Shape of one entry in the data-driven document-type registry (ADR-CS-007). Every act form — including Act 14 — is its own independent entry (ADR-CS-005).",
+  "type": "object",
+  "required": ["key", "title_bg", "kind"],
+  "properties": {
+    "key": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]+$",
+      "description": "stable internal key: act_12, act_14, act_15, technical_passport, test_protocol_72h…"
+    },
+    "title_bg": { "type": "string", "description": "official Bulgarian title as rendered in the document heading" },
+    "kind": {
+      "type": "string",
+      "enum": ["generated", "ingested_only"],
+      "description": "generated: has templates; ingested_only: recognized as source evidence (permits, certificates) without generation support"
+    },
+    "normative_citation": {
+      "type": "string",
+      "description": "e.g. „Приложение № 14 към чл. 7, ал. 3, т. 14 от Наредба №3/2003“ — verify per CS-29 Q1"
+    },
+    "practice_aliases": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "colloquial names, e.g. [\"акт 17\"] for test_protocol_72h"
+    },
+    "applicable_categories": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["I", "II", "III", "IV", "V", "VI"] }
+    },
+    "part_scoped": { "type": "boolean", "default": false, "description": "instances exist per part (обр. 12 СК/Ел/ВиК/Арх)" },
+    "instance_family": { "type": "boolean", "default": false, "description": "recurs many times per project (обр. 7/8/12)" },
+    "required_roles": {
+      "type": "array",
+      "description": "signatory roles this type requires (rule input)",
+      "items": {
+        "type": "object",
+        "required": ["role"],
+        "properties": {
+          "role": { "type": "string" },
+          "part": { "type": ["string", "null"] },
+          "cardinality": { "type": "string", "enum": ["one", "one_per_part", "all_parts"], "default": "one" }
+        }
+      }
+    },
+    "workflow_ref": { "type": "string", "description": "workflow definition key (schemas/workflows)" },
+    "rule_set_ref": { "type": "string" },
+    "template_refs": { "type": "array", "items": { "type": "string" } },
+    "dossier_order": { "type": "integer", "description": "canonical position in the dossier inventory" },
+    "active": { "type": "boolean", "default": true }
+  }
+}

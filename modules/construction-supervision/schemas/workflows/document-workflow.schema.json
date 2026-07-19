@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://businessos.local/cs/v0/document-workflow.schema.json",
+  "title": "Document Workflow Definition (DRAFT v0)",
+  "description": "Per-document-type state machine + gate requirements (CS-14). States are a closed vocabulary; gates reference rule sets — the workflow owns no logic of its own.",
+  "type": "object",
+  "required": ["key", "states", "transitions"],
+  "properties": {
+    "key": { "type": "string", "description": "e.g. standard_act, technical_passport" },
+    "states": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "string",
+        "enum": ["draft", "ready", "prepared", "issued", "registered", "superseded"]
+      }
+    },
+    "initial": { "type": "string", "default": "draft" },
+    "transitions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from", "to"],
+        "properties": {
+          "from": { "type": "string" },
+          "to": { "type": "string" },
+          "requires_role": { "type": "string", "description": "app role, e.g. owner_manager for issue (CS-23 §3)" },
+          "gate_rule_set": { "type": ["string", "null"], "description": "rule set evaluated at transition; open blockers refuse the transition" },
+          "requires_fields": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "transition payload fields, e.g. issued_number, issued_on, supersede_reason"
+          },
+          "effects": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["freeze_snapshot", "assign_sequence", "emit_issued_event", "lock_content", "mark_superseded_predecessor"] }
+          }
+        }
+      }
+    },
+    "gates": {
+      "type": "array",
+      "description": "named phase gates this document participates in (CS-14 §2)",
+      "items": {
+        "type": "object",
+        "required": ["key", "required_document_types"],
+        "properties": {
+          "key": { "type": "string", "description": "structure_gate, handover_gate, passport_gate" },
+          "required_document_types": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["type_key"],
+              "properties": {
+                "type_key": { "type": "string" },
+                "min_state": { "type": "string", "default": "issued" },
+                "scope": { "type": "string", "enum": ["project", "all_structural_chains", "per_installed_system"], "default": "project" }
+              }
+            }
+          },
+          "forbid_open_findings_severity": { "type": "string", "enum": ["blocker", "warning"], "default": "blocker" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://businessos.local/cs/v0/project.schema.json",
+  "title": "ConstructionProject (DRAFT v0)",
+  "description": "Core registry shape for a supervised construction project. DRAFT — field set grounded in the sample corpus; verify against Наредба texts before v1 (CS-29 Q1).",
+  "type": "object",
+  "required": ["name", "category", "cadastral_identifiers"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Official строеж name as on the permit, e.g. „Еднофамилна жилищна сграда със ЗП=РЗП=120,00кв.м. и изгребна яма“ (synthetic example)",
+      "minLength": 3
+    },
+    "category": {
+      "type": "string",
+      "enum": ["I", "II", "III", "IV", "V", "VI"],
+      "description": "чл. 137 ЗУТ category"
+    },
+    "category_legal_basis": {
+      "type": "string",
+      "description": "e.g. „ал.1, т.5а, чл. 137 ЗУТ“"
+    },
+    "location": {
+      "type": "object",
+      "properties": {
+        "address": { "type": "string" },
+        "settlement": { "type": "string" },
+        "district": { "type": "string" },
+        "locality": { "type": "string", "description": "местност / в.з." },
+        "plan_reference": { "type": "string", "description": "по плана на …" }
+      }
+    },
+    "cadastral_identifiers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["kind", "value"],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["land_plot", "building", "facility", "cadastral_region", "planning"]
+          },
+          "value": {
+            "type": "string",
+            "pattern": "^[0-9]{1,6}(\\.[0-9]{1,6}){1,4}$",
+            "description": "КККР dotted identifier, e.g. 12345.6789.101 (ПИ) or 12345.6789.101.1 (сграда) — synthetic examples"
+          },
+          "is_current": { "type": "boolean", "default": true }
+        }
+      }
+    },
+    "permit": { "$ref": "#/$defs/permit" }
+  },
+  "$defs": {
+    "permit": {
+      "type": "object",
+      "required": ["number", "issued_on", "issuer"],
+      "properties": {
+        "number": { "type": "string", "description": "РС №, e.g. 144" },
+        "issued_on": { "type": "string", "format": "date" },
+        "issuer": { "type": "string", "description": "e.g. „Главния архитект на община …“ / „главния архитект на район …“" },
+        "kind": { "type": "string", "enum": ["original", "amendment"], "default": "original" },
+        "approved_parts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["arch", "struct", "el", "vik", "geo", "ee", "fire", "hvac", "pbz", "other"]
+          }
+        },
+        "project_approval_date": { "type": "string", "format": "date" }
+      }
+    }
+  }
+}
