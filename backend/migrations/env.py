@@ -12,6 +12,7 @@ from professional_services.assignments import models as _ps_assignments_models  
 from professional_services.clients import models as _ps_clients_models  # noqa: F401
 from serviceflow.assets import models as _assets_models  # noqa: F401
 from serviceflow.attachments import models as _attachments_models  # noqa: F401
+from serviceflow.commercial import models as _commercial_models  # noqa: F401
 from serviceflow.contacts import models as _contacts_models  # noqa: F401
 from serviceflow.customers import models as _customers_models  # noqa: F401
 from serviceflow.service_orders import models as _service_orders_models  # noqa: F401

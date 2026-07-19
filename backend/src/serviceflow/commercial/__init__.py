@@ -1,1 +1,3 @@
-"""commercial module skeleton. Boundaries per ADR-001; populated per 13_IMPLEMENTATION_PLAN."""
+"""Commercial Documents & Invoicing (docs/01, docs/08 §commercial). Boundaries per
+ADR-001. Payment recording lands first (docs/13); Invoice remains Етап 4 —
+numbering ownership, accountant review, VAT rules, immutability, PDF, annul/reissue."""

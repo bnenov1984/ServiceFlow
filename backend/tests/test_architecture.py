@@ -20,6 +20,7 @@ from business_os.identity import models as _identity_models  # noqa: F401
 from business_os.shared_kernel.db import Base
 from serviceflow.assets import models as _assets_models  # noqa: F401
 from serviceflow.attachments import models as _attachments_models  # noqa: F401
+from serviceflow.commercial import models as _commercial_models  # noqa: F401
 from serviceflow.contacts import models as _contacts_models  # noqa: F401
 from serviceflow.customers import models as _customers_models  # noqa: F401
 from serviceflow.service_orders import models as _service_orders_models  # noqa: F401
@@ -49,6 +50,7 @@ TABLE_OWNERS = {
     "part_lines": "serviceflow.service_orders",
     "labor_lines": "serviceflow.service_orders",
     "accessory_items": "serviceflow.service_orders",
+    "payments": "serviceflow.commercial",
     "tasks": "serviceflow.tasks",
     "attachments": "serviceflow.attachments",
     "contact_records": "serviceflow.contacts",
