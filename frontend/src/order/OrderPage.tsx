@@ -35,6 +35,8 @@ interface OrderDetailOut {
   archived: boolean;
   diagnosis: DiagnosisValue | null;
   estimated_total: number;
+  paid_amount: number;
+  balance: number;
 }
 
 interface CustomerOut {
@@ -132,7 +134,11 @@ export function OrderPage() {
           )}
           <ComplaintBlock orderId={order.id} complaint={order.complaint} editable={!orderIsTerminal} />
           <DiagnosisCard orderId={order.id} diagnosis={order.diagnosis} editable={!orderIsTerminal} />
-          <MoneyCard estimatedTotal={order.estimated_total} />
+          <MoneyCard
+            estimatedTotal={order.estimated_total}
+            paidAmount={order.paid_amount}
+            balance={order.balance}
+          />
         </div>
 
         <div className="flex flex-col gap-4">

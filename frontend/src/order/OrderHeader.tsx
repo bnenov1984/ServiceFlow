@@ -16,7 +16,7 @@ import { ApiError, api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
 import { allowedTransitions, isTerminal, kindOf, statusName } from "../lib/statusMatrix";
 import { ApprovalDialog } from "./dialogs/ApprovalDialog";
-import { DeliveryDialog } from "./dialogs/DeliveryDialog";
+import { DeliveryDialog, type DeliveryPaymentInput } from "./dialogs/DeliveryDialog";
 import { ReasonDialog } from "./dialogs/ReasonDialog";
 
 interface AccessoryItem {
@@ -78,6 +78,35 @@ export function OrderHeader({ orderId, number, statusCode, archived }: OrderHead
     try {
       const result = await api.post<{ warning: string | null }>(
         `/orders/${orderId}/status`, body,
+      );
+      await refreshOrder();
+      if (result.warning === "skip") {
+        pushToast("conflict", t("order.warning_skip"));
+      } else {
+        pushToast("success", t("order.status_changed"));
+      }
+      close();
+    } catch (err) {
+      setError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const runDelivery = async (
+    warrantyDays: number | null, payment: DeliveryPaymentInput | null,
+  ) => {
+    setSubmitting(true);
+    setError(null);
+    try {
+      // Payment recording is independent of the status transition (docs/01
+      // §ServiceOrder: delivery needs "плащане(ия)", not full settlement) —
+      // an open balance never blocks the transition below.
+      if (payment) {
+        await api.post(`/orders/${orderId}/payments`, payment);
+      }
+      const result = await api.post<{ warning: string | null }>(
+        `/orders/${orderId}/status`, { to: "delivered", warranty_days: warrantyDays },
       );
       await refreshOrder();
       if (result.warning === "skip") {
@@ -243,9 +272,7 @@ export function OrderHeader({ orderId, number, statusCode, archived }: OrderHead
       <DeliveryDialog
         open={pending?.kind === "delivery"}
         onClose={close}
-        onConfirm={(warrantyDays) =>
-          void runStatusChange({ to: "delivered", warranty_days: warrantyDays })
-        }
+        onConfirm={(warrantyDays, payment) => void runDelivery(warrantyDays, payment)}
         accessories={accessories ?? []}
         onToggleReturned={(id, returned) => void toggleAccessoryReturned(id, returned)}
         submitting={submitting}
