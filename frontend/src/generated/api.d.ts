@@ -506,6 +506,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/orders/{order_id}/invoices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Invoice Draft */
+        post: operations["create_invoice_draft_api_v1_orders__order_id__invoices_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invoices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Invoices */
+        get: operations["list_invoices_api_v1_invoices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invoices/{invoice_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Invoice */
+        get: operations["get_invoice_api_v1_invoices__invoice_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Invoice */
+        patch: operations["patch_invoice_api_v1_invoices__invoice_id__patch"];
+        trace?: never;
+    };
     "/api/v1/tasks": {
         parameters: {
             query?: never;
@@ -1323,6 +1375,94 @@ export interface components {
             checks: {
                 [key: string]: "ok" | "warn" | "fail" | "not_configured";
             };
+        };
+        /** InvoiceDetailOut */
+        InvoiceDetailOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Order Id
+             * Format: uuid
+             */
+            order_id: string;
+            /** Status */
+            status: string;
+            /** Number */
+            number: number | null;
+            /** Currency */
+            currency: string;
+            /** Row Version */
+            row_version: number;
+            /** Lines */
+            lines: components["schemas"]["InvoiceLineOut"][];
+            /** Draft Total */
+            draft_total: number;
+        };
+        /** InvoiceLineIn */
+        InvoiceLineIn: {
+            /** Description */
+            description: string;
+            /**
+             * Qty
+             * @default 1
+             */
+            qty: number;
+            /**
+             * Unit Price
+             * @default 0
+             */
+            unit_price: number | string;
+            /** Vat Rate */
+            vat_rate?: number | string | null;
+            /** Source */
+            source: string;
+        };
+        /** InvoiceLineOut */
+        InvoiceLineOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Description */
+            description: string;
+            /** Qty */
+            qty: number;
+            /** Unit Price */
+            unit_price: number;
+            /** Vat Rate */
+            vat_rate: number | null;
+            /** Source */
+            source: string;
+        };
+        /** InvoiceOut */
+        InvoiceOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Order Id
+             * Format: uuid
+             */
+            order_id: string;
+            /** Status */
+            status: string;
+            /** Number */
+            number: number | null;
+            /** Currency */
+            currency: string;
+            /** Row Version */
+            row_version: number;
+        };
+        /** InvoicePatchIn */
+        InvoicePatchIn: {
+            /** Lines */
+            lines: components["schemas"]["InvoiceLineIn"][];
         };
         /** LaborLineIn */
         LaborLineIn: {
@@ -3155,6 +3295,134 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaymentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_invoice_draft_api_v1_orders__order_id__invoices_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_invoices_api_v1_invoices_get: {
+        parameters: {
+            query?: {
+                status?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_invoice_api_v1_invoices__invoice_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invoice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_invoice_api_v1_invoices__invoice_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invoice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvoicePatchIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceDetailOut"];
                 };
             };
             /** @description Validation Error */

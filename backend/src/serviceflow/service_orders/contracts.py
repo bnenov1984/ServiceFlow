@@ -8,8 +8,10 @@ surface" covering both what it exposes to be read and what it declares it
 needs injected from elsewhere:
 
 - **Outbound** (functions another module calls): `get_order_summary`,
-  `get_order_total`. Commercial reads order data through these only — never
-  `service_orders.models`/`.service`/`.lines` directly.
+  `get_order_total`, `get_order_lines` (the last one added for Invoice draft
+  prefill — docs/09 "draft prefilled from lines"). Commercial reads order
+  data through these only — never `service_orders.models`/`.service`/
+  `.lines` directly.
 - **Inbound port** (`PaymentSummaryProvider`): service_orders needs
   paid_amount/balance to enrich GET /orders/{id}, but that data is owned by
   `commercial`. Rather than importing commercial (which would recreate the
@@ -69,6 +71,37 @@ def get_order_total(db: Session, ctx: TenantContext, order_id: uuid.UUID) -> Dec
     """The canonical order total (BR-3) — the single money formula every
     consumer must reuse, never reimplement. Wraps `lines.order_totals`."""
     return _lines.order_totals(db, ctx, order_id)
+
+
+@dataclass(frozen=True)
+class OrderLineSummary:
+    """One billable line, sourced from either a PartLine or a LaborLine —
+    the shape commercial needs to prefill an invoice draft (docs/09: "draft
+    prefilled from lines"), never the ORM rows themselves."""
+
+    description: str
+    qty: int
+    unit_price: Decimal
+    source: str  # "part" | "labor" — matches invoice_lines.source (docs/08)
+
+
+def get_order_lines(db: Session, ctx: TenantContext,
+                    order_id: uuid.UUID) -> list[OrderLineSummary]:
+    """Part + labor lines, in the order they'd prefill an invoice draft.
+    Read-only snapshot at call time — the caller decides whether/when to
+    copy these into its own records; this function does not persist
+    anything."""
+    parts = [
+        OrderLineSummary(description=p.name, qty=p.qty, unit_price=p.unit_price,
+                         source="part")
+        for p in _lines.list_part_lines(db, ctx, order_id)
+    ]
+    labor = [
+        OrderLineSummary(description=line.description, qty=line.qty,
+                         unit_price=line.unit_price, source="labor")
+        for line in _lines.list_labor_lines(db, ctx, order_id)
+    ]
+    return parts + labor
 
 
 @dataclass(frozen=True)

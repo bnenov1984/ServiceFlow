@@ -37,13 +37,14 @@ brevity.
 | `ps_clients` | professional_services.clients | Professional Services Operations (module #3) | Professional Services | clients service only | none — module-local, no shared FK from other modules | Implemented (walking skeleton, 18.07.2026) |
 | `ps_assignments` | professional_services.assignments | Professional Services Operations | Professional Services | assignments service only (stage only via one transition function, same discipline as service_orders) | FK to `ps_clients.id`; `company_id` FK to `companies.id` | Implemented (walking skeleton, 18.07.2026) |
 | `ps_next_actions` | professional_services.actions | Professional Services Operations | Professional Services | actions service only | FK to `ps_assignments.id`, `owner_user_id` FK to `users.id`; deadline risk computed at request time, not persisted | Implemented (walking skeleton, 18.07.2026) |
-| `payments` | commercial | Commercial Documents | Commercial; Service Ops reads derived paid_amount/balance via `commercial.service` (same pattern as `service_orders` reading `customers`/`assets`) | commercial service only | `order_id` FK to `service_orders.id`; `invoice_id` nullable, **no FK yet** — `invoices` doesn't exist (Etap 4 adds `fk_payments_invoice_id_invoices`) | Implemented (Payment recording, 19.07.2026) |
+| `payments` | commercial | Commercial Documents | Commercial; Service Ops reads a derived paid_amount/balance summary via a `PaymentSummaryProvider` port it owns (service_orders/contracts.py) — commercial implements it, the composition root wires them; service_orders never imports commercial (architecture boundary repair, 20.07.2026) | commercial service only | `order_id` FK to `service_orders.id`; `invoice_id` FK to `invoices.id` (added by migration 0009, fulfilling migration 0008's promise) | Implemented (Payment recording, 19.07.2026) |
+| `invoices` | commercial | Commercial Documents | Commercial; Service Ops via `service_orders.contracts.get_order_lines` (Invoice draft reads order part/labor lines this way, never `service_orders.models`/`.lines` directly) | commercial service only | `order_id` FK to `service_orders.id`; full docs/08 column set exists (number, seller/buyer, vat_mode, net/vat/gross, pdf_storage_key…) but this slice only ever writes `status="draft"` rows — everything else stays NULL until the issue slice | **Implemented — Draft only** (creation/list/detail/line-replace, 20.07.2026). Issue, numbering, annul/reissue, PDF, VAT remain not started. |
+| `invoice_lines` | commercial | Commercial Documents | Commercial | commercial service only | `invoice_id` FK to `invoices.id` | **Implemented — Draft only**, 20.07.2026 |
 
 ## 2. Ownership matrix — planned tables (not in any migration yet)
 
 | Table (source) | Proposed owner | Readers | Writers | Status |
 |---|---|---|---|---|
-| `invoices`, `invoice_lines` (docs/08 §commercial) | Commercial Documents | Commercial; Service Ops via contract (balance/status per order); platform export | Commercial only | Recommended — Etap 4 (numbering ownership, accountant review, VAT rules, immutability, PDF, annul/reissue) |
 | `jobs` (docs/08 §platform, ADR-006) | Core: Platform Services | Platform | Platform (modules enqueue via contract) | Recommended |
 | subscription/billing state + webhook inbox (ADR-018) | Core: Platform Services | Platform; admin console | Platform | Confirmed (ADR-018) that it exists; ownership Recommended |
 | export/`backup_runs`, `schema_meta` (docs/08 §platform, ADR-012) | Core: Platform Services | Platform | Platform | Recommended |
@@ -81,12 +82,14 @@ rules. A generic WorkOrder abstraction would have to carry all of that as
 "transaction" or ProjectFlow's "project" share almost none of these invariants.
 Status: Rejected (no generic Work Order).
 
-**Invoice ownership.** Issued *sales* invoices belong to Commercial Documents
-(Етап 4). Two look-alikes that must not be merged into it: (1) **InvoiceFlow**
-as a product ingests and processes *incoming supplier* invoices — a document-
+**Invoice ownership.** Issued *sales* invoices belong to Commercial Documents.
+Two look-alikes that must not be merged into it: (1) **InvoiceFlow** as a
+product ingests and processes *incoming supplier* invoices — a document-
 processing pipeline, not an issuing ledger; (2) **subscription billing**
 (ADR-018) is the platform charging tenants — owned by Platform Services. Three
-concepts, three owners. Status: Recommended.
+concepts, three owners. Status: Implemented — Draft only (20.07.2026); issue
+(numbering, requisite snapshot, immutability), annul/reissue, PDF and VAT
+remain Recommended/not started (Invoice decision checkpoint, docs/13 Етап 4).
 
 **Payment ownership.** Customer payments against orders/invoices → Commercial
 Documents (`payments`, docs/08). Tenant subscription payments → Platform

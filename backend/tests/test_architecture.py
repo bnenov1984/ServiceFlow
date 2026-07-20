@@ -53,6 +53,8 @@ TABLE_OWNERS = {
     "labor_lines": "serviceflow.service_orders",
     "accessory_items": "serviceflow.service_orders",
     "payments": "serviceflow.commercial",
+    "invoices": "serviceflow.commercial",
+    "invoice_lines": "serviceflow.commercial",
     "tasks": "serviceflow.tasks",
     "attachments": "serviceflow.attachments",
     "contact_records": "serviceflow.contacts",

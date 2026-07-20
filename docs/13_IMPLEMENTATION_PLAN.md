@@ -81,7 +81,27 @@ terminal orders (docs/01 §ServiceOrder exception), blocked only when archived
 with an open balance · `payment_recorded`/`payment_refunded` timeline events.
 Chosen ahead of Фактура because it needs no numbering, no accountant-reviewed
 VAT rules, and docs/08 already declares `payments.invoice_id` nullable — it
-never required Invoice to exist. **Invoice remains not started**: numbering
+never required Invoice to exist.
+
+**Architecture boundary repair — ✅ landed 20.07.2026.** The Payment slice had
+created a commercial ↔ service_orders import cycle (BOS-09 risk R-3
+materializing). `service_orders/contracts.py` and `commercial/contracts.py`
+now carry the only sanctioned cross-module surface (docs/business-os/04 rule
+R4, now Enforced via two `backend/.importlinter` `protected` contracts);
+service_orders' `paid_amount`/`balance` need is met by a
+`PaymentSummaryProvider` port it owns and commercial implements, wired by the
+composition root — never a direct import either way.
+
+**Фактура (Invoice) — Draft slice ✅ landed 20.07.2026**, using the repaired
+contract: `POST /orders/{id}/invoices` creates a draft prefilled from the
+order's part/labor lines via `service_orders.contracts.get_order_lines`
+(never `.models`/`.lines` directly) · `GET /invoices`, `GET /invoices/{id}`,
+`PATCH /invoices/{id}` (drafts only, replaces the line set) · migration #9:
+`invoices`/`invoice_lines`, full docs/08 column set (so no future ALTER TABLE
+is needed) but every row this slice creates stays `status="draft"` — number,
+seller/buyer snapshot, net/vat/gross, pdf_storage_key all stay NULL · also
+adds the `fk_payments_invoice_id_invoices` constraint migration #8 deferred.
+**Invoice issue/annul/reissue/PDF/VAT remain not started**: numbering
 ownership (`document_sequences` — still the one Open item, BOS-05 §1),
 accountant review, VAT modes, immutability, PDF, annul/reissue.
 
