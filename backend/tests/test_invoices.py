@@ -122,6 +122,23 @@ def test_list_invoices_filters_by_status(client: TestClient) -> None:
     assert r.json() == []
 
 
+def test_list_invoices_filters_by_order_id(client: TestClient) -> None:
+    """order_id is the frontend's way to answer "does this order already
+    have a draft" without fetching the whole company's invoice list —
+    additive query param, docs/09 §3 allows new optional fields freely."""
+    h = _login(client)
+    oid_a = _order(client, h)
+    oid_b = _order(client, h)
+    client.post(f"/api/v1/orders/{oid_a}/invoices", headers=h)
+    client.post(f"/api/v1/orders/{oid_b}/invoices", headers=h)
+
+    r = client.get(f"/api/v1/invoices?order_id={oid_a}")
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 1
+    assert body[0]["order_id"] == oid_a
+
+
 def test_get_invoice_detail_includes_lines_and_total(client: TestClient) -> None:
     h = _login(client)
     oid = _order_with_lines(client, h)

@@ -173,9 +173,12 @@ def create_invoice_draft(order_id: uuid.UUID, db: TenantDbDep,
 
 
 @router.get("/invoices")
-def list_invoices(db: TenantDbDep, tenant: TenantDep,
-                  status: str | None = None) -> list[InvoiceOut]:
-    return [InvoiceOut.of(i) for i in service.list_invoices(db, tenant, status=status)]
+def list_invoices(db: TenantDbDep, tenant: TenantDep, status: str | None = None,
+                  order_id: uuid.UUID | None = None) -> list[InvoiceOut]:
+    return [
+        InvoiceOut.of(i)
+        for i in service.list_invoices(db, tenant, status=status, order_id=order_id)
+    ]
 
 
 @router.get("/invoices/{invoice_id}")

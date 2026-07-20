@@ -98,10 +98,13 @@ def get(db: Session, ctx: TenantContext, invoice_id: uuid.UUID) -> Invoice | Non
     return db.scalar(scoped(select(Invoice), Invoice, ctx).where(Invoice.id == invoice_id))
 
 
-def list_invoices(db: Session, ctx: TenantContext, *, status: str | None = None) -> list[Invoice]:
+def list_invoices(db: Session, ctx: TenantContext, *, status: str | None = None,
+                  order_id: uuid.UUID | None = None) -> list[Invoice]:
     stmt = scoped(select(Invoice), Invoice, ctx)
     if status:
         stmt = stmt.where(Invoice.status == status)
+    if order_id:
+        stmt = stmt.where(Invoice.order_id == order_id)
     return list(db.scalars(stmt.order_by(Invoice.created_at.desc())))
 
 
