@@ -3343,6 +3343,7 @@ export interface operations {
         parameters: {
             query?: {
                 status?: string | null;
+                order_id?: string | null;
             };
             header?: never;
             path?: never;

@@ -17,6 +17,7 @@ import { ComplaintBlock } from "./ComplaintBlock";
 import { ContactsSection } from "./ContactsSection";
 import { CustomerCard } from "./CustomerCard";
 import { DiagnosisCard, type DiagnosisValue } from "./DiagnosisCard";
+import { InvoiceCard } from "./InvoiceCard";
 import { LaborLinesSection } from "./LaborLinesSection";
 import { MoneyCard } from "./MoneyCard";
 import { OrderHeader } from "./OrderHeader";
@@ -139,6 +140,7 @@ export function OrderPage() {
             paidAmount={order.paid_amount}
             balance={order.balance}
           />
+          <InvoiceCard orderId={order.id} />
         </div>
 
         <div className="flex flex-col gap-4">
