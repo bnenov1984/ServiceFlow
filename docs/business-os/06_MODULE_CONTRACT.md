@@ -35,7 +35,8 @@ Companion decision: [ADR-BOS-004](../adr/ADR-BOS-004-no-runtime-plugin-system-v1
 | `settings` | settings keys stored under `companies.settings` (or module-owned table) | declared so the settings UI (Етап 3) can render per-module sections |
 | `health` | health-check hook | contributes to `platform/health` endpoint |
 | `export` | export/seed participation | module dumps/loads its own tables' section of the ADR-012 artifact; Core owns the envelope + format version |
-| `events` | domain event types published / subscribed | documentation + collision guard; payloads are ids + primitives only |
+| `events` | domain event types published / subscribed | documentation + collision guard; payloads are ids + primitives only; type names are module-namespaced and, once published, a stable contract (ADR-BOS-007) |
+| `search` | searchable subject types contributed to the future global-search facade | module declares subject types + matched fields + a route template; Core owns the facade (query fan-out, ranking, permission filtering), never reads the module's tables directly (ADR-BOS-006). Declared now; the facade itself is Future candidate |
 
 ## 3. Non-binding example (YAML — illustrative, not a file format decision)
 
@@ -84,6 +85,13 @@ health:
 export:
   section: serviceflow
   format_version: 1      # inside the ADR-012 envelope
+search:                  # declared per ADR-BOS-006; facade not built yet
+  - subject_type: order
+    fields: [number, customer_name]
+    route: /orders/{id}
+  - subject_type: customer
+    fields: [name, phone]
+    route: /customers/{id}
 events:
   # Names below are the REAL implemented snake_case types (docs/01 §5 catalog;
   # do not invent a new naming convention — review BOS-11 F2). Excerpt:

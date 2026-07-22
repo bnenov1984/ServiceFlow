@@ -149,6 +149,19 @@ flowchart TB
   and phases 5–7 of [08](08_EVOLUTION_ROADMAP.md). Defining its internals now
   would violate the governing rule (speculative abstraction).
 
+### 2.8 Global Search — **Future candidate** (ownership fixed now, ADR-BOS-006)
+
+- **Responsibility:** cross-module lookup by any entity (client name, act
+  number, order number, …) without the user picking a module first.
+- **Owned tables:** none, ever — the facade queries through each active
+  module's own `search` contract; no shared index table (ADR-BOS-006 §
+  Alternatives (b), rejected).
+- **Exists:** no. Do not build until a second real module is in production
+  and cross-module lookup is a demonstrated user need (same trigger family
+  as §2.6). Shape defined now so module #2/#3 design their `search` contract
+  sections consistently from day one — see
+  [06_MODULE_CONTRACT.md](06_MODULE_CONTRACT.md) `search` field.
+
 ## 3. What is deliberately *not* a context
 
 - **`shared_kernel`** — technical primitives (ids, db base, storage port,
