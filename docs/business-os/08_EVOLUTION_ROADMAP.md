@@ -136,6 +136,12 @@ Implemented 18.07.2026 — see
   equivalent) package; `serviceflow.*` becomes the vertical. Pure rename +
   import updates; import-linter contracts flip from "list of module names" to
   "package prefix" form.
+- **Companion, same wave:** the repository root/folder and GitHub repo name
+  (`ServiceFlow` today) rename to `BusinessOS` immediately after this phase's
+  code rename lands — decision recorded, execution deferred to the same
+  trigger, in [ADR-BOS-008](../adr/ADR-BOS-008-repository-identity-rename-deferred.md).
+  Do not execute the folder/repo rename ahead of, or separately from, this
+  phase's code rename (ADR-BOS-008 §3).
 - **Trigger:** PO commits to building a second product, OR Етап 3 platform work
   starts colliding with ServiceFlow naming in practice. **Not before** — a
   rename without a second consumer is cost with no proof.
