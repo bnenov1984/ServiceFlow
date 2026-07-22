@@ -25,7 +25,7 @@ format exists yet platform-wide).
 | Installer / deployment | none | one artifact, SaaS (docs/14); module adds no deployment machinery |
 | Shared UI shell | contribute | nav entries per [22] §2; shell owns chrome, module owns feature screens |
 | Module navigation | contribute | via contract `navigation` when activation exists; hardcoded shell nav until then (platform's current state) |
-| Global search | future contribute | module ships its own search sources now; joins a platform facade if/when one exists (BOS-02 Deferred) |
+| Global search | future contribute | module ships its own search sources now and declares them via the `search` module-contract field (BOS-06); Core owns the future facade — ownership and shape fixed by ADR-BOS-006, build itself still Deferred |
 | Health | contribute | `ps_db_reachable` + job-freshness check ([33]) |
 | Events | publish | `ps_*` catalogue ([09] §5) on the shared bus |
 
@@ -63,6 +63,9 @@ settings: [ps.assignment_label, ps.number_prefix, ps.threshold_attention,
            ps.personal_identifier_enabled]
 health: [ps_db_reachable, ps_morning_job_fresh]
 export: {section: professional-services, format_version: 1}
+search:                  # declared per ADR-BOS-006; facade not built yet
+  - {subject_type: assignment, fields: [number, title, client_name], route: /ps/assignments/{id}}
+  - {subject_type: client, fields: [name, phones], route: /ps/clients/{id}}
 events:
   publishes: [ps_assignment_created, ps_stage_changed,
               ps_lifecycle_changed, ps_next_action_set,
@@ -92,6 +95,11 @@ process, not this module's docs):
 4. **GDPR processor posture** (platform DPA, subprocessors list) — flagged
    for Етап-3 legal work; this module's data classes raise the stakes
    ([16] §4) but change nothing structurally.
+5. **Global Search facade + Stable Event Naming discipline** (ADR-BOS-006/
+   007) — informational only, no action required of this module: its event
+   catalogue ([09] §5) already complies with the naming discipline, and its
+   `search` contract section (§2 above) is already declared for whenever
+   the facade is built.
 
 ## 4. What the module explicitly does not integrate with
 

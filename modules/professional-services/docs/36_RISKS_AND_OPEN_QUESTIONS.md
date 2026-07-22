@@ -10,7 +10,7 @@ the package stays implementation-ready without pretending to certainty.
 
 | ID | Assumption | Basis / risk if wrong |
 |---|---|---|
-| A-1 | The commissioned path `C:\Projects\BusinessOS` does not exist; the Business OS repository is the current repository root, verified by inspection, and modules live in `modules/` | verified by inspection; if a separate BusinessOS repo is planned, this package moves wholesale (self-contained, cheap) |
+| A-1 | The commissioned path `C:\Projects\BusinessOS` does not exist; the Business OS repository is the current repository root, verified by inspection, and modules live in `modules/`. The outer folder/repo is still named `ServiceFlow` — a known, deliberately deferred mismatch, not an oversight: see [ADR-BOS-008](../../../docs/adr/ADR-BOS-008-repository-identity-rename-deferred.md) (target `BusinessOS`, execution tied to BOS-08 Phase 3, not performed now) | verified by inspection; this package needs no change when the rename executes — it already uses paths relative to the repository root, never the outer folder name |
 | A-2 | This module is Business OS vertical **#3** (CS is #2); either commitment triggers BOS-08 Phase 3 | both modules' docs claim the trigger — harmless double-claim, noted in [28] §3.1 |
 | A-3 | MVP targets web-first SaaS only; local edition stays parked (docs/14); module remains local-compatible in principle | commission mentioned "local deployment"; repo reality is SaaS. If PO revives local, [24] §7 holds — no cloud-only dependency was introduced |
 | A-4 | Single operating timezone Europe/Sofia; org-level timezone is a future setting, schema-neutral | [13] §2.5 |

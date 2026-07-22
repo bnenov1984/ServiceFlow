@@ -71,10 +71,12 @@ Adds: nothing to Core in MVP. It is the platform's **module #3 proof** the
 same way CS is #2: consuming Core as-is. Wants that are *recorded but not
 built*: per-module notification outbox (future extraction candidate once
 commercial/CS also need notifications), polymorphic file anchor (BOS-02
-already defers this), global search facade (deferred, module ships its own
-sources). Must not: modify ServiceFlow, touch its tables, extend Core
-"while we're there" — any Core change goes through the platform docs'
-process, separately.
+already defers this), global search facade — **ownership now fixed**
+(Core-owned, ADR-BOS-006): this module ships its own search sources today
+and declares a `search` contract section (BOS-06) when the facade is
+built; it never builds its own cross-module search. Must not: modify
+ServiceFlow, touch its tables, extend Core "while we're there" — any Core
+change goes through the platform docs' process, separately.
 
 ## 6. Dependencies & sequencing (BOS roadmap alignment)
 

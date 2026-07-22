@@ -149,10 +149,15 @@ Full worked instances (JSON + narrative) live in [../examples/](../examples/).
 
 ## 5. Domain events (published on the shared bus)
 
-Snake_case, payloads = ids + primitives (platform convention, BOS-06):
-`ps_assignment_created`, `ps_stage_changed`, `ps_lifecycle_changed`,
+Snake_case, module-namespaced, payloads = ids + primitives (platform
+convention, BOS-06; naming now platform-mandated by ADR-BOS-007 — this
+catalogue was designed to that shape from the start, so it needs no
+rework): `ps_assignment_created`, `ps_stage_changed`, `ps_lifecycle_changed`,
 `ps_next_action_set`, `ps_next_action_completed`, `ps_task_completed`,
 `ps_document_received`, `ps_file_added`, `ps_communication_logged`,
 `ps_deadline_changed`, `ps_payment_recorded`. MVP's only subscriber is the
-module's own activity-event writer; the catalogue exists so future
-consumers (global search, cross-module feed) attach without schema change.
+module's own activity-event writer. Once published, per ADR-BOS-007 §3
+these names are a stable contract — adding new types is free; renaming or
+removing one follows the docs/07-style change process. The catalogue
+exists so future consumers (global search indexing per ADR-BOS-006,
+cross-module feed, future AI consumers) attach without schema change.
