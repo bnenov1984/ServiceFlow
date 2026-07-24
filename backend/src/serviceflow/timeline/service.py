@@ -12,10 +12,10 @@ from serviceflow.timeline.models import TimelineEvent
 
 @subscribe
 def _record(db: Session, event: DomainEvent) -> None:
-    if event.order_id is None:
+    if event.subject_id is None:
         return
     db.add(TimelineEvent(
-        company_id=event.company_id, order_id=event.order_id,
+        company_id=event.company_id, order_id=event.subject_id,
         event_type=event.type, actor_user_id=event.actor_user_id, data=event.data,
     ))
 

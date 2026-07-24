@@ -18,7 +18,7 @@ PART_STATES = ("needed", "ordered", "received", "installed", "removed")
 def _event(db: Session, ctx: TenantContext, order_id: uuid.UUID, type_: str,
            data: dict[str, Any]) -> None:
     publish(db, DomainEvent(type=type_, company_id=ctx.company_id,
-                            actor_user_id=ctx.user_id, order_id=order_id, data=data))
+                            actor_user_id=ctx.user_id, subject_id=order_id, data=data))
 
 
 # --- Part lines ---------------------------------------------------------
@@ -31,7 +31,7 @@ def list_part_lines(db: Session, ctx: TenantContext, order_id: uuid.UUID) -> lis
 
 def add_part_line(db: Session, ctx: TenantContext, order: ServiceOrder, *, name: str,
                   qty: int, unit_cost: Decimal, unit_price: Decimal) -> PartLine:
-    line = PartLine(company_id=ctx.company_id, order_id=order.id, name=name, qty=qty,
+    line = PartLine(company_id=ctx.company_id, subject_id=order.id, name=name, qty=qty,
                     unit_cost=unit_cost, unit_price=unit_price)
     db.add(line)
     db.flush()
@@ -71,7 +71,7 @@ def add_labor_line(db: Session, ctx: TenantContext, order: ServiceOrder, *,
                    description: str, qty: int, unit_price: Decimal,
                    duration_min: int | None = None,
                    performed_by: uuid.UUID | None = None) -> LaborLine:
-    line = LaborLine(company_id=ctx.company_id, order_id=order.id, description=description,
+    line = LaborLine(company_id=ctx.company_id, subject_id=order.id, description=description,
                      qty=qty, unit_price=unit_price, duration_min=duration_min,
                      performed_by=performed_by)
     db.add(line)
@@ -104,7 +104,7 @@ def list_accessories(db: Session, ctx: TenantContext, order_id: uuid.UUID) -> li
 
 def add_accessory(db: Session, ctx: TenantContext, order: ServiceOrder, *, name: str,
                   qty: int) -> AccessoryItem:
-    item = AccessoryItem(company_id=ctx.company_id, order_id=order.id, name=name, qty=qty)
+    item = AccessoryItem(company_id=ctx.company_id, subject_id=order.id, name=name, qty=qty)
     db.add(item)
     db.commit()
     return item

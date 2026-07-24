@@ -65,7 +65,7 @@ def upload(db: Session, ctx: TenantContext, storage: StoragePort, *, order_id: u
     storage.put(key, stored)
 
     attachment = Attachment(
-        company_id=ctx.company_id, order_id=order_id, storage_key=key,
+        company_id=ctx.company_id, subject_id=order_id, storage_key=key,
         thumbnail_key=thumbnail_key, kind="photo" if media.is_image(mime) else "document",
         stage=stage, caption=caption, mime=mime, size=len(stored),
         uploaded_by=ctx.user_id,
@@ -73,7 +73,7 @@ def upload(db: Session, ctx: TenantContext, storage: StoragePort, *, order_id: u
     db.add(attachment)
     db.flush()
     publish(db, DomainEvent(type="attachment_added", company_id=ctx.company_id,
-                            actor_user_id=ctx.user_id, order_id=order_id,
+                            actor_user_id=ctx.user_id, subject_id=order_id,
                             data={"kind": attachment.kind, "stage": stage}))
     db.commit()
     return attachment
@@ -97,6 +97,6 @@ def list_for_order(db: Session, ctx: TenantContext, order_id: uuid.UUID) -> list
 def soft_delete(db: Session, ctx: TenantContext, attachment: Attachment) -> None:
     attachment.deleted_at = datetime.now(UTC)
     publish(db, DomainEvent(type="attachment_deleted", company_id=ctx.company_id,
-                            actor_user_id=ctx.user_id, order_id=attachment.order_id,
+                            actor_user_id=ctx.user_id, subject_id=attachment.order_id,
                             data={}))
     db.commit()

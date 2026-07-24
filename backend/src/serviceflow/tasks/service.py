@@ -27,14 +27,14 @@ def _now() -> datetime:
 def create(db: Session, ctx: TenantContext, *, title: str,
            order_id: uuid.UUID | None = None, assignee_id: uuid.UUID | None = None,
            due_on: date | None = None, note: str = "", is_call: bool = False) -> Task:
-    task = Task(company_id=ctx.company_id, order_id=order_id, title=title,
+    task = Task(company_id=ctx.company_id, subject_id=order_id, title=title,
                assignee_id=assignee_id, due_on=due_on, note=note, is_call=is_call,
                created_by=ctx.user_id)
     db.add(task)
     db.flush()
     if order_id is not None:
         publish(db, DomainEvent(type="task_created", company_id=ctx.company_id,
-                                actor_user_id=ctx.user_id, order_id=order_id,
+                                actor_user_id=ctx.user_id, subject_id=order_id,
                                 data={"title": title}))
     db.commit()
     return task
@@ -76,7 +76,7 @@ def complete(db: Session, ctx: TenantContext, task: Task) -> Task:
     task.completed_at = _now()
     if task.order_id is not None:
         publish(db, DomainEvent(type="task_completed", company_id=ctx.company_id,
-                                actor_user_id=ctx.user_id, order_id=task.order_id,
+                                actor_user_id=ctx.user_id, subject_id=task.order_id,
                                 data={"title": task.title}))
     db.commit()
     return task
@@ -90,7 +90,7 @@ def reopen(db: Session, ctx: TenantContext, task: Task) -> Task:
     task.completed_at = None
     if task.order_id is not None:
         publish(db, DomainEvent(type="task_reopened", company_id=ctx.company_id,
-                                actor_user_id=ctx.user_id, order_id=task.order_id,
+                                actor_user_id=ctx.user_id, subject_id=task.order_id,
                                 data={"title": task.title}))
     db.commit()
     return task

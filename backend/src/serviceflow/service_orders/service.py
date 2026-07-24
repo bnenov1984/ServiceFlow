@@ -54,7 +54,7 @@ def _event(db: Session, ctx: TenantContext, order: ServiceOrder, type_: str,
            data: dict[str, Any] | None = None) -> None:
     publish(db, DomainEvent(
         type=type_, company_id=ctx.company_id, actor_user_id=ctx.user_id,
-        order_id=order.id, data=data or {},
+        subject_id=order.id, data=data or {},
     ))
 
 
@@ -147,7 +147,7 @@ def put_diagnosis(db: Session, ctx: TenantContext, order: ServiceOrder,
     diagnosis = get_diagnosis(db, ctx, order.id)
     is_new = diagnosis is None
     if diagnosis is None:
-        diagnosis = Diagnosis(company_id=ctx.company_id, order_id=order.id)
+        diagnosis = Diagnosis(company_id=ctx.company_id, subject_id=order.id)
         db.add(diagnosis)
     for key, value in fields.items():
         setattr(diagnosis, key, value)
