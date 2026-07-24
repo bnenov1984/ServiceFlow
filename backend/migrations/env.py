@@ -9,6 +9,7 @@ from business_os.identity import models as _identity_models  # noqa: F401
 from business_os.shared_kernel.db import Base
 from professional_services.actions import models as _ps_actions_models  # noqa: F401
 from professional_services.assignments import models as _ps_assignments_models  # noqa: F401
+from professional_services.catalog import models as _ps_catalog_models  # noqa: F401
 from professional_services.clients import models as _ps_clients_models  # noqa: F401
 from serviceflow.assets import models as _assets_models  # noqa: F401
 from serviceflow.attachments import models as _attachments_models  # noqa: F401

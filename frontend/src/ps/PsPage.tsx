@@ -12,7 +12,7 @@ import { EmptyState, ErrorState, Skeleton } from "../components/States";
 import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
-import type { PsAssignment, PsClient, PsNextAction } from "./types";
+import type { PsAssignment, PsClient, PsNextAction, PsStage, PsWorkflowTemplate } from "./types";
 
 function riskClass(risk: PsNextAction["risk"]): string {
   switch (risk) {
@@ -37,9 +37,12 @@ export function PsPage() {
   const [newClientName, setNewClientName] = useState("");
   const [newAssignmentTitle, setNewAssignmentTitle] = useState("");
   const [newAssignmentClientId, setNewAssignmentClientId] = useState("");
+  const [newAssignmentTemplateId, setNewAssignmentTemplateId] = useState("");
   const [newActionTitle, setNewActionTitle] = useState("");
   const [newActionAssignmentId, setNewActionAssignmentId] = useState("");
   const [newActionDueOn, setNewActionDueOn] = useState("");
+  const [stageEditAssignmentId, setStageEditAssignmentId] = useState<string | null>(null);
+  const [stageEditTargetId, setStageEditTargetId] = useState("");
 
   const clients = useQuery({
     queryKey: queryKeys.psClients,
@@ -52,6 +55,15 @@ export function PsPage() {
   const actions = useQuery({
     queryKey: queryKeys.psNextActions,
     queryFn: () => api.get<PsNextAction[]>("/ps/next-actions"),
+  });
+  const templates = useQuery({
+    queryKey: queryKeys.psWorkflowTemplates,
+    queryFn: () => api.get<PsWorkflowTemplate[]>("/ps/workflow-templates"),
+  });
+  const stageEditStages = useQuery({
+    queryKey: queryKeys.psAssignmentStages(stageEditAssignmentId ?? ""),
+    queryFn: () => api.get<PsStage[]>(`/ps/assignments/${stageEditAssignmentId}/stages`),
+    enabled: stageEditAssignmentId !== null,
   });
 
   const clientName = (id: string) => clients.data?.find((c) => c.id === id)?.name ?? id;
@@ -67,8 +79,10 @@ export function PsPage() {
     if (!newAssignmentTitle.trim() || !newAssignmentClientId) return;
     await api.post("/ps/assignments", {
       client_id: newAssignmentClientId, title: newAssignmentTitle.trim(),
+      workflow_template_id: newAssignmentTemplateId || null,
     });
     setNewAssignmentTitle("");
+    setNewAssignmentTemplateId("");
     await queryClient.invalidateQueries({ queryKey: queryKeys.psAssignments });
   }
 
@@ -85,6 +99,18 @@ export function PsPage() {
   async function completeAction(id: string) {
     await api.post(`/ps/next-actions/${id}/complete`);
     await queryClient.invalidateQueries({ queryKey: queryKeys.psNextActions });
+  }
+
+  function openStageEdit(assignmentId: string) {
+    setStageEditAssignmentId(assignmentId);
+    setStageEditTargetId("");
+  }
+
+  async function submitStageChange(assignmentId: string) {
+    if (!stageEditTargetId) return;
+    await api.post(`/ps/assignments/${assignmentId}/stage`, { to_stage_id: stageEditTargetId });
+    setStageEditAssignmentId(null);
+    await queryClient.invalidateQueries({ queryKey: queryKeys.psAssignments });
   }
 
   return (
@@ -139,22 +165,55 @@ export function PsPage() {
             {assignments.data.map((a) => (
               <li
                 key={a.id}
-                className="flex items-center justify-between border-b border-slate-100 px-3 py-2 last:border-0"
+                className="flex flex-col gap-2 border-b border-slate-100 px-3 py-2 last:border-0 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div>
                   <p className="font-medium text-slate-900">{a.title}</p>
                   <p className="text-sm text-slate-500">{clientName(a.client_id)}</p>
                 </div>
-                <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
-                  {t(`ps.stage_${a.stage}`)}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+                    {a.current_stage?.name ?? t("ps.current_stage_none")}
+                  </span>
+                  {stageEditAssignmentId === a.id ? (
+                    <>
+                      <select
+                        value={stageEditTargetId}
+                        onChange={(e) => setStageEditTargetId(e.target.value)}
+                        className="rounded-lg border border-slate-300 px-2 py-1 text-sm min-h-touch"
+                      >
+                        <option value="">{t("ps.stage_change_label")}</option>
+                        {stageEditStages.data?.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => void submitStageChange(a.id)}
+                        className="rounded-lg border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50 min-h-touch"
+                      >
+                        {t("ps.stage_change_confirm")}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => openStageEdit(a.id)}
+                      className="rounded-lg border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50 min-h-touch"
+                    >
+                      {t("ps.stage_change_label")}
+                    </button>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
         ) : (
           <EmptyState text={t("ps.assignments_empty")} />
         )}
-        <div className="mt-2 flex gap-2">
+        <div className="mt-2 flex flex-wrap gap-2">
           <select
             value={newAssignmentClientId}
             onChange={(e) => setNewAssignmentClientId(e.target.value)}
@@ -164,6 +223,18 @@ export function PsPage() {
             {clients.data?.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={newAssignmentTemplateId}
+            onChange={(e) => setNewAssignmentTemplateId(e.target.value)}
+            className="rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
+          >
+            <option value="">{t("ps.template_none")}</option>
+            {templates.data?.map((tpl) => (
+              <option key={tpl.id} value={tpl.id}>
+                {tpl.name}
               </option>
             ))}
           </select>

@@ -4,12 +4,28 @@ export interface PsClient {
   kind: "person" | "company";
 }
 
+export type PsStageCategory = "work" | "waiting_client" | "waiting_documents" | "review" | "delivery";
+
+export interface PsStage {
+  id: string;
+  name: string;
+  category: PsStageCategory;
+  sort: number;
+}
+
+export interface PsWorkflowTemplate {
+  id: string;
+  name: string;
+  is_active: boolean;
+  stages: PsStage[];
+}
+
 export interface PsAssignment {
   id: string;
   client_id: string;
   title: string;
-  stage: "intake" | "in_progress" | "waiting_client" | "delivered";
-  lifecycle_state: "active" | "delivered" | "cancelled";
+  lifecycle_state: "active" | "delivered" | "completed" | "cancelled";
+  current_stage: PsStage | null;
   official_deadline_on: string | null;
   internal_target_on: string | null;
 }

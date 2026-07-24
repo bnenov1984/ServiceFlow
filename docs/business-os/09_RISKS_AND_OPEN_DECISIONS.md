@@ -84,6 +84,39 @@ owner; "dev" = maintainer. "Deadline" is an event, not a date, wherever possible
   it solves at this scale).
 - **Deadline:** Phase 2 for lint; Phase 5 for nav. **Non-blocking.** **Owner:** dev.
 
+### Q8 — Timeline subscriber's subject-agnostic filter, post ADR-BOS-007
+- **Why it matters:** `serviceflow.timeline.service._record` (the bus's sole
+  subscriber) filters only on `event.subject_id is not None`, not on event
+  `type`. After the ADR-BOS-007 rename made `DomainEvent.subject_id` genuinely
+  neutral, any module publishing an event with a non-None `subject_id` that is
+  *not* a `service_orders.id` would make this subscriber attempt
+  `TimelineEvent(order_id=<that id>)` — a foreign-key violation at commit
+  time, since `timeline_events.order_id` is FK'd to `service_orders.id` only.
+  Discovered while building Professional Services' stage-transition history
+  (two-axis workflow slice, 23.07.2026): its `ps_stage_changed` moment was
+  deliberately **not** published through the shared bus specifically to avoid
+  this — the history row is written directly by
+  `professional_services.assignments.service.change_stage` instead. Not fixed
+  as part of that slice (touches `serviceflow.timeline`, a domain module, for
+  a problem no current producer triggers yet).
+- **Options:** (a) timeline subscriber filters on an explicit allow-list of
+  ServiceFlow event types (or checks that `subject_id` resolves to a real
+  `service_orders` row before writing — an extra query per event); (b) require
+  every publisher to also pass a `subject_kind`/similar discriminator so
+  subscribers can route by kind, not just presence; (c) leave the subscriber
+  as-is and keep it a hard rule that non-ServiceFlow-order events are never
+  published on this bus until fixed (current de facto state).
+- **Recommendation:** (c) for now — zero cost, zero regression risk, and
+  exactly matches the one existing real case. (a) is the likely eventual fix
+  (small, local to `serviceflow/timeline/service.py`) but is a standalone
+  domain-module change, not bundled into unrelated work. (b) is Rejected pre-
+  emptively as event-framework expansion with only one concrete consumer
+  (BOS-00 §7 anti-goal #1) — revisit only if a second subscriber actually
+  needs to discriminate by kind.
+- **Deadline:** before any module publishes a non-order-anchored event with a
+  non-None `subject_id` on the shared bus. **Blocking for that one case only.**
+  **Owner:** dev.
+
 ## 2. Principal risks
 
 | # | Risk | Severity | Mitigation |

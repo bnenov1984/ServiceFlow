@@ -14,6 +14,7 @@ from business_os.identity.router import users_router
 from business_os.platform.health import router as health_router
 from professional_services.actions.router import router as ps_actions_router
 from professional_services.assignments.router import router as ps_assignments_router
+from professional_services.catalog.router import router as ps_catalog_router
 from professional_services.clients.router import router as ps_clients_router
 from serviceflow import __version__
 from serviceflow.assets.router import router as assets_router
@@ -96,6 +97,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(dashboard_router, prefix="/api/v1", tags=["dashboard"])
     app.include_router(search_router, prefix="/api/v1", tags=["search"])
     app.include_router(ps_clients_router, prefix="/api/v1/ps", tags=["ps-clients"])
+    app.include_router(ps_catalog_router, prefix="/api/v1/ps", tags=["ps-catalog"])
     app.include_router(ps_assignments_router, prefix="/api/v1/ps", tags=["ps-assignments"])
     app.include_router(ps_actions_router, prefix="/api/v1/ps", tags=["ps-actions"])
     return app

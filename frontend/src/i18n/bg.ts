@@ -334,10 +334,6 @@ export const bg = {
   "ps.assignment_title_placeholder": "Заглавие на ангажимента…",
   "ps.assignment_client_label": "Клиент",
   "ps.assignment_add": "Добави ангажимент",
-  "ps.stage_intake": "Нов ангажимент",
-  "ps.stage_in_progress": "В процес",
-  "ps.stage_waiting_client": "Чака клиента",
-  "ps.stage_delivered": "Предаден",
   "ps.next_actions": "Следващи действия",
   "ps.next_actions_empty": "Няма следващи действия.",
   "ps.action_title_placeholder": "Заглавие на действието…",
@@ -354,6 +350,16 @@ export const bg = {
   "errors.ps.assignment_not_found": "Няма такъв ангажимент.",
   "errors.ps.action_not_found": "Няма такова действие.",
   "errors.ps.invalid_stage": "Невалиден етап.",
+  "errors.ps.stage_unchanged": "Ангажиментът вече е в този етап.",
+  "errors.ps.template_not_found": "Няма такъв работен процес.",
+  "errors.ps.template_needs_stages": "Работният процес трябва да има поне един етап.",
+  "errors.ps.invalid_stage_category": "Невалидна категория на етап.",
+  "ps.workflow_templates": "Работни процеси",
+  "ps.template_label": "Работен процес",
+  "ps.template_none": "Без работен процес",
+  "ps.current_stage_none": "Без етап",
+  "ps.stage_change_label": "Промени етап",
+  "ps.stage_change_confirm": "Запази",
 } as const;
 
 export type MessageKey = keyof typeof bg;

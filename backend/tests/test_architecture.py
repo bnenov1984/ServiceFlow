@@ -20,6 +20,10 @@ from pathlib import Path
 # migrations/env.py's import list (the same models Alembic autogenerate needs).
 from business_os.identity import models as _identity_models  # noqa: F401
 from business_os.shared_kernel.db import Base
+from professional_services.actions import models as _ps_actions_models  # noqa: F401
+from professional_services.assignments import models as _ps_assignments_models  # noqa: F401
+from professional_services.catalog import models as _ps_catalog_models  # noqa: F401
+from professional_services.clients import models as _ps_clients_models  # noqa: F401
 from serviceflow.assets import models as _assets_models  # noqa: F401
 from serviceflow.attachments import models as _attachments_models  # noqa: F401
 from serviceflow.commercial import models as _commercial_models  # noqa: F401
@@ -62,6 +66,10 @@ TABLE_OWNERS = {
     "ps_clients": "professional_services.clients",
     "ps_assignments": "professional_services.assignments",
     "ps_next_actions": "professional_services.actions",
+    "ps_workflow_templates": "professional_services.catalog",
+    "ps_workflow_template_stages": "professional_services.catalog",
+    "ps_assignment_stages": "professional_services.assignments",
+    "ps_assignment_stage_history": "professional_services.assignments",
 }
 
 

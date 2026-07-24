@@ -25,5 +25,7 @@ export const queryKeys = {
   search: (q: string) => ["search", q] as const,
   psClients: ["ps", "clients"] as const,
   psAssignments: ["ps", "assignments"] as const,
+  psAssignmentStages: (id: string) => ["ps", "assignments", id, "stages"] as const,
   psNextActions: ["ps", "next-actions"] as const,
+  psWorkflowTemplates: ["ps", "workflow-templates"] as const,
 };

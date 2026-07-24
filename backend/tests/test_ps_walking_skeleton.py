@@ -45,6 +45,17 @@ def test_full_journey_client_assignment_next_action(client: TestClient) -> None:
     csrf = str(me["csrf_token"])
     headers = {"X-CSRF-Token": csrf}
 
+    resp = client.post(
+        "/api/v1/ps/workflow-templates",
+        json={"name": "Стандартен процес", "stages": [
+            {"name": "Нов", "category": "work"},
+            {"name": "В процес", "category": "work"},
+        ]},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    template = resp.json()
+
     resp = client.post("/api/v1/ps/clients", json={"name": "Инвест ЕООД", "kind": "company"},
                        headers=headers)
     assert resp.status_code == 200, resp.text
@@ -52,12 +63,13 @@ def test_full_journey_client_assignment_next_action(client: TestClient) -> None:
 
     resp = client.post(
         "/api/v1/ps/assignments",
-        json={"client_id": client_id, "title": "Годишен преглед"},
+        json={"client_id": client_id, "title": "Годишен преглед",
+              "workflow_template_id": template["id"]},
         headers=headers,
     )
     assert resp.status_code == 200, resp.text
     assignment = resp.json()
-    assert assignment["stage"] == "intake"
+    assert assignment["current_stage"]["name"] == "Нов"
 
     yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
     resp = client.post(
@@ -73,10 +85,15 @@ def test_full_journey_client_assignment_next_action(client: TestClient) -> None:
     assert action["risk"] == "overdue"
     assert action["completed"] is False
 
+    in_progress_stage_id = template["stages"][1]["id"]
+    resp = client.get(f"/api/v1/ps/assignments/{assignment['id']}/stages", headers=headers)
+    own_in_progress_id = next(s["id"] for s in resp.json() if s["name"] == "В процес")
+    assert own_in_progress_id != in_progress_stage_id  # copy-on-create: own id, not the template's
+
     resp = client.post(f"/api/v1/ps/assignments/{assignment['id']}/stage",
-                       json={"to": "in_progress"}, headers=headers)
+                       json={"to_stage_id": own_in_progress_id}, headers=headers)
     assert resp.status_code == 200
-    assert resp.json()["stage"] == "in_progress"
+    assert resp.json()["current_stage"]["name"] == "В процес"
 
     resp = client.post(f"/api/v1/ps/next-actions/{action['id']}/complete", headers=headers)
     assert resp.status_code == 200
