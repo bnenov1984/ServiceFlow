@@ -8,6 +8,17 @@
  * only, route paths and backend module keys are unchanged (still "/", "/ps"
  * and "professional-services" respectively). PropertyFlow gets its own nav
  * section, not a submenu entry inside RepairFlow's.
+ *
+ * Global vs application-owned controls (26.07.2026, found via manual testing:
+ * RepairFlow's search and "Нова поръчка" were leaking into every app's top
+ * bar): GlobalHeader carries only platform-level controls (brand, app
+ * switcher, account menu) and never changes by route. RepairFlowToolbar owns
+ * RepairFlow's own search + primary action and renders only when
+ * currentApp.id === "repairflow" - a plain conditional render (unmounts, not
+ * CSS-hidden), so no stale search state survives a switch to PropertyFlow and
+ * a direct load of /ps never flashes RepairFlow controls. PropertyFlow has no
+ * toolbar of its own yet - none of its actions exist as reusable components
+ * to move in, and this task does not invent new ones.
  */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -115,6 +126,53 @@ function AppSwitcher({ apps, current }: { apps: AppDef[]; current: AppDef }) {
   );
 }
 
+/** Platform-level top bar only: brand, app switcher, account menu. Never
+ * RepairFlow (or any other app)-specific - see RepairFlowToolbar for that. */
+function GlobalHeader({
+  activeApps, currentApp, onSwitchUser,
+}: { activeApps: AppDef[]; currentApp: AppDef; onSwitchUser: () => void }) {
+  const { me } = useAuth();
+
+  return (
+    <header className="flex items-center gap-4 border-b border-slate-200 bg-white px-4 py-2">
+      <Link to="/" className="text-lg font-bold text-slate-900">
+        {t("app.name")}
+      </Link>
+      <AppSwitcher apps={activeApps} current={currentApp} />
+      <button
+        type="button"
+        onClick={onSwitchUser}
+        title={t("shell.switch_user")}
+        className="ml-auto flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-slate-100 min-h-touch"
+      >
+        <Avatar name={me?.name ?? "?"} />
+        <span className="hidden text-sm font-medium text-slate-700 md:inline">{me?.name}</span>
+      </button>
+    </header>
+  );
+}
+
+/** RepairFlow's own contextual toolbar: client/phone/№/IMEI search and the
+ * "Нова поръчка" primary action. Rendered only for currentApp.id ===
+ * "repairflow" (see AppShell below) - reuses the existing SearchBox
+ * component and navigate("/orders/new") call as-is, just relocated. */
+function RepairFlowToolbar() {
+  const navigate = useNavigate();
+
+  return (
+    <div className="flex items-center gap-4 border-b border-slate-200 bg-white px-4 py-2">
+      <SearchBox />
+      <button
+        type="button"
+        onClick={() => navigate("/orders/new")}
+        className="ml-auto whitespace-nowrap rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 min-h-touch"
+      >
+        {t("shell.new_order")}
+      </button>
+    </div>
+  );
+}
+
 function useIdleLock(): [boolean, () => void] {
   const [locked, setLocked] = useState(false);
 
@@ -167,29 +225,12 @@ export function AppShell() {
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50">
-      <header className="flex items-center gap-4 border-b border-slate-200 bg-white px-4 py-2">
-        <Link to="/" className="text-lg font-bold text-slate-900">
-          {t("app.name")}
-        </Link>
-        <AppSwitcher apps={activeApps} current={currentApp} />
-        <SearchBox />
-        <button
-          type="button"
-          onClick={() => navigate("/orders/new")}
-          className="ml-auto whitespace-nowrap rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 min-h-touch"
-        >
-          {t("shell.new_order")}
-        </button>
-        <button
-          type="button"
-          onClick={() => setPinOpen(true)}
-          title={t("shell.switch_user")}
-          className="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-slate-100 min-h-touch"
-        >
-          <Avatar name={me?.name ?? "?"} />
-          <span className="hidden text-sm font-medium text-slate-700 md:inline">{me?.name}</span>
-        </button>
-      </header>
+      <GlobalHeader
+        activeApps={activeApps}
+        currentApp={currentApp}
+        onSwitchUser={() => setPinOpen(true)}
+      />
+      {currentApp.id === "repairflow" && <RepairFlowToolbar />}
 
       {healthProblem && (
         <div role="alert" className="bg-red-600 px-4 py-2 text-sm font-medium text-white">

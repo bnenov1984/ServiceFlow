@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { AppShell } from "./AppShell";
@@ -17,6 +18,9 @@ vi.mock("../auth/AuthContext", () => ({
   useAuth: () => mockUseAuth(),
 }));
 
+// Mirrors App.tsx's real nesting (AppShell as the layout route, real routes
+// as its Outlet children) so navigation - via the app switcher or the
+// RepairFlow toolbar's own button - is exercised for real, not simulated.
 function renderShell(initialPath: string, activeModules: string[]) {
   mockUseAuth.mockReturnValue({
     me: {
@@ -32,12 +36,19 @@ function renderShell(initialPath: string, activeModules: string[]) {
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initialPath]}>
         <Routes>
-          <Route path="/*" element={<AppShell />} />
+          <Route element={<AppShell />}>
+            <Route index element={<div>REPAIRFLOW_DASHBOARD</div>} />
+            <Route path="orders/new" element={<div>NEW_ORDER_PAGE</div>} />
+            <Route path="ps" element={<div>PROPERTYFLOW_PAGE</div>} />
+          </Route>
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   );
 }
+
+const SEARCH_PLACEHOLDER = "Търсене: клиент, телефон, №, IMEI…";
+const NEW_ORDER_LABEL = "+ Нова поръчка";
 
 describe("Business OS shell: branding and per-app navigation (25.07.2026 rebrand)", () => {
   it("shows Business OS as the platform brand, never ServiceFlow", () => {
@@ -73,5 +84,76 @@ describe("Business OS shell: branding and per-app navigation (25.07.2026 rebrand
   it("never renders the retired Bulgarian 'Професионални услуги' label", () => {
     renderShell("/ps", ["professional-services"]);
     expect(screen.queryByText("Професионални услуги")).not.toBeInTheDocument();
+  });
+});
+
+describe("Business OS shell: global header vs RepairFlow toolbar (26.07.2026)", () => {
+  it("1+2: the global header contains neither the RepairFlow search nor \"Нова поръчка\"", () => {
+    renderShell("/", []);
+    const header = screen.getByRole("banner");
+    expect(within(header).queryByPlaceholderText(SEARCH_PLACEHOLDER)).not.toBeInTheDocument();
+    expect(within(header).queryByText(NEW_ORDER_LABEL)).not.toBeInTheDocument();
+  });
+
+  it("3: the RepairFlow route shows the RepairFlow search and \"Нова поръчка\"", () => {
+    renderShell("/", []);
+    expect(screen.getByPlaceholderText(SEARCH_PLACEHOLDER)).toBeInTheDocument();
+    expect(screen.getByText(NEW_ORDER_LABEL)).toBeInTheDocument();
+  });
+
+  it("4: the PropertyFlow route shows neither the RepairFlow search, \"Нова поръчка\", nor any worker/technician context", () => {
+    renderShell("/ps", ["professional-services"]);
+    expect(screen.queryByPlaceholderText(SEARCH_PLACEHOLDER)).not.toBeInTheDocument();
+    expect(screen.queryByText(NEW_ORDER_LABEL)).not.toBeInTheDocument();
+    // No such concept exists in the shell at all (verified by audit) - the
+    // negative assertion documents that fact rather than asserting nothing.
+    expect(screen.queryByText(/technician|worker/i)).not.toBeInTheDocument();
+  });
+
+  it("5+6: switching RepairFlow -> PropertyFlow -> RepairFlow removes then restores the toolbar", async () => {
+    const user = userEvent.setup();
+    renderShell("/", ["professional-services"]);
+    expect(screen.getByPlaceholderText(SEARCH_PLACEHOLDER)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /RepairFlow/ }));
+    await user.click(screen.getByRole("option", { name: "PropertyFlow" }));
+    expect(await screen.findByText("PROPERTYFLOW_PAGE")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(SEARCH_PLACEHOLDER)).not.toBeInTheDocument();
+    expect(screen.queryByText(NEW_ORDER_LABEL)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /PropertyFlow/ }));
+    await user.click(screen.getByRole("option", { name: "RepairFlow" }));
+    expect(await screen.findByText("REPAIRFLOW_DASHBOARD")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(SEARCH_PLACEHOLDER)).toBeInTheDocument();
+    expect(screen.getByText(NEW_ORDER_LABEL)).toBeInTheDocument();
+  });
+
+  it("7: a direct load of the PropertyFlow route never renders RepairFlow controls (no CSS-only hiding)", () => {
+    renderShell("/ps", ["professional-services"]);
+    expect(screen.getByText("PROPERTYFLOW_PAGE")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(SEARCH_PLACEHOLDER)).not.toBeInTheDocument();
+    expect(screen.queryByText(NEW_ORDER_LABEL)).not.toBeInTheDocument();
+  });
+
+  it("8: the account menu stays available globally regardless of the current app", () => {
+    renderShell("/ps", ["professional-services"]);
+    expect(screen.getByTitle("Смяна на потребител")).toBeInTheDocument();
+    expect(screen.getByText("Мария")).toBeInTheDocument();
+  });
+
+  it("9: clicking \"Нова поръчка\" still navigates to the existing create-order route", async () => {
+    const user = userEvent.setup();
+    renderShell("/", []);
+    await user.click(screen.getByText(NEW_ORDER_LABEL));
+    expect(await screen.findByText("NEW_ORDER_PAGE")).toBeInTheDocument();
+  });
+
+  it("10: the app switcher and sidebar navigation are unaffected by the toolbar split", () => {
+    renderShell("/", ["professional-services"]);
+    expect(screen.getByRole("button", { name: /RepairFlow/ })).toBeInTheDocument();
+    const desktopNav = screen.getByRole("navigation", { name: "RepairFlow navigation" });
+    expect(within(desktopNav).getByText("Табло")).toBeInTheDocument();
+    expect(within(desktopNav).getByText("Поръчки")).toBeInTheDocument();
+    expect(within(desktopNav).getByText("Клиенти")).toBeInTheDocument();
   });
 });
