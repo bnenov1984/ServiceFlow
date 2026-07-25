@@ -1,21 +1,44 @@
 /**
- * App frame (docs/10 §1, docs/15 §2): top bar, 5-item nav (Фактури/Настройки
- * grayed per PO decision), one health banner slot, mobile bottom bar, idle lock.
+ * Business OS shell (docs/10 §1, docs/15 §2): top bar, per-app nav (Фактури/
+ * Настройки grayed per PO decision), one health banner slot, mobile bottom
+ * bar, idle lock.
+ *
+ * Business OS is the platform; RepairFlow and PropertyFlow are equal sibling
+ * applications on top of it (product decision, 25.07.2026) - display names
+ * only, route paths and backend module keys are unchanged (still "/", "/ps"
+ * and "professional-services" respectively). PropertyFlow gets its own nav
+ * section, not a submenu entry inside RepairFlow's.
  */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { PinSwitchDialog } from "../auth/PinSwitchDialog";
 import { useAuth } from "../auth/AuthContext";
 import { Avatar } from "../components/Avatar";
 import { PinPad } from "../components/PinPad";
-import { t } from "../i18n/bg";
+import { t, type MessageKey } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
 import { SearchBox } from "./SearchBox";
 
 const IDLE_LOCK_MS = 5 * 60 * 1000; // FDD checklist default, PO-approved
+
+interface AppDef {
+  id: string;
+  nameKey: MessageKey;
+  path: string;
+  /** null = always active (RepairFlow has no activation gate); otherwise the
+   * companies.settings.active_modules key that must be present. */
+  moduleKey: string | null;
+}
+
+// The only place the shell knows about individual apps. Adding a third
+// (ConstructionFlow, ...) later is one more entry here, per BOS-06 activation.
+const APPS: AppDef[] = [
+  { id: "repairflow", nameKey: "app.repairflow", path: "/", moduleKey: null },
+  { id: "propertyflow", nameKey: "app.propertyflow", path: "/ps", moduleKey: "professional-services" },
+];
 
 interface Health {
   status: "ok" | "degraded" | "fail";
@@ -36,6 +59,59 @@ function GrayedNavItem({ label }: { label: string }) {
     >
       {label}
     </span>
+  );
+}
+
+/** Header control: switch between the apps active for this company. Shows
+ * only active apps (RepairFlow always; PropertyFlow when its module is
+ * activated) - never a disabled/greyed entry for an inactive app, per the
+ * same "don't show what isn't there" rule the sidebar already followed. */
+function AppSwitcher({ apps, current }: { apps: AppDef[]; current: AppDef }) {
+  const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
+
+  if (apps.length <= 1) return null;
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="flex items-center gap-1 rounded-lg px-2 py-1 text-sm font-semibold text-slate-700 hover:bg-slate-100 min-h-touch"
+      >
+        {t(current.nameKey)}
+        <span aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <ul
+          role="listbox"
+          className="absolute left-0 top-full z-40 mt-1 w-40 rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+        >
+          {apps.map((app) => (
+            <li key={app.id}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={app.id === current.id}
+                onClick={() => {
+                  setOpen(false);
+                  navigate(app.path);
+                }}
+                className={`block w-full px-3 py-2 text-left text-sm min-h-touch ${
+                  app.id === current.id
+                    ? "bg-blue-50 text-blue-800"
+                    : "text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                {t(app.nameKey)}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -62,8 +138,19 @@ function useIdleLock(): [boolean, () => void] {
 export function AppShell() {
   const { me, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [pinOpen, setPinOpen] = useState(false);
   const [locked, unlock] = useIdleLock();
+
+  const activeApps = APPS.filter(
+    (a) => a.moduleKey === null || me?.active_modules.includes(a.moduleKey),
+  );
+  const currentApp =
+    APPS.find((a) => a.path !== "/" && location.pathname.startsWith(a.path)) ?? APPS[0];
+
+  useEffect(() => {
+    document.title = `${t(currentApp.nameKey)} · ${t("app.name")}`;
+  }, [currentApp]);
 
   const { data: health, isError: healthError } = useQuery({
     queryKey: queryKeys.health,
@@ -84,6 +171,7 @@ export function AppShell() {
         <Link to="/" className="text-lg font-bold text-slate-900">
           {t("app.name")}
         </Link>
+        <AppSwitcher apps={activeApps} current={currentApp} />
         <SearchBox />
         <button
           type="button"
@@ -110,19 +198,31 @@ export function AppShell() {
       )}
 
       <div className="flex flex-1">
-        <nav className="hidden w-52 shrink-0 flex-col gap-1 border-r border-slate-200 bg-white p-3 md:flex">
-          <NavLink to="/" end className={({ isActive }) => navClass(isActive)}>
-            {t("nav.dashboard")}
-          </NavLink>
-          <NavLink to="/orders" className={({ isActive }) => navClass(isActive)}>
-            {t("nav.orders")}
-          </NavLink>
-          <NavLink to="/customers" className={({ isActive }) => navClass(isActive)}>
-            {t("nav.customers")}
-          </NavLink>
-          {me?.active_modules.includes("professional-services") && (
-            <NavLink to="/ps" className={({ isActive }) => navClass(isActive)}>
-              {t("nav.professional_services")}
+        <nav
+          aria-label={`${t(currentApp.nameKey)} navigation`}
+          className="hidden w-52 shrink-0 flex-col gap-1 border-r border-slate-200 bg-white p-3 md:flex"
+        >
+          {/* Own menu per app (not a submenu of another app, product decision
+              25.07.2026): only the current app's nav items render here. */}
+          <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            {t(currentApp.nameKey)}
+          </p>
+          {currentApp.id === "repairflow" && (
+            <>
+              <NavLink to="/" end className={({ isActive }) => navClass(isActive)}>
+                {t("nav.dashboard")}
+              </NavLink>
+              <NavLink to="/orders" className={({ isActive }) => navClass(isActive)}>
+                {t("nav.orders")}
+              </NavLink>
+              <NavLink to="/customers" className={({ isActive }) => navClass(isActive)}>
+                {t("nav.customers")}
+              </NavLink>
+            </>
+          )}
+          {currentApp.id === "propertyflow" && (
+            <NavLink to="/ps" end className={({ isActive }) => navClass(isActive)}>
+              {t("nav.dashboard")}
             </NavLink>
           )}
           <GrayedNavItem label={t("nav.invoices")} />
@@ -144,8 +244,10 @@ export function AppShell() {
         </main>
       </div>
 
-      {/* Mobile bottom bar (docs/15 §8): active sections + new-order shortcut. */}
-      <nav className="sticky bottom-0 flex border-t border-slate-200 bg-white md:hidden">
+      {/* Mobile bottom bar (docs/15 §8): active sections + new-order shortcut.
+          RepairFlow-only for now (matches its pre-rebrand scope) - not part
+          of this rebrand's scope, tracked as a follow-up. */}
+      <nav aria-label="RepairFlow mobile navigation" className="sticky bottom-0 flex border-t border-slate-200 bg-white md:hidden">
         {[
           { to: "/", label: t("nav.dashboard") },
           { to: "/orders", label: t("nav.orders") },

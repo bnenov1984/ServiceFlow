@@ -14,6 +14,13 @@ describe("t()", () => {
     expect(t("nav.dashboard")).toBe("Табло");
   });
 
+  it("brands the shell as Business OS, not ServiceFlow (25.07.2026 rebrand)", () => {
+    expect(t("app.name")).toBe("Business OS");
+    expect(t("app.repairflow")).toBe("RepairFlow");
+    expect(t("app.propertyflow")).toBe("PropertyFlow");
+    expect(t("ps.title")).toBe("PropertyFlow");
+  });
+
   it("keeps unmatched placeholders visible instead of dropping them", () => {
     expect(t("search.empty", {})).toContain("{q}");
   });

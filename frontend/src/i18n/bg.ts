@@ -4,13 +4,18 @@
 // here too — the API never returns prose, the catalog renders it.
 
 export const bg = {
-  "app.name": "ServiceFlow",
+  "app.name": "Business OS",
+  // Product display names only (business decision, 25.07.2026): ServiceFlow's
+  // UI-facing name is now RepairFlow, Professional Services' is PropertyFlow.
+  // Backend identifiers, module keys, package/table names are unchanged and
+  // unaffected — see the module-level ADRs, not this catalog.
+  "app.repairflow": "RepairFlow",
+  "app.propertyflow": "PropertyFlow",
 
   // --- shell ---
   "nav.dashboard": "Табло",
   "nav.orders": "Поръчки",
   "nav.customers": "Клиенти",
-  "nav.professional_services": "Професионални услуги",
   "nav.invoices": "Фактури",
   "nav.settings": "Настройки",
   "nav.coming_soon": "Очаквайте скоро",
@@ -324,7 +329,7 @@ export const bg = {
   "customer.archived_badge": "Архивиран",
 
   // --- professional services (walking skeleton) ---
-  "ps.title": "Професионални услуги",
+  "ps.title": "PropertyFlow",
   "ps.clients": "Клиенти",
   "ps.clients_empty": "Няма клиенти. Добавете първия отдолу.",
   "ps.client_name_placeholder": "Име на клиент…",
@@ -345,7 +350,7 @@ export const bg = {
   "ps.risk_overdue": "Просрочено",
   "ps.risk_attention": "Внимание",
   "ps.risk_ok": "Наред",
-  "errors.ps.module_inactive": "Модул „Професионални услуги“ не е активиран за тази фирма.",
+  "errors.ps.module_inactive": "Модул „PropertyFlow“ не е активиран за тази фирма.",
   "errors.ps.client_not_found": "Няма такъв клиент.",
   "errors.ps.assignment_not_found": "Няма такъв ангажимент.",
   "errors.ps.action_not_found": "Няма такова действие.",
