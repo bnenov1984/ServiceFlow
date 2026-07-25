@@ -27,7 +27,7 @@ def _now() -> datetime:
 def create(db: Session, ctx: TenantContext, *, title: str,
            order_id: uuid.UUID | None = None, assignee_id: uuid.UUID | None = None,
            due_on: date | None = None, note: str = "", is_call: bool = False) -> Task:
-    task = Task(company_id=ctx.company_id, subject_id=order_id, title=title,
+    task = Task(company_id=ctx.company_id, order_id=order_id, title=title,
                assignee_id=assignee_id, due_on=due_on, note=note, is_call=is_call,
                created_by=ctx.user_id)
     db.add(task)

@@ -45,7 +45,7 @@ def create(db: Session, ctx: TenantContext, *, customer_id: uuid.UUID, type_: st
 
     when = occurred_at or _now()
     record = ContactRecord(
-        company_id=ctx.company_id, customer_id=customer_id, subject_id=order_id,
+        company_id=ctx.company_id, customer_id=customer_id, order_id=order_id,
         type=type_, direction=direction, summary=summary, occurred_at=when,
         user_id=ctx.user_id, frozen_after=_end_of_day(when),
     )

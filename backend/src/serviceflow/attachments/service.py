@@ -65,7 +65,7 @@ def upload(db: Session, ctx: TenantContext, storage: StoragePort, *, order_id: u
     storage.put(key, stored)
 
     attachment = Attachment(
-        company_id=ctx.company_id, subject_id=order_id, storage_key=key,
+        company_id=ctx.company_id, order_id=order_id, storage_key=key,
         thumbnail_key=thumbnail_key, kind="photo" if media.is_image(mime) else "document",
         stage=stage, caption=caption, mime=mime, size=len(stored),
         uploaded_by=ctx.user_id,

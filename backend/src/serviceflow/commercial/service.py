@@ -33,7 +33,7 @@ def _now() -> datetime:
 def add_payment(db: Session, ctx: TenantContext, order_id: uuid.UUID, *, amount: Decimal,
                 method: str, is_refund: bool = False, note: str = "") -> Payment:
     payment = Payment(
-        company_id=ctx.company_id, subject_id=order_id, amount=amount, method=method,
+        company_id=ctx.company_id, order_id=order_id, amount=amount, method=method,
         is_refund=is_refund, note=note, received_by=ctx.user_id, received_at=_now(),
     )
     db.add(payment)
@@ -82,7 +82,7 @@ def create_draft(db: Session, ctx: TenantContext, order_id: uuid.UUID) -> Invoic
     service_orders.models/.lines directly. A one-time copy: later edits to
     the order's own lines do not retroactively change this draft, matching
     how the draft becomes an independently-editable document once created."""
-    invoice = Invoice(company_id=ctx.company_id, subject_id=order_id, status="draft")
+    invoice = Invoice(company_id=ctx.company_id, order_id=order_id, status="draft")
     db.add(invoice)
     db.flush()
     for sort, line in enumerate(orders_contracts.get_order_lines(db, ctx, order_id)):
