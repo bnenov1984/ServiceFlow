@@ -12,7 +12,14 @@ import { EmptyState, ErrorState, Skeleton } from "../components/States";
 import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
-import type { PsAssignment, PsClient, PsNextAction, PsStage, PsWorkflowTemplate } from "./types";
+import type {
+  PsAssignment,
+  PsClient,
+  PsDeadlineRisk,
+  PsNextAction,
+  PsStage,
+  PsWorkflowTemplate,
+} from "./types";
 
 function riskClass(risk: PsNextAction["risk"]): string {
   switch (risk) {
@@ -24,6 +31,22 @@ function riskClass(risk: PsNextAction["risk"]): string {
       return "bg-slate-100 text-slate-500";
     default:
       return "bg-green-50 text-green-700";
+  }
+}
+
+function deadlineRiskClass(risk: PsDeadlineRisk): string {
+  switch (risk) {
+    case "breached":
+    case "critical":
+      return "bg-red-50 text-red-700";
+    case "urgent":
+      return "bg-amber-50 text-amber-700";
+    case "attention":
+      return "bg-yellow-50 text-yellow-700";
+    case "normal":
+      return "bg-green-50 text-green-700";
+    default:
+      return "bg-slate-100 text-slate-500";
   }
 }
 
@@ -43,6 +66,9 @@ export function PsPage() {
   const [newActionDueOn, setNewActionDueOn] = useState("");
   const [stageEditAssignmentId, setStageEditAssignmentId] = useState<string | null>(null);
   const [stageEditTargetId, setStageEditTargetId] = useState("");
+  const [deadlineEditAssignmentId, setDeadlineEditAssignmentId] = useState<string | null>(null);
+  const [deadlineEditDate, setDeadlineEditDate] = useState("");
+  const [deadlineEditReason, setDeadlineEditReason] = useState("");
 
   const clients = useQuery({
     queryKey: queryKeys.psClients,
@@ -113,6 +139,21 @@ export function PsPage() {
     await queryClient.invalidateQueries({ queryKey: queryKeys.psAssignments });
   }
 
+  function openDeadlineEdit(assignmentId: string, currentDeadline: string | null) {
+    setDeadlineEditAssignmentId(assignmentId);
+    setDeadlineEditDate(currentDeadline ?? "");
+    setDeadlineEditReason("");
+  }
+
+  async function submitDeadlineChange(assignmentId: string) {
+    if (!deadlineEditDate || !deadlineEditReason.trim()) return;
+    await api.post(`/ps/assignments/${assignmentId}/deadline`, {
+      official_deadline_on: deadlineEditDate, reason: deadlineEditReason.trim(),
+    });
+    setDeadlineEditAssignmentId(null);
+    await queryClient.invalidateQueries({ queryKey: queryKeys.psAssignments });
+  }
+
   return (
     <div className="flex flex-col gap-8">
       <h1 className="text-2xl font-bold text-slate-900">{t("ps.title")}</h1>
@@ -171,10 +212,22 @@ export function PsPage() {
                   <p className="font-medium text-slate-900">{a.title}</p>
                   <p className="text-sm text-slate-500">{clientName(a.client_id)}</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
                     {a.current_stage?.name ?? t("ps.current_stage_none")}
                   </span>
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-xs font-medium ${deadlineRiskClass(a.current_deadline_risk)}`}
+                  >
+                    {a.official_deadline_on ?? t("ps.deadline_none")}
+                    {" · "}
+                    {t(`ps.deadline_risk_${a.current_deadline_risk}`)}
+                  </span>
+                  {a.current_stale && (
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500">
+                      {t("ps.stale_badge")}
+                    </span>
+                  )}
                   {stageEditAssignmentId === a.id ? (
                     <>
                       <select
@@ -204,6 +257,37 @@ export function PsPage() {
                       className="rounded-lg border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50 min-h-touch"
                     >
                       {t("ps.stage_change_label")}
+                    </button>
+                  )}
+                  {deadlineEditAssignmentId === a.id ? (
+                    <>
+                      <input
+                        type="date"
+                        value={deadlineEditDate}
+                        onChange={(e) => setDeadlineEditDate(e.target.value)}
+                        className="rounded-lg border border-slate-300 px-2 py-1 text-sm min-h-touch"
+                      />
+                      <input
+                        value={deadlineEditReason}
+                        onChange={(e) => setDeadlineEditReason(e.target.value)}
+                        placeholder={t("ps.deadline_reason_placeholder")}
+                        className="rounded-lg border border-slate-300 px-2 py-1 text-sm min-h-touch"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void submitDeadlineChange(a.id)}
+                        className="rounded-lg border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50 min-h-touch"
+                      >
+                        {t("ps.stage_change_confirm")}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => openDeadlineEdit(a.id, a.official_deadline_on)}
+                      className="rounded-lg border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50 min-h-touch"
+                    >
+                      {t("ps.deadline_change_label")}
                     </button>
                   )}
                 </div>

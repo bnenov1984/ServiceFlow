@@ -70,6 +70,7 @@ TABLE_OWNERS = {
     "ps_workflow_template_stages": "professional_services.catalog",
     "ps_assignment_stages": "professional_services.assignments",
     "ps_assignment_stage_history": "professional_services.assignments",
+    "ps_deadline_changes": "professional_services.assignments",
 }
 
 

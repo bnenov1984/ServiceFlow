@@ -354,12 +354,23 @@ export const bg = {
   "errors.ps.template_not_found": "Няма такъв работен процес.",
   "errors.ps.template_needs_stages": "Работният процес трябва да има поне един етап.",
   "errors.ps.invalid_stage_category": "Невалидна категория на етап.",
+  "errors.ps.deadline_reason_required": "Нужна е причина за промяна на срока.",
   "ps.workflow_templates": "Работни процеси",
   "ps.template_label": "Работен процес",
   "ps.template_none": "Без работен процес",
   "ps.current_stage_none": "Без етап",
   "ps.stage_change_label": "Промени етап",
   "ps.stage_change_confirm": "Запази",
+  "ps.deadline_none": "Без краен срок",
+  "ps.deadline_change_label": "Промени срок",
+  "ps.deadline_reason_placeholder": "Причина за промяната…",
+  "ps.deadline_risk_none": "Без риск",
+  "ps.deadline_risk_normal": "В срок",
+  "ps.deadline_risk_attention": "Наближаващ срок",
+  "ps.deadline_risk_urgent": "Спешно",
+  "ps.deadline_risk_critical": "Днес",
+  "ps.deadline_risk_breached": "Просрочено",
+  "ps.stale_badge": "Без движение",
 } as const;
 
 export type MessageKey = keyof typeof bg;

@@ -42,6 +42,13 @@ class PSAssignment(Base, TimestampMixin):
     )
     official_deadline_on: Mapped[date | None] = mapped_column(default=None)
     internal_target_on: Mapped[date | None] = mapped_column(default=None)
+    # Persisted-result columns (migration 0011): written only by
+    # professional_services.assignments.risk + service.recompute_risk -
+    # never user-editable, never a source of truth on their own (INV-9:
+    # always reproducible from official_deadline_on/lifecycle_state/
+    # updated_at + "today").
+    current_deadline_risk: Mapped[str] = mapped_column(default="none")
+    current_stale: Mapped[bool] = mapped_column(default=False)
 
 
 class PSAssignmentStage(Base, TimestampMixin):
@@ -74,5 +81,26 @@ class PSAssignmentStageHistory(Base):
         ForeignKey("ps_assignment_stages.id"), default=None
     )
     to_stage_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ps_assignment_stages.id"))
+    changed_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+    changed_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class PSDeadlineChange(Base):
+    """Append-only (DB trigger, migration 0011): official-deadline edits
+    only happen through the reasoned-change chokepoint
+    (assignments.service.change_deadline, ADR-PS-008 §5) — this table is
+    that chokepoint's forensic trail, never written any other way."""
+
+    __tablename__ = "ps_deadline_changes"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=new_id)
+    company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("companies.id"))
+    assignment_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("ps_assignments.id"), index=True
+    )
+    field: Mapped[str] = mapped_column(default="official_deadline_on")
+    old_value: Mapped[date | None] = mapped_column(default=None)
+    new_value: Mapped[date]
+    reason: Mapped[str]
     changed_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
     changed_at: Mapped[datetime] = mapped_column(server_default=func.now())

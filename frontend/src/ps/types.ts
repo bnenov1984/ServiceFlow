@@ -20,6 +20,8 @@ export interface PsWorkflowTemplate {
   stages: PsStage[];
 }
 
+export type PsDeadlineRisk = "none" | "normal" | "attention" | "urgent" | "critical" | "breached";
+
 export interface PsAssignment {
   id: string;
   client_id: string;
@@ -28,6 +30,8 @@ export interface PsAssignment {
   current_stage: PsStage | null;
   official_deadline_on: string | null;
   internal_target_on: string | null;
+  current_deadline_risk: PsDeadlineRisk;
+  current_stale: boolean;
 }
 
 export interface PsNextAction {

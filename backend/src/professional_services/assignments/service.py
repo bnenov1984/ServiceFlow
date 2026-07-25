@@ -7,7 +7,13 @@ from sqlalchemy.orm import Session
 from business_os.shared_kernel.db import TenantContext, scoped
 from professional_services.catalog.service import CatalogError, list_template_stages
 
-from .models import PSAssignment, PSAssignmentStage, PSAssignmentStageHistory
+from . import risk
+from .models import (
+    PSAssignment,
+    PSAssignmentStage,
+    PSAssignmentStageHistory,
+    PSDeadlineChange,
+)
 
 
 class AssignmentError(Exception):
@@ -49,6 +55,7 @@ def create_assignment(
                 first_stage = copy
         assignment.current_stage_id = first_stage.id if first_stage else None
 
+    recompute_risk(assignment)
     db.commit()
     return assignment
 
@@ -97,12 +104,11 @@ def change_stage(
     append-only ps_assignment_stage_history (PS-26 INV-10) in the same
     transaction, so history can never diverge from state.
 
-    Not routed through the shared domain-event bus: that bus's sole
-    consumer today (serviceflow.timeline) filters only on "is subject_id
-    present", not on event type, and would try to write
-    TimelineEvent.order_id (FK'd to service_orders) from a ps_assignments
-    id — a foreign-key violation waiting to happen. Recorded as a
-    follow-up prerequisite, not fixed here (out of this slice's scope).
+    Not routed through the shared domain-event bus: serviceflow.timeline's
+    subscriber now gates on an explicit ServiceFlow-only type allowlist
+    (BOS-09 Q8, resolved) so publishing here would simply be ignored
+    rather than crash — but this module has no subscriber of its own yet,
+    so the history row is still written directly, in the same transaction.
     """
     target = get_assignment_stage(db, ctx, assignment.id, to_stage_id)
     if target is None:
@@ -118,5 +124,94 @@ def change_stage(
     assignment.current_stage_id = target.id
     if target.category == "delivery":
         assignment.lifecycle_state = "delivered"
+    db.flush()  # so updated_at (this function's "activity" proxy) is fresh before recompute
+    recompute_risk(assignment)
     db.commit()
     return assignment
+
+
+def _last_activity_on(assignment: PSAssignment) -> date:
+    """Minimal-footprint stand-in for PS-25's full `last_activity_at`
+    (derived from an activity-event log this slice does not build): reuses
+    `updated_at`, which already ticks on every mutation of the assignment
+    row (TimestampMixin's `onupdate=func.now()`), including stage changes
+    and deadline changes. Coarser than the eventual design, still
+    deterministic and truthful about "the last time this row changed"."""
+    return assignment.updated_at.date()
+
+
+def recompute_risk(assignment: PSAssignment, today: date | None = None) -> bool:
+    """Recomputes current_deadline_risk/current_stale from the assignment's
+    own stored fields (INV-9: reproducible from stored data + today, never
+    itself authoritative) and persists only if either value actually
+    changed. Returns whether anything changed - the idempotence contract
+    the background job (evaluate_company_risk) relies on: re-running with
+    no underlying change must be a true no-op, including at the database
+    level (no dirty row, no `updated_at` tick)."""
+    today = today or date.today()
+    new_risk = risk.deadline_risk(assignment.official_deadline_on, assignment.lifecycle_state,
+                                  today)
+    new_stale = risk.is_stale(_last_activity_on(assignment), assignment.lifecycle_state, today)
+    changed = new_risk != assignment.current_deadline_risk or new_stale != assignment.current_stale
+    if changed:
+        assignment.current_deadline_risk = new_risk
+        assignment.current_stale = new_stale
+    return changed
+
+
+def change_deadline(
+    db: Session, ctx: TenantContext, assignment: PSAssignment, new_deadline_on: date,
+    reason: str, actor_user_id: uuid.UUID | None, today: date | None = None,
+) -> PSAssignment:
+    """The reasoned-change chokepoint for the official deadline (ADR-PS-008
+    §5): a mandatory reason, an append-only history row, then the field
+    itself changes - never the other way, and never a direct field write
+    anywhere else. Recomputes risk immediately in the same transaction
+    (the "on-write recompute" half of PS-13 §7's two evaluation paths; the
+    "morning job" half is evaluate_company_risk below)."""
+    if not reason.strip():
+        raise AssignmentError("errors.ps.deadline_reason_required", status=400)
+
+    db.add(PSDeadlineChange(
+        company_id=ctx.company_id, assignment_id=assignment.id,
+        field="official_deadline_on", old_value=assignment.official_deadline_on,
+        new_value=new_deadline_on, reason=reason.strip(), changed_by=actor_user_id,
+    ))
+    assignment.official_deadline_on = new_deadline_on
+    db.flush()  # so updated_at (this function's "activity" proxy) is fresh before recompute
+    recompute_risk(assignment, today)
+    db.commit()
+    return assignment
+
+
+def list_deadline_changes(
+    db: Session, ctx: TenantContext, assignment_id: uuid.UUID
+) -> list[PSDeadlineChange]:
+    stmt = scoped(select(PSDeadlineChange), PSDeadlineChange, ctx).where(
+        PSDeadlineChange.assignment_id == assignment_id
+    ).order_by(PSDeadlineChange.changed_at.desc())
+    return list(db.scalars(stmt))
+
+
+def evaluate_company_risk(db: Session, ctx: TenantContext, today: date | None = None) -> int:
+    """The "morning per-tenant job" (PS-13 §7) as a plain, callable,
+    idempotent function - not wired to any scheduler. No `jobs` table
+    (ADR-006) exists yet anywhere in this codebase to schedule it from;
+    building that platform-level infrastructure is out of this slice's
+    scope. This function is what such a job would call once one exists;
+    until then it is invoked on demand (see the /evaluate-risk endpoint).
+
+    Only active assignments carry a live risk stream (risk.deadline_risk/
+    is_stale both return the "off" value otherwise), so only those rows
+    can possibly change here. Writes happen only where recompute_risk
+    reports an actual change - idempotent by construction."""
+    today = today or date.today()
+    stmt = scoped(select(PSAssignment), PSAssignment, ctx).where(
+        PSAssignment.lifecycle_state == "active"
+    )
+    changed_count = 0
+    for assignment in db.scalars(stmt):
+        if recompute_risk(assignment, today):
+            changed_count += 1
+    db.commit()
+    return changed_count
