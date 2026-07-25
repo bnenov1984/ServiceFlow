@@ -84,9 +84,9 @@ owner; "dev" = maintainer. "Deadline" is an event, not a date, wherever possible
   it solves at this scale).
 - **Deadline:** Phase 2 for lint; Phase 5 for nav. **Non-blocking.** **Owner:** dev.
 
-### Q8 — Timeline subscriber's subject-agnostic filter, post ADR-BOS-007
-- **Why it matters:** `serviceflow.timeline.service._record` (the bus's sole
-  subscriber) filters only on `event.subject_id is not None`, not on event
+### Q8 — Timeline subscriber's subject-agnostic filter, post ADR-BOS-007 — **Resolved 23.07.2026**
+- **Why it mattered:** `serviceflow.timeline.service._record` (the bus's sole
+  subscriber) filtered only on `event.subject_id is not None`, not on event
   `type`. After the ADR-BOS-007 rename made `DomainEvent.subject_id` genuinely
   neutral, any module publishing an event with a non-None `subject_id` that is
   *not* a `service_orders.id` would make this subscriber attempt
@@ -95,27 +95,29 @@ owner; "dev" = maintainer. "Deadline" is an event, not a date, wherever possible
   Discovered while building Professional Services' stage-transition history
   (two-axis workflow slice, 23.07.2026): its `ps_stage_changed` moment was
   deliberately **not** published through the shared bus specifically to avoid
-  this — the history row is written directly by
-  `professional_services.assignments.service.change_stage` instead. Not fixed
-  as part of that slice (touches `serviceflow.timeline`, a domain module, for
-  a problem no current producer triggers yet).
-- **Options:** (a) timeline subscriber filters on an explicit allow-list of
-  ServiceFlow event types (or checks that `subject_id` resolves to a real
-  `service_orders` row before writing — an extra query per event); (b) require
-  every publisher to also pass a `subject_kind`/similar discriminator so
-  subscribers can route by kind, not just presence; (c) leave the subscriber
-  as-is and keep it a hard rule that non-ServiceFlow-order events are never
-  published on this bus until fixed (current de facto state).
-- **Recommendation:** (c) for now — zero cost, zero regression risk, and
-  exactly matches the one existing real case. (a) is the likely eventual fix
-  (small, local to `serviceflow/timeline/service.py`) but is a standalone
-  domain-module change, not bundled into unrelated work. (b) is Rejected pre-
-  emptively as event-framework expansion with only one concrete consumer
-  (BOS-00 §7 anti-goal #1) — revisit only if a second subscriber actually
-  needs to discriminate by kind.
-- **Deadline:** before any module publishes a non-order-anchored event with a
-  non-None `subject_id` on the shared bus. **Blocking for that one case only.**
-  **Owner:** dev.
+  this — the history row was written directly by
+  `professional_services.assignments.service.change_stage` instead.
+- **Resolution — option (a) implemented:** `_record` now gates on
+  `KNOWN_EVENT_TYPES`, an explicit, hand-maintained `frozenset[str]` of the 23
+  event-type strings ServiceFlow's own producers actually publish today
+  (attachments, commercial, contacts, service_orders + lines, tasks), defined
+  directly in `serviceflow/timeline/service.py` — no new registry, no
+  versioned envelope, no persistent event store (option (b), a
+  `subject_kind` discriminator, stays Rejected per the reasoning below).
+  Verified with two dedicated tests
+  (`backend/tests/test_timeline_subscriber.py`): a non-ServiceFlow event type
+  with a `subject_id` is ignored before any DB write is attempted (proven via
+  a stub session that raises if `.add()` is ever called — no live database
+  needed to prove the safety property); a known ServiceFlow type still
+  writes its `TimelineEvent` exactly as before. Full regression: 166/166
+  backend tests pass against a real Postgres, 0 skipped, 0 failed.
+- **(b) require a `subject_kind`/similar discriminator on every publisher** —
+  still Rejected: event-framework expansion with only one concrete consumer
+  (BOS-00 §7 anti-goal #1); revisit only if a second subscriber actually
+  needs to discriminate by kind rather than by an allowlist it owns.
+- **Owner:** dev. **Follow-up:** adding a new ServiceFlow event type means
+  adding its string to `KNOWN_EVENT_TYPES` in the same PR — not automatic,
+  a plain code review item.
 
 ## 2. Principal risks
 
