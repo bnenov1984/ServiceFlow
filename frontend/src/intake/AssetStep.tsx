@@ -53,16 +53,29 @@ const IDENTIFIER_HINTS: Record<string, Parameters<typeof t>[0]> = {
   serial: "intake.hint_serial",
 };
 
+// service.FieldValidationError "type" values (backend/src/serviceflow/assets/service.py)
+// → per-field message key.
+const FIELD_ERROR_KEYS: Record<string, Parameters<typeof t>[0]> = {
+  not_a_number: "errors.assets.field_not_a_number",
+  not_a_date: "errors.assets.field_not_a_date",
+  invalid_choice: "errors.assets.field_invalid_choice",
+  not_text: "errors.assets.field_not_text",
+  unknown_field: "errors.assets.field_unknown",
+};
+
 function FieldInput({
   def,
   value,
+  error,
   onChange,
 }: {
   def: FieldDef;
   value: string;
+  error?: string;
   onChange: (v: string) => void;
 }) {
   const hintKey = def.identifier_kind ? IDENTIFIER_HINTS[def.identifier_kind] : undefined;
+  const borderClass = error ? "border-red-600" : "border-slate-300";
   return (
     <div>
       <label className="mb-1 block text-sm font-medium text-slate-700">{def.label_bg}</label>
@@ -70,7 +83,7 @@ function FieldInput({
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
+          className={`w-full rounded-lg border ${borderClass} px-3 py-2 min-h-touch`}
         >
           <option value="" />
           {(def.choices ?? []).map((c) => (
@@ -82,10 +95,12 @@ function FieldInput({
           type={def.type === "number" ? "number" : def.type === "date" ? "date" : "text"}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
+          className={`w-full rounded-lg border ${borderClass} px-3 py-2 min-h-touch`}
         />
       )}
-      {hintKey && <p className="mt-0.5 text-xs text-slate-400">{t(hintKey)}</p>}
+      {error
+        ? <p role="alert" className="mt-0.5 text-xs text-red-700">{error}</p>
+        : hintKey && <p className="mt-0.5 text-xs text-slate-400">{t(hintKey)}</p>}
     </div>
   );
 }
@@ -105,6 +120,7 @@ export function AssetStep({
   const [selectedType, setSelectedType] = useState<AssetTypeOut | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const queryClient = useQueryClient();
 
@@ -144,6 +160,7 @@ export function AssetStep({
     e.preventDefault();
     if (!selectedType) return;
     setError(null);
+    setFieldErrors({});
     setSubmitting(true);
     try {
       const created = await api.post<AssetOut>(`/customers/${customerId}/assets`, {
@@ -157,6 +174,12 @@ export function AssetStep({
           ? t("intake.duplicate_asset_hint") : undefined,
       });
     } catch (err) {
+      if (err instanceof ApiError && err.fieldErrors.length > 0) {
+        setFieldErrors(Object.fromEntries(err.fieldErrors.map((fe) => [
+          Array.isArray(fe.loc) ? fe.loc.join(".") : fe.loc,
+          t(FIELD_ERROR_KEYS[fe.type] ?? "errors.assets.field_unknown"),
+        ])));
+      }
       setError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
     } finally {
       setSubmitting(false);
@@ -196,7 +219,7 @@ export function AssetStep({
             <button
               key={type.code}
               type="button"
-              onClick={() => { setSelectedType(type); setValues({}); }}
+              onClick={() => { setSelectedType(type); setValues({}); setFieldErrors({}); }}
               className="flex flex-col items-center gap-2 rounded-lg border border-slate-200 p-4 hover:border-blue-400 hover:bg-blue-50 min-h-touch"
             >
               <AssetTypeIcon code={type.code} className="h-7 w-7 text-slate-500" />
@@ -222,6 +245,7 @@ export function AssetStep({
               key={def.key}
               def={def}
               value={values[def.key] ?? ""}
+              error={fieldErrors[def.key]}
               onChange={(v) => setValues((prev) => ({ ...prev, [def.key]: v }))}
             />
           ))}

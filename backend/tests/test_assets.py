@@ -86,6 +86,18 @@ def test_field_validation(client: TestClient) -> None:
     assert r.json()["detail"]["code"] == "unknown_asset_type"
 
 
+@pytest.mark.parametrize("reg_no", ["CA5070BA", "CB1234PB", "PK1111BK", "TX9999CT"])
+def test_field_validation_accepts_modern_reg_no_formats(client: TestClient, reg_no: str) -> None:
+    """Modern BG plates use a two-letter regional prefix (e.g. Sofia "CA"/"CB")."""
+    h = _login(client)
+    cid = _customer(client, h)
+    r = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
+        "asset_type_code": "vehicle",
+        "field_values": {"brand": "VW", "model": "Golf", "reg_no": reg_no},
+    })
+    assert r.status_code == 201, r.text
+
+
 def test_patch_reextracts_identifiers(client: TestClient) -> None:
     h = _login(client)
     cid = _customer(client, h)
