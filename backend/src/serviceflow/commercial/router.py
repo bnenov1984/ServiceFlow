@@ -22,7 +22,12 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from business_os.identity.deps import TenantDbDep, TenantDep, require_csrf
+from business_os.identity.deps import (
+    TenantDbDep,
+    TenantDep,
+    require_csrf,
+    require_subscription_ok,
+)
 from serviceflow.commercial import service
 from serviceflow.commercial.models import Invoice, InvoiceLine, Payment
 from serviceflow.service_orders import contracts as orders_contracts
@@ -63,7 +68,8 @@ def _not_found() -> HTTPException:
     })
 
 
-@router.post("/orders/{order_id}/payments", dependencies=[Depends(require_csrf)],
+@router.post("/orders/{order_id}/payments",
+             dependencies=[Depends(require_csrf), Depends(require_subscription_ok)],
              status_code=201)
 def add_payment(order_id: uuid.UUID, body: PaymentIn, db: TenantDbDep,
                 tenant: TenantDep) -> PaymentOut:
@@ -157,7 +163,8 @@ def _invoice_detail(db: TenantDbDep, tenant: TenantDep, invoice: Invoice) -> Inv
     )
 
 
-@router.post("/orders/{order_id}/invoices", dependencies=[Depends(require_csrf)],
+@router.post("/orders/{order_id}/invoices",
+             dependencies=[Depends(require_csrf), Depends(require_subscription_ok)],
              status_code=201)
 def create_invoice_draft(order_id: uuid.UUID, db: TenantDbDep,
                          tenant: TenantDep) -> InvoiceDetailOut:
@@ -189,7 +196,8 @@ def get_invoice(invoice_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep) -> In
     return _invoice_detail(db, tenant, invoice)
 
 
-@router.patch("/invoices/{invoice_id}", dependencies=[Depends(require_csrf)])
+@router.patch("/invoices/{invoice_id}",
+             dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
 def patch_invoice(invoice_id: uuid.UUID, body: InvoicePatchIn, db: TenantDbDep,
                   tenant: TenantDep) -> InvoiceDetailOut:
     invoice = service.get(db, tenant, invoice_id)

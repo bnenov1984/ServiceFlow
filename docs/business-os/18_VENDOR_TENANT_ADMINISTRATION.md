@@ -13,8 +13,10 @@ contract), §12 added 27.07.2026 (Entitlement Management — phase 3 done:
 grant/revoke module entitlement routes, no migration, no new import-linter
 contract), §13 added 27.07.2026 (Subscription Lifecycle Transitions — phase
 4 done: reasoned state transitions, `require_subscription_ok` wired onto
-professional_services only by explicit scope decision, platform-wide
-retrofit deferred) · Source: PO directive accepting the frozen product model
+professional_services only by explicit scope decision), §13.3 updated
+28.07.2026 (the deferred platform-wide retrofit landed — `require_
+subscription_ok` now covers all 38 tenant mutation routes) · Source: PO
+directive accepting the frozen product model
 (Business OS + sibling apps + RepairFlow business profiles); read-only audit
 of the repository as it stands after the PropertyFlow dashboard slice
 (`frontend/src/ps/`, uncommitted at audit time — see §8).
@@ -834,29 +836,49 @@ module that already owns `Company`. `platform_admin.service.
 transition_subscription` validates a requested `new_state` against
 `identity_contracts.SUBSCRIPTION_STATES` before ever touching the row.
 
-### 13.3 `require_subscription_ok` — wired narrowly, on purpose
+### 13.3 `require_subscription_ok` — wired narrowly first, then platform-wide (28.07.2026)
 
 Built as a Core dependency (`identity.deps.require_subscription_ok`,
-sibling to each module's own `require_<module>_active`, ADR-BOS-010), but —
-an explicit scope decision made with the PO before implementation — wired
-onto **`professional_services`'s own mutating routes only** in this slice,
-not retrofitted across `serviceflow.customers`/`.assets`/`.service_orders`/
-`.commercial`/`.tasks`/`.attachments`/`.contacts`. That retrofit is real,
-mechanical, and larger than anything else in this document's phase list (8+
-router files outside Business OS's own module boundaries) — a deliberate
-follow-up, not an oversight. Until it lands, subscription suspension is
-enforced for Professional Services only; RepairFlow's own mutations are
-unaffected by a company's subscription state.
+sibling to each module's own `require_<module>_active`, ADR-BOS-010).
+Landed in two deliberate steps, an explicit scope decision made with the PO
+each time:
+
+1. **First wired onto `professional_services`'s own mutating routes only**
+   (this same slice, initial commit) — proves the mechanism end-to-end on
+   one real module, independent of entitlement, before touching anything
+   wider.
+2. **Platform-wide retrofit (follow-up, same day)** — mechanically applied
+   to every remaining tenant mutation across `serviceflow.assets`,
+   `.attachments`, `.commercial`, `.contacts`, `.customers`,
+   `.service_orders`, `.tasks`: 30 routes in 7 files, none of them touching
+   business logic — the same one-line addition (`Depends(require_
+   subscription_ok)` next to the route's existing `Depends(require_csrf)`)
+   repeated mechanically. `business_os.identity`'s own `/auth/logout` and
+   `/auth/pin-switch` are the sole deliberate exemptions: session mechanics,
+   not the "business mutations" ADR-BOS-012 means to gate — a suspended
+   company's users must still be able to log out, and PIN-switch to see the
+   read-only degraded app.
 
 **Applied per-route, never at router level.** `require_ps_active` gates its
 whole router — reads included — because an inactive *module* really does
 mean "hide everything." `require_subscription_ok` must never do that:
 ADR-009's degradation promise ("all data visible, export/backup always
 available") means reads stay open in every subscription state, including
-`cancelled`. It sits next to `require_csrf` on each of the 8 routes that
-already required it — the existing CSRF-required set turned out to be
-exactly the mutation set ADR-BOS-012 means, so no separate classification
-was needed.
+`cancelled`. It sits next to `require_csrf` on every route that already
+required it — the existing CSRF-required set turned out to be exactly the
+mutation set ADR-BOS-012 means, in every module, so no separate
+classification was ever needed.
+
+**Completeness verified structurally, not by sampling.** A dedicated test
+(`test_every_csrf_route_outside_identity_also_requires_subscription_ok`)
+walks the assembled app's real dependency graph and asserts every CSRF
+route also carries `require_subscription_ok`; a second test asserts the
+converse (no read route carries it); a third asserts identity's own auth
+routes never do. Together these prove completeness across all 38 gated
+routes at once, rather than trusting that a mechanical edit repeated 30
+times introduced no gaps — plus representative end-to-end HTTP checks on a
+second module (`serviceflow.customers`) confirming the mechanism
+generalizes beyond professional_services.
 
 **402 Payment Required**, `errors.subscription.mutations_blocked` — the one
 new HTTP status this document introduces; no other endpoint in the

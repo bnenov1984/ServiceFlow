@@ -6,7 +6,12 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from business_os.identity.deps import TenantDbDep, TenantDep, require_csrf
+from business_os.identity.deps import (
+    TenantDbDep,
+    TenantDep,
+    require_csrf,
+    require_subscription_ok,
+)
 from serviceflow.assets import service
 from serviceflow.assets.models import Asset
 from serviceflow.customers import service as customers_service
@@ -72,7 +77,8 @@ def list_customer_assets(customer_id: uuid.UUID, db: TenantDbDep, tenant: Tenant
 
 
 @router.post("/customers/{customer_id}/assets",
-             dependencies=[Depends(require_csrf)], status_code=201)
+             dependencies=[Depends(require_csrf), Depends(require_subscription_ok)],
+             status_code=201)
 def create_asset(customer_id: uuid.UUID, body: AssetIn, db: TenantDbDep,
                  tenant: TenantDep) -> AssetOut:
     if customers_service.get(db, tenant, customer_id) is None:
@@ -97,7 +103,8 @@ def get_asset(asset_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep) -> AssetO
     return AssetOut.of(asset)
 
 
-@router.patch("/assets/{asset_id}", dependencies=[Depends(require_csrf)])
+@router.patch("/assets/{asset_id}",
+             dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
 def patch_asset(asset_id: uuid.UUID, body: AssetPatch, db: TenantDbDep,
                 tenant: TenantDep) -> AssetOut:
     asset = service.get(db, tenant, asset_id)
@@ -114,7 +121,8 @@ def patch_asset(asset_id: uuid.UUID, body: AssetPatch, db: TenantDbDep,
     return AssetOut.of(asset, duplicates)
 
 
-@router.post("/assets/{asset_id}/archive", dependencies=[Depends(require_csrf)])
+@router.post("/assets/{asset_id}/archive",
+             dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
 def archive_asset(asset_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep) -> AssetOut:
     asset = service.get(db, tenant, asset_id)
     if asset is None:

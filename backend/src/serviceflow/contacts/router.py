@@ -7,7 +7,12 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from business_os.identity.deps import TenantDbDep, TenantDep, require_csrf
+from business_os.identity.deps import (
+    TenantDbDep,
+    TenantDep,
+    require_csrf,
+    require_subscription_ok,
+)
 from serviceflow.contacts import service
 from serviceflow.contacts.models import ContactRecord
 from serviceflow.customers import service as customers_service
@@ -78,7 +83,8 @@ def list_order_contacts(order_id: uuid.UUID, db: TenantDbDep,
             for r in service.list_for_order(db, tenant, order_id)]
 
 
-@router.post("/orders/{order_id}/contact-records", dependencies=[Depends(require_csrf)],
+@router.post("/orders/{order_id}/contact-records",
+             dependencies=[Depends(require_csrf), Depends(require_subscription_ok)],
              status_code=201)
 def create_order_contact(order_id: uuid.UUID, body: ContactRecordIn, db: TenantDbDep,
                          tenant: TenantDep) -> ContactRecordOut:
@@ -109,7 +115,8 @@ def list_customer_contacts(customer_id: uuid.UUID, db: TenantDbDep,
 
 
 @router.post("/customers/{customer_id}/contact-records",
-             dependencies=[Depends(require_csrf)], status_code=201)
+             dependencies=[Depends(require_csrf), Depends(require_subscription_ok)],
+             status_code=201)
 def create_customer_contact(customer_id: uuid.UUID, body: CustomerContactRecordIn,
                             db: TenantDbDep, tenant: TenantDep) -> ContactRecordOut:
     if customers_service.get(db, tenant, customer_id) is None:
@@ -126,7 +133,8 @@ def create_customer_contact(customer_id: uuid.UUID, body: CustomerContactRecordI
     return ContactRecordOut.of(record, tenant.user_id)
 
 
-@router.patch("/contact-records/{record_id}", dependencies=[Depends(require_csrf)])
+@router.patch("/contact-records/{record_id}",
+             dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
 def patch_contact(record_id: uuid.UUID, body: ContactRecordPatch, db: TenantDbDep,
                   tenant: TenantDep) -> ContactRecordOut:
     record = service.get(db, tenant, record_id)

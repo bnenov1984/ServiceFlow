@@ -324,6 +324,60 @@ def test_transition_never_touches_active_modules(client: TestClient) -> None:
         assert company.settings.get("active_modules") == [MODULE_KEY]
 
 
+# --- Platform-wide retrofit (docs/business-os/18 §13.3 follow-up,
+# 28.07.2026): the structural completeness proof lives in
+# tests/test_architecture.py — these are representative end-to-end checks
+# that the mechanism generalizes beyond professional_services, the module it
+# first shipped against. ------------------------------------------------
+
+
+def test_customers_create_is_blocked_when_suspended(client: TestClient) -> None:
+    company_id = _seed_tenant(with_module_active=False)
+    _set_subscription_state_directly(company_id, "suspended")
+    me = _tenant_login(client)
+
+    resp = client.post("/api/v1/customers",
+                       headers={"X-CSRF-Token": str(me["csrf_token"])},
+                       json={"name": "Иван Петров", "phone": "0888123456"})
+    assert resp.status_code == 402
+    assert resp.json()["detail"]["message_key"] == "errors.subscription.mutations_blocked"
+
+
+def test_customers_read_and_create_are_unaffected_when_active(client: TestClient) -> None:
+    company_id = _seed_tenant(with_module_active=False)
+    _set_subscription_state_directly(company_id, "active")
+    me = _tenant_login(client)
+
+    assert client.get("/api/v1/customers").status_code == 200
+    resp = client.post("/api/v1/customers",
+                       headers={"X-CSRF-Token": str(me["csrf_token"])},
+                       json={"name": "Иван Петров", "phone": "0888123456"})
+    assert resp.status_code == 201, resp.text
+
+
+def test_customers_read_still_succeeds_when_suspended(client: TestClient) -> None:
+    """The read half of ADR-009's degradation promise, on a second module —
+    professional_services' own read-always proof is in
+    test_reads_never_gate_on_subscription_state above."""
+    company_id = _seed_tenant(with_module_active=False)
+    _set_subscription_state_directly(company_id, "suspended")
+    _tenant_login(client)
+
+    assert client.get("/api/v1/customers").status_code == 200
+
+
+def test_identity_logout_and_pinswitch_work_when_suspended(client: TestClient) -> None:
+    """A suspended company's users must still be able to log out and PIN-switch
+    — these are session mechanics, not the "business mutations" ADR-BOS-012
+    means to gate."""
+    company_id = _seed_tenant(with_module_active=False)
+    _set_subscription_state_directly(company_id, "suspended")
+    me = _tenant_login(client)
+
+    resp = client.post("/api/v1/auth/logout", headers={"X-CSRF-Token": str(me["csrf_token"])})
+    assert resp.status_code == 200
+
+
 # --- Architecture regression -----------------------------------------------
 
 

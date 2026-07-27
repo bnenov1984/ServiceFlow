@@ -12,7 +12,12 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from business_os.identity.contracts import get_company_profile
-from business_os.identity.deps import TenantDbDep, TenantDep, require_csrf
+from business_os.identity.deps import (
+    TenantDbDep,
+    TenantDep,
+    require_csrf,
+    require_subscription_ok,
+)
 from serviceflow.assets import service as assets_service
 from serviceflow.customers import service as customers_service
 from serviceflow.service_orders import contracts as orders_contracts
@@ -281,7 +286,9 @@ def list_orders(db: TenantDbDep, tenant: TenantDep, state: str = "open",
     ]
 
 
-@router.post("/orders", dependencies=[Depends(require_csrf)], status_code=201)
+@router.post("/orders",
+            dependencies=[Depends(require_csrf), Depends(require_subscription_ok)],
+            status_code=201)
 def create_order(body: OrderIn, db: TenantDbDep, tenant: TenantDep) -> OrderOut:
     customer = customers_service.get(db, tenant, body.customer_id)
     if customer is None:
@@ -321,7 +328,8 @@ def get_order(order_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep) -> OrderD
     )
 
 
-@router.patch("/orders/{order_id}", dependencies=[Depends(require_csrf)])
+@router.patch("/orders/{order_id}",
+             dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
 def patch_order(order_id: uuid.UUID, body: OrderPatch, db: TenantDbDep,
                 tenant: TenantDep) -> OrderOut:
     order = _get_or_404(db, tenant, order_id)
@@ -342,7 +350,8 @@ def patch_order(order_id: uuid.UUID, body: OrderPatch, db: TenantDbDep,
     return OrderOut.of(order)
 
 
-@router.post("/orders/{order_id}/status", dependencies=[Depends(require_csrf)])
+@router.post("/orders/{order_id}/status",
+            dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
 def change_status(order_id: uuid.UUID, body: StatusChange, db: TenantDbDep,
                   tenant: TenantDep) -> OrderOut:
     order = _get_or_404(db, tenant, order_id)
@@ -356,7 +365,8 @@ def change_status(order_id: uuid.UUID, body: StatusChange, db: TenantDbDep,
     return OrderOut.of(order, warning)
 
 
-@router.post("/orders/{order_id}/unlock", dependencies=[Depends(require_csrf)])
+@router.post("/orders/{order_id}/unlock",
+            dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
 def unlock_order(order_id: uuid.UUID, body: UnlockRequest, db: TenantDbDep,
                  tenant: TenantDep) -> OrderOut:
     order = _get_or_404(db, tenant, order_id)
@@ -366,8 +376,9 @@ def unlock_order(order_id: uuid.UUID, body: UnlockRequest, db: TenantDbDep,
         raise _err(e) from e
 
 
-@router.post("/orders/{order_id}/warranty-return", dependencies=[Depends(require_csrf)],
-             status_code=201)
+@router.post("/orders/{order_id}/warranty-return",
+            dependencies=[Depends(require_csrf), Depends(require_subscription_ok)],
+            status_code=201)
 def warranty_return(order_id: uuid.UUID, body: WarrantyReturnRequest, db: TenantDbDep,
                     tenant: TenantDep) -> OrderOut:
     order = _get_or_404(db, tenant, order_id)
@@ -377,7 +388,8 @@ def warranty_return(order_id: uuid.UUID, body: WarrantyReturnRequest, db: Tenant
         raise _err(e) from e
 
 
-@router.post("/orders/{order_id}/archive", dependencies=[Depends(require_csrf)])
+@router.post("/orders/{order_id}/archive",
+            dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
 def archive_order(order_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep) -> OrderOut:
     order = _get_or_404(db, tenant, order_id)
     try:
@@ -400,7 +412,8 @@ def order_timeline(order_id: uuid.UUID, db: TenantDbDep,
 
 # --- Diagnosis (0..1 per order, edited in place — docs/01 §Diagnosis) ---------
 
-@router.put("/orders/{order_id}/diagnosis", dependencies=[Depends(require_csrf)])
+@router.put("/orders/{order_id}/diagnosis",
+           dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
 def put_diagnosis(order_id: uuid.UUID, body: DiagnosisIn, db: TenantDbDep,
                   tenant: TenantDep) -> DiagnosisOut:
     order = _get_or_404(db, tenant, order_id)
@@ -417,8 +430,9 @@ def list_part_lines(order_id: uuid.UUID, db: TenantDbDep,
     return [PartLineOut.of(p) for p in lines.list_part_lines(db, tenant, order_id)]
 
 
-@router.post("/orders/{order_id}/part-lines", dependencies=[Depends(require_csrf)],
-             status_code=201)
+@router.post("/orders/{order_id}/part-lines",
+            dependencies=[Depends(require_csrf), Depends(require_subscription_ok)],
+            status_code=201)
 def add_part_line(order_id: uuid.UUID, body: PartLineIn, db: TenantDbDep,
                   tenant: TenantDep) -> PartLineOut:
     order = _get_or_404(db, tenant, order_id)
@@ -427,7 +441,8 @@ def add_part_line(order_id: uuid.UUID, body: PartLineIn, db: TenantDbDep,
     return PartLineOut.of(line)
 
 
-@router.patch("/part-lines/{line_id}", dependencies=[Depends(require_csrf)])
+@router.patch("/part-lines/{line_id}",
+             dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
 def patch_part_line(line_id: uuid.UUID, body: PartLinePatch, db: TenantDbDep,
                     tenant: TenantDep) -> PartLineOut:
     line = lines.get_part_line(db, tenant, line_id)
@@ -453,8 +468,9 @@ def list_labor_lines(order_id: uuid.UUID, db: TenantDbDep,
     return [LaborLineOut.of(line) for line in lines.list_labor_lines(db, tenant, order_id)]
 
 
-@router.post("/orders/{order_id}/labor-lines", dependencies=[Depends(require_csrf)],
-             status_code=201)
+@router.post("/orders/{order_id}/labor-lines",
+            dependencies=[Depends(require_csrf), Depends(require_subscription_ok)],
+            status_code=201)
 def add_labor_line(order_id: uuid.UUID, body: LaborLineIn, db: TenantDbDep,
                    tenant: TenantDep) -> LaborLineOut:
     order = _get_or_404(db, tenant, order_id)
@@ -465,7 +481,8 @@ def add_labor_line(order_id: uuid.UUID, body: LaborLineIn, db: TenantDbDep,
     return LaborLineOut.of(line)
 
 
-@router.patch("/labor-lines/{line_id}", dependencies=[Depends(require_csrf)])
+@router.patch("/labor-lines/{line_id}",
+             dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
 def patch_labor_line(line_id: uuid.UUID, body: LaborLinePatch, db: TenantDbDep,
                      tenant: TenantDep) -> LaborLineOut:
     line = lines.get_labor_line(db, tenant, line_id)
@@ -486,8 +503,9 @@ def list_accessories(order_id: uuid.UUID, db: TenantDbDep,
     return [AccessoryOut.of(a) for a in lines.list_accessories(db, tenant, order_id)]
 
 
-@router.post("/orders/{order_id}/accessories", dependencies=[Depends(require_csrf)],
-             status_code=201)
+@router.post("/orders/{order_id}/accessories",
+            dependencies=[Depends(require_csrf), Depends(require_subscription_ok)],
+            status_code=201)
 def add_accessory(order_id: uuid.UUID, body: AccessoryIn, db: TenantDbDep,
                   tenant: TenantDep) -> AccessoryOut:
     order = _get_or_404(db, tenant, order_id)
@@ -495,7 +513,8 @@ def add_accessory(order_id: uuid.UUID, body: AccessoryIn, db: TenantDbDep,
     return AccessoryOut.of(item)
 
 
-@router.patch("/accessories/{item_id}", dependencies=[Depends(require_csrf)])
+@router.patch("/accessories/{item_id}",
+             dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
 def patch_accessory(item_id: uuid.UUID, body: AccessoryPatch, db: TenantDbDep,
                     tenant: TenantDep) -> AccessoryOut:
     item = lines.get_accessory(db, tenant, item_id)

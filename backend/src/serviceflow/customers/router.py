@@ -6,7 +6,13 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from business_os.identity.deps import TenantDbDep, TenantDep, require_csrf, require_owner
+from business_os.identity.deps import (
+    TenantDbDep,
+    TenantDep,
+    require_csrf,
+    require_owner,
+    require_subscription_ok,
+)
 from serviceflow.customers import service
 from serviceflow.customers.models import Customer
 from serviceflow.service_orders import service as orders_service
@@ -84,7 +90,8 @@ def list_customers(db: TenantDbDep, tenant: TenantDep, q: str | None = None,
     ]
 
 
-@router.post("", dependencies=[Depends(require_csrf)], status_code=201)
+@router.post("", dependencies=[Depends(require_csrf), Depends(require_subscription_ok)],
+            status_code=201)
 def create_customer(body: CustomerIn, db: TenantDbDep, tenant: TenantDep) -> CustomerOut:
     # Duplicate phones warn, never block (docs/02 B3): the hint rides on the response.
     duplicates = service.find_duplicates_by_phone(db, tenant, body.phone)
@@ -100,7 +107,8 @@ def get_customer(customer_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep) -> 
     return CustomerOut.of(customer)
 
 
-@router.patch("/{customer_id}", dependencies=[Depends(require_csrf)])
+@router.patch("/{customer_id}",
+             dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
 def patch_customer(customer_id: uuid.UUID, body: CustomerPatch, db: TenantDbDep,
                    tenant: TenantDep) -> CustomerOut:
     customer = service.get(db, tenant, customer_id)
@@ -119,7 +127,8 @@ def patch_customer(customer_id: uuid.UUID, body: CustomerPatch, db: TenantDbDep,
     return CustomerOut.of(customer, [d.id for d in duplicates])
 
 
-@router.post("/{customer_id}/archive", dependencies=[Depends(require_csrf)])
+@router.post("/{customer_id}/archive",
+             dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
 def archive_customer(customer_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep) -> CustomerOut:
     customer = service.get(db, tenant, customer_id)
     if customer is None:
@@ -129,7 +138,8 @@ def archive_customer(customer_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep)
 
 
 @router.post("/{customer_id}/anonymize",
-             dependencies=[Depends(require_csrf), Depends(require_owner)])
+             dependencies=[Depends(require_csrf), Depends(require_owner),
+                          Depends(require_subscription_ok)])
 def anonymize_customer(customer_id: uuid.UUID, db: TenantDbDep,
                        tenant: TenantDep) -> CustomerOut:
     customer = service.get(db, tenant, customer_id)

@@ -8,7 +8,12 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from business_os.identity.deps import TenantDbDep, TenantDep, require_csrf
+from business_os.identity.deps import (
+    TenantDbDep,
+    TenantDep,
+    require_csrf,
+    require_subscription_ok,
+)
 from business_os.shared_kernel.storage import LocalFilesystemStorage, get_local_storage
 from serviceflow.attachments import service
 from serviceflow.attachments.models import Attachment
@@ -63,7 +68,8 @@ def list_attachments(order_id: uuid.UUID, db: TenantDbDep,
     return [AttachmentOut.of(a) for a in service.list_for_order(db, tenant, order_id)]
 
 
-@router.post("/orders/{order_id}/attachments", dependencies=[Depends(require_csrf)],
+@router.post("/orders/{order_id}/attachments",
+             dependencies=[Depends(require_csrf), Depends(require_subscription_ok)],
              status_code=201)
 def upload_attachment(order_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep,
                       file: Annotated[UploadFile, File()],
@@ -103,7 +109,8 @@ def get_attachment_file(attachment_id: uuid.UUID, db: TenantDbDep, tenant: Tenan
     )
 
 
-@router.delete("/attachments/{attachment_id}", dependencies=[Depends(require_csrf)])
+@router.delete("/attachments/{attachment_id}",
+              dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
 def delete_attachment(attachment_id: uuid.UUID, db: TenantDbDep,
                       tenant: TenantDep) -> dict[str, bool]:
     attachment = service.get(db, tenant, attachment_id)

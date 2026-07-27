@@ -646,3 +646,74 @@ def test_provisioning_write_functions_never_commit() -> None:
             f"identity.contracts.{name} appears to call .commit() — this "
             "breaks ProvisionCompany's single-transaction atomicity guarantee"
         )
+
+
+# --- Platform-wide require_subscription_ok retrofit (docs/business-os/18
+# §13.3 follow-up, 28.07.2026) -----------------------------------------------
+#
+# Mechanical change: every tenant route that already required CSRF (i.e.
+# every existing mutation) must now also carry require_subscription_ok,
+# except business_os.identity's own auth mechanics (login is unauthenticated
+# by definition; logout/pin-switch must keep working for a suspended
+# company's users — session hygiene and PIN re-identification are not
+# "business mutations" ADR-BOS-012 means to gate). This is checked
+# structurally, over the assembled app's real dependency graph, rather than
+# by exercising all 30+ routes over HTTP — a completeness proof, not a
+# sample.
+
+_IDENTITY_ROUTE_EXEMPTIONS = {"/api/v1/auth/logout", "/api/v1/auth/pin-switch"}
+
+
+def test_every_csrf_route_outside_identity_also_requires_subscription_ok() -> None:
+    from business_os.identity.deps import require_csrf, require_subscription_ok
+    from serviceflow.main import create_app
+
+    checked = 0
+    for path, route in _iter_api_routes(create_app().routes):
+        if path in _IDENTITY_ROUTE_EXEMPTIONS or path.startswith("/api/v1/platform-admin"):
+            continue
+        callables = _dependant_callables(route.dependant)  # type: ignore[attr-defined]
+        if require_csrf not in callables:
+            continue  # a read/export route — must never be gated (ADR-009)
+        checked += 1
+        assert require_subscription_ok in callables, (
+            f"mutating route {path} requires CSRF but not require_subscription_ok — "
+            "the platform-wide retrofit missed it"
+        )
+    assert checked >= 30, (
+        f"only {checked} CSRF routes found outside identity/vendor — the sweep isn't finding them"
+    )
+
+
+def test_no_read_route_carries_require_subscription_ok() -> None:
+    """The other half: ADR-009's degradation promise ("all data visible,
+    export/backup always available") means require_subscription_ok must
+    never appear on a route that doesn't also require CSRF — reads and
+    exports (e.g. the protocol PDF) must stay open in every subscription
+    state."""
+    from business_os.identity.deps import require_csrf, require_subscription_ok
+    from serviceflow.main import create_app
+
+    for path, route in _iter_api_routes(create_app().routes):
+        callables = _dependant_callables(route.dependant)  # type: ignore[attr-defined]
+        if require_subscription_ok in callables:
+            assert require_csrf in callables, (
+                f"route {path} carries require_subscription_ok without require_csrf — "
+                "it may be a read/export route wrongly gated"
+            )
+
+
+def test_identity_auth_mechanics_are_never_gated_by_subscription_state() -> None:
+    """login/logout/pin-switch must keep working regardless of subscription
+    standing — a suspended company's users still need to authenticate to see
+    why, and still need to log out."""
+    from business_os.identity.deps import require_subscription_ok
+    from serviceflow.main import create_app
+
+    for path, route in _iter_api_routes(create_app().routes):
+        if not path.startswith("/api/v1/auth"):
+            continue
+        callables = _dependant_callables(route.dependant)  # type: ignore[attr-defined]
+        assert require_subscription_ok not in callables, (
+            f"auth route {path} must never require_subscription_ok"
+        )

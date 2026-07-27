@@ -6,7 +6,12 @@ from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from business_os.identity.deps import TenantDbDep, TenantDep, require_csrf
+from business_os.identity.deps import (
+    TenantDbDep,
+    TenantDep,
+    require_csrf,
+    require_subscription_ok,
+)
 from serviceflow.service_orders import service as orders_service
 from serviceflow.tasks import service
 from serviceflow.tasks.models import Task
@@ -70,7 +75,8 @@ def list_tasks(db: TenantDbDep, tenant: TenantDep, today: bool = False,
                                                        mine=mine, calls=calls)]
 
 
-@router.post("/tasks", dependencies=[Depends(require_csrf)], status_code=201)
+@router.post("/tasks", dependencies=[Depends(require_csrf), Depends(require_subscription_ok)],
+            status_code=201)
 def create_company_task(body: TaskIn, db: TenantDbDep, tenant: TenantDep) -> TaskOut:
     task = service.create(db, tenant, **body.model_dump())
     return TaskOut.of(task)
@@ -85,7 +91,8 @@ def list_order_tasks(order_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep) ->
     return [TaskOut.of(t) for t in service.list_for_order(db, tenant, order_id)]
 
 
-@router.post("/orders/{order_id}/tasks", dependencies=[Depends(require_csrf)],
+@router.post("/orders/{order_id}/tasks",
+             dependencies=[Depends(require_csrf), Depends(require_subscription_ok)],
              status_code=201)
 def create_order_task(order_id: uuid.UUID, body: TaskIn, db: TenantDbDep,
                       tenant: TenantDep) -> TaskOut:
@@ -97,7 +104,8 @@ def create_order_task(order_id: uuid.UUID, body: TaskIn, db: TenantDbDep,
     return TaskOut.of(task)
 
 
-@router.patch("/tasks/{task_id}", dependencies=[Depends(require_csrf)])
+@router.patch("/tasks/{task_id}",
+             dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
 def patch_task(task_id: uuid.UUID, body: TaskPatch, db: TenantDbDep,
                tenant: TenantDep) -> TaskOut:
     task = service.get(db, tenant, task_id)
