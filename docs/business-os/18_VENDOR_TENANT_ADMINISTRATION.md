@@ -1,0 +1,500 @@
+# BOS-18 — Vendor & Tenant Administration: Audit and Target Model
+
+Status: **Documentation-first audit + target model — Accepted with two PO
+clarifications applied 26.07.2026** (C1: business-profile ownership is
+vendor-assigned at provisioning, not a tenant preference — §5 Q5, ADR-BOS-011;
+C2: vendor visibility is metadata-first, not tenant-business-data-first — §5
+Q9, ADR-BOS-009). Not part of the frozen ADR set. · Date: 26.07.2026 ·
+Source: PO directive accepting the frozen product model (Business OS +
+sibling apps + RepairFlow business profiles); read-only audit of the
+repository as it stands after the PropertyFlow dashboard slice
+(`frontend/src/ps/`, uncommitted at audit time — see §8).
+
+This document is the audit trail and the answer key. The actual decisions are
+in four new ADRs it cross-references (ADR-BOS-009…012); this document exists
+so those decisions have one place that shows the evidence they were built on
+and the questions they collectively answer.
+
+## 1. Phase 1 — Read-only audit findings
+
+### 1.1 Tenant/company model
+
+- `companies` (`business_os/identity/models.py`) is the tenant: `id`,
+  `name`, `requisites` (JSONB), `vat_registered`, `settings` (JSONB). One row
+  per paying business (ADR-013).
+- Isolation: three layers per ADR-016 — server-derived `TenantContext`
+  (never client-supplied), a scoped-query chokepoint (`shared_kernel.db`),
+  and PostgreSQL RLS (`FORCE ROW LEVEL SECURITY`, fail-closed GUC). The app
+  DB role is non-superuser by deployment requirement (superusers bypass
+  RLS). `companies`/`users`/`sessions`/`audit_log` are RLS-**exempt**
+  (identity bootstrap — no `company_id` to scope by, for `companies` itself)
+  with queries centralized in `identity.service` as the compensating
+  control.
+- **Vendor-created tenants**: the only code path that creates a company is
+  `identity.service.seed_company`, called exclusively from
+  `serviceflow/seed.py` — a CLI script run by hand
+  (`uv run python -m serviceflow.seed "Name" "Owner" email password`). No
+  HTTP endpoint creates a company. This satisfies "vendor-only creation" by
+  omission (nobody else can either), not by a designed control.
+  Self-service registration is documented (docs/13 Етап 3: "company
+  self-registration, email verification, ≤3-step wizard") but **not built**.
+- **Company creation today is: CLI-only.** Not public, not self-service, not
+  admin-UI — a maintainer/ops action.
+
+### 1.2 Identity and roles
+
+- One role bit: `User.is_owner: bool`. `TenantContext` carries
+  `(company_id, user_id, is_owner)` — nothing else.
+- First Owner: created by the same `seed_company` call that creates the
+  company (one User row with `is_owner=True`), never separately.
+- **A company Owner cannot create employees today.** `users_router` exposes
+  only `GET /users` (list). The router's own comment says it plainly:
+  "POST/PATCH/deactivate са Етап 3 (администрация)." There is no
+  employee-invite flow of any kind yet.
+- **No platform/vendor admin role exists anywhere in code** — confirmed by
+  exhaustive grep (`vendor`, `platform_admin`, `PlatformAdmin`,
+  `is_platform_admin`) across `backend/src`: zero matches outside this
+  audit's own new files.
+- Platform and tenant roles are therefore **not mixed** — there is nothing
+  to un-mix. The risk is prospective: whatever role concept is added next
+  must not be bolted onto `users.is_owner` (see ADR-BOS-009).
+- `require_owner` (the one owner-gate dependency) currently guards exactly
+  one endpoint: `POST /customers/{id}/anonymize` (GDPR anonymization).
+
+### 1.3 Module activation
+
+- Stored at `companies.settings.active_modules` (JSONB string list) —
+  `identity.service.is_module_active` / `.active_modules` /
+  `.activate_module`.
+- **Who can change it today: nobody, via the app.** `activate_module`'s only
+  caller in the entire backend is `serviceflow/seed.py`. Grepped and
+  confirmed — no router, no service, no test outside the identity/seed
+  layer calls it.
+- Enforcement is real and correctly layered:
+  - **Backend**: `professional_services.deps.require_ps_active` — a
+    request-scoped dependency mounted on the whole PS router
+    (`dependencies=[Depends(require_ps_active)]`) that raises 404 with
+    `message_key: errors.ps.module_inactive` when inactive. This is the
+    template for every future module.
+  - **Frontend**: `AppShell.APPS` filters the app-switcher/nav by
+    `me.active_modules` (from `GET /auth/me`'s `active_modules` field). This
+    is a UX courtesy layered *on top of* the backend 404 — removing it would
+    not expose data, only a dead nav entry.
+- **Entitlement (may-use-at-all) and configuration (feature behavior inside
+  an entitled module) are already conceptually distinct in the one module
+  that exists** (PS workflow templates, stage config are tenant-owned
+  *inside* an entitled module) — this audit's job is to keep that line
+  explicit as more modules and a real activation UI arrive (ADR-BOS-010).
+
+### 1.4 Licensing/subscriptions
+
+- ADR-009 (local-edition offline license tokens) is **Superseded** by
+  ADR-018 (SaaS subscriptions) per the 11.07.2026 pivot; ADR-018 itself is
+  **Accepted** but **0% implemented**: no `PaymentProvider` port, no webhook
+  inbox table, no subscription-state column, no trial logic, anywhere in
+  `backend/src`. Confirmed by grep (`subscription`, `billing`, `webhook`,
+  `trial`) — zero implementation hits.
+- docs/13 (Implementation Plan) already schedules "Абонаменти и billing
+  (ADR-018)" and "Платформена админ конзола (vendor)" inside **Етап 3**,
+  not yet started.
+- **No seat/max-users limit exists anywhere** — not in code, not in any
+  document before this one. Genuinely new (ADR-BOS-009's ownership matrix,
+  §V1 Console scope below).
+- Subscription state is **only planned**, nowhere persisted.
+
+### 1.5 RepairFlow profiles
+
+- `AssetType` (`serviceflow/assets/models.py`) is a **global** seed table:
+  `code` is a bare primary key (no `company_id`), `field_defs` JSONB is
+  identical for every tenant, seeded once by migration 0003 (`phone`,
+  `vehicle`, `laptop`, `other`).
+- Field definitions and validation (`assets/service.py::validate_field_values`)
+  already vary *by asset type*, not by company — the mechanism (a typed
+  `{key, label_bg, type, choices?, identifier_kind?}` registry, validated
+  strictly server-side) is exactly right, it just has no per-company axis.
+- The codebase already has a directly reusable precedent for
+  "registry-as-data, reviewed like code": `modules/construction-supervision`'s
+  ADR-CS-007 (document types as registry rows, not hard-coded classes) and
+  this repo's own docs/08 §4 standing rejection of a generic EAV/custom-fields
+  platform. Both point the same direction: extend the existing typed-JSONB
+  pattern with a company scope, do not invent a second mechanism.
+- **Risk of adding `business_profile` to `companies.settings` vs. a
+  dedicated domain model**: settings-JSONB is right for the *assignment
+  record* (which profile a company was assigned — one string, no relations,
+  matches the existing settings pattern exactly). It is **wrong** for the
+  asset-type rows themselves, which need real per-company existence (a
+  company must be able to have its *own* copy of "vehicle" with its *own*
+  field set, independently of another company's copy) — that needs
+  `asset_types` to become company-scoped data, not a JSONB blob describing
+  types. See ADR-BOS-011 for the resolution (settings key for the
+  assignment, scoped table for the types) and §6 below for the schema shape.
+  **One caveat introduced by PO clarification 1** (vendor-assigned, not
+  tenant-chosen): storing the assignment inside `companies.settings` — a
+  blob the tenant otherwise owns and will eventually edit through a
+  settings UI — means the *write path* must be guarded specifically, not
+  just the value's presence. A future generic "PATCH company settings"
+  tenant endpoint must not be able to write the `repairflow.business_profile`
+  key. Either the guard is explicit (key allow-list on the tenant settings
+  endpoint) or the assignment moves to its own vendor-owned column; decide
+  at implementation time, but do not let the JSONB convenience quietly
+  re-grant the tenant a capability this clarification removed.
+
+### 1.6 Administration UI
+
+- Company settings / user-management screens: **do not exist**. `AppShell`'s
+  sidebar has a permanently greyed "Настройки" nav item
+  (`GrayedNavItem`, tooltip "Очаквайте скоро") — a placeholder, no route
+  behind it.
+- No vendor admin screen or vendor admin concept exists in the frontend —
+  confirmed by an exhaustive filename search (`*settings*`, `*admin*`,
+  `*vendor*` under `frontend/src`): zero matches.
+- `AppShell` assumes exactly one kind of authenticated user (a tenant
+  session) throughout — `useAuth()`'s `Me` shape has no room for a
+  vendor-admin session, which is the correct current state (see
+  ADR-BOS-009: they must stay structurally separate, not "extend `Me`").
+- **No route or API exposes cross-tenant data.** Every router either takes
+  `TenantDep`/`TenantDbDep` (scoped to the caller's own company) or nothing
+  tenant-shaped at all (`/auth/login`, `/platform/health`). There is no
+  `GET /companies` anywhere. This is a clean starting point, not a gap to
+  fix.
+
+### 1.7 Documentation inventory (needs updates)
+
+| Document | What needs updating | Status after this audit |
+|---|---|---|
+| `docs/adr/` | New ADRs for the vendor/tenant split | **Done** — ADR-BOS-009…012 added |
+| `docs/business-os/17_BUSINESS_CAPABILITIES_MATRIX.md` | Add Vendor Control Plane, RepairFlow business profiles rows | Updated same session |
+| `docs/business-os/05_DATA_OWNERSHIP.md` | Add planned tables: `platform_admins`, `platform_audit_log`, subscription state, scoped `asset_types` | Updated same session |
+| `docs/business-os/08_EVOLUTION_ROADMAP.md` | Break out Vendor Console / entitlements / profiles as named workstreams | Updated same session |
+| `docs/business-os/10_GLOSSARY.md` | Vendor Administrator, Tenant Owner, Tenant Employee, Entitlement, Business Profile, Vendor Control Plane, Tenant Workspace | Updated same session |
+| `docs/13_IMPLEMENTATION_PLAN.md` (Етап 3) | Cross-reference the new ADRs from the existing "Платформена админ конзола" / "Администрация (tenant)" bullets | Updated same session |
+| `docs/11_SECURITY_MODEL.md` | Already self-flagged stale for SaaS (§ header); this audit adds vendor/tenant role separation as a named future §2 item without doing the full rewrite the header already schedules for Етап 3 | Updated same session (pointer only) |
+| `docs/09_API_SPECIFICATION.md` | Will need the Vendor Control Plane's endpoint contracts | **Not touched** — no endpoints exist yet to specify; do this when ADR-BOS-009's console is actually built, not speculatively now |
+| Threat model (`docs/11 §1`) | Add cross-tenant vendor-console access, vendor-credential compromise | **Not rewritten** — already an explicit, scheduled Етап-3 task; this audit does not duplicate it early |
+| `modules/professional-services/docs/28_BUSINESS_OS_INTEGRATION.md` | Cross-check its own module-activation assumptions still match ADR-BOS-010 | **Checked, consistent** — PS already does the right thing (`require_ps_active`); no changes needed |
+
+### 1.8 Security and auditability
+
+- **Required audit events for vendor actions**: company create, first-Owner
+  create, entitlement grant/revoke, subscription-state transition, seat-limit
+  change, suspend/reactivate, business-profile assignment — all defined as
+  the `platform_audit_log` shape in ADR-BOS-009 §Decision. None exist today
+  because no vendor actions exist today.
+- **Cross-tenant access risk**: currently minimal by absence — no code path
+  reads across tenants at all (RLS would block it even if a query forgot to
+  scope; the isolation test suite, P0-9, already proves this for every
+  existing tenant table). The risk is entirely prospective: it activates the
+  moment a Vendor Control Plane router exists and must read across
+  companies *by design* — which is exactly why ADR-BOS-009 requires those
+  reads to be explicit, path-parameterized, and audited rather than an
+  implicit "RLS-exempt because it's Core" shortcut.
+- **Vendor support impersonation**: not implemented, not designed beyond
+  ADR-BOS-009's explicit exclusion ("a separate, explicitly
+  security-reviewed feature"). Out of scope for V1 per this task's own
+  constraints.
+- **Stronger authentication for sensitive vendor actions**: not decided by
+  this audit — flagged as an open question for the Vendor Console's own
+  design pass (candidate: re-auth/step-up for suspend/entitlement-revoke,
+  same class of control as `require_owner` today but for the vendor plane).
+  Not blocking V1 Vendor Console scope (§7), but should be resolved before
+  that console handles real paying customers.
+- **Tenant deletion**: no delete path exists for `companies` anywhere in
+  code today (confirmed by grep — no `DELETE`/drop-company code). This
+  already matches the desired model (suspend/archive, never hard-delete);
+  ADR-BOS-012's `cancelled` state is explicitly non-destructive (data
+  retained, same as module deactivation per ADR-BOS-004 §Decision).
+
+## 2. Gaps between current architecture and the accepted model
+
+| Accepted-model requirement | Current state | Gap |
+|---|---|---|
+| Vendor administers companies, entitlements, subscriptions, seats | None of this is reachable via the app | Full gap — Vendor Console does not exist (ADR-BOS-009, §7 below) |
+| Tenant Owner administers own employees, roles | `GET /users` only, no create/invite | Full gap — tenant admin UI is Етап 3, unchanged by this audit |
+| Tenant Owner cannot activate paid apps without vendor approval | Nobody can activate anything via the app | **No gap today** (trivially satisfied by absence); becomes a real requirement the day entitlement mutation is exposed at all — ADR-BOS-010 fixes the target before that day arrives |
+| RepairFlow business profiles configure asset behavior per company; vendor assigns at provisioning, tenant configures within, changes after data are controlled migrations | `asset_types` is global, no profile concept, no provisioning flow, no compatibility-review concept | Full gap — ADR-BOS-011; needs a migration (§6.4) plus the vendor provisioning action (§7 screen 3) and the tenant read-only view, none authored here |
+| Vendor and tenant roles structurally separate | Only one role (`is_owner`) exists; nothing to conflate yet | **No current violation**, but the natural next step (a boolean on `users`) would create one — ADR-BOS-009 heads this off before it's written |
+| Vendor actions audited | No vendor actions exist to audit | Full gap — `platform_audit_log`, proposed not built (§6) |
+| Suspension ≠ deletion | No deletion path exists at all | **Already satisfied** |
+| Entitlement checks server-side | True for the one module that exists (PS) | **Already satisfied** — restate as the mandatory pattern for module #2+ (ADR-BOS-010) |
+
+## 3. ADRs created
+
+- [ADR-BOS-009](../adr/ADR-BOS-009-vendor-control-plane-vs-tenant-workspace.md) — Vendor Control Plane vs Tenant Workspace
+- [ADR-BOS-010](../adr/ADR-BOS-010-application-entitlement-ownership.md) — Application Entitlement Ownership
+- [ADR-BOS-011](../adr/ADR-BOS-011-repairflow-business-profiles.md) — RepairFlow Business Profiles
+- [ADR-BOS-012](../adr/ADR-BOS-012-subscription-lifecycle-v1-manual.md) — Subscription/Licence Lifecycle (V1, Manually Managed)
+
+## 4. Documentation updated
+
+See §1.7 table. In the same session: `docs/adr/ADR-BOS-009…012` (new),
+`docs/business-os/17_BUSINESS_CAPABILITIES_MATRIX.md`,
+`docs/business-os/05_DATA_OWNERSHIP.md`,
+`docs/business-os/08_EVOLUTION_ROADMAP.md`,
+`docs/business-os/10_GLOSSARY.md`, `docs/13_IMPLEMENTATION_PLAN.md`,
+`docs/11_SECURITY_MODEL.md`, this document.
+
+## 5. Final ownership matrix
+
+Answers the twelve questions this task set out to resolve explicitly:
+
+| # | Question | Answer |
+|---|---|---|
+| 1 | Who creates a new customer company? | **Vendor Administrator**, via the future Vendor Control Plane (today: CLI/seed only — same actor category, no UI yet). Never self-service in this task's scope (ADR-018's future self-registration is separate, untouched). |
+| 2 | Who creates the first Owner? | **Vendor Administrator**, atomically with company creation (unchanged from today's `seed_company` shape — one call creates both). |
+| 3 | Who creates employees? | **Tenant Owner**, within their own company, bounded by the vendor-set seat limit. Not built yet (docs/13 Étап 3); ownership is settled, UI is future work. |
+| 4 | Who activates RepairFlow or PropertyFlow? | **Vendor Administrator only** (ADR-BOS-010). A Tenant Owner can never self-activate a module, paid or not. |
+| 5 | Who sets the business profile? | **Vendor Administrator assigns it during company provisioning** (PO clarification 1, 26.07.2026 — ADR-BOS-011 §Decision 3). The **Tenant Owner configures workflows, templates and application settings *inside* the assigned profile** freely, but cannot switch the profile itself; they may *request* a change. Changing a profile once assets/orders exist is a **controlled migration** requiring compatibility review and vendor approval (ADR-BOS-011 §Decision 7). A profile is **not** an entitlement (ADR-BOS-010 owns that) and **not** an ordinary tenant preference. |
+| 6 | Who controls maximum seats? | **Vendor Administrator** sets the limit; **Tenant Owner** operates within it (cannot exceed it when inviting employees) but cannot raise it. |
+| 7 | What happens when the subscription expires? | Transitions to `grace_period` then `suspended` (ADR-BOS-012) — full data visibility, export/backup always available, mutations blocked with a plain explanation (ADR-009 philosophy, carried through ADR-018 and this ADR unchanged). Data is never deleted. |
+| 8 | What can a tenant Owner see but not modify? | Vendor-controlled facts about their own company: which modules are entitled, subscription state, seat limit, **and the assigned RepairFlow business profile** (read-only, with a "request a change" affordance — never a selector). Vendor internal notes are not shown at all, not even read-only — they are vendor-internal by definition. |
+| 9 | What can a vendor administrator see across tenants? | **Administrative metadata only — "vendor visibility is metadata-first, not tenant-business-data-first"** (PO clarification 2, 26.07.2026 — ADR-BOS-009 §Vendor data visibility). **Visible:** company identity, subscription/licence status, activated applications, seat limit + usage, business profile, suspension status, deployment/version/health metadata, internal support notes, platform audit history. **Not visible:** customers, assets, service orders, engagements, documents, invoices/transactions, and notes belonging to the customer company. Aggregate counts over those are metadata and stay visible; individual rows do not. Future support access to operational data must be separately designed, explicitly authorised, time-bounded where practical, strongly audited — and is **out of scope for the V1 Vendor Console**. |
+| 10 | How are vendor actions audited? | `platform_audit_log` (proposed, §6): actor, target company, action, reason, timestamp, append-only — same reasoned-change discipline `PSDeadlineChange` already established. |
+| 11 | Is the Vendor Console included in tenant navigation? | **No, never.** Separate route namespace (`/vendor/*`), never linked from `AppShell`, never reachable from a tenant session (ADR-BOS-009 §Decision — structurally separate sessions, not just hidden nav). |
+| 12 | Is business profile the same as module activation? | **No — and this stays true after clarification 1, which changed *who assigns* the profile, not *what it is*.** Module activation/entitlement = "**does** this company have RepairFlow at all" (vendor-controlled, ADR-BOS-010). Business profile = "**how** does RepairFlow behave for this company" (vendor-*assigned* at provisioning, tenant-*configured* within, RepairFlow-scoped, ADR-BOS-011). Both are now vendor-assigned, which makes the distinction *more* important to state, not less: entitling RepairFlow never implies a profile, assigning a profile never grants an entitlement, and they are stored, audited and changed independently. Conflating them is the exact anti-pattern ADR-BOS-010 §4 and ADR-BOS-011 §Decision 1 both call out by name. |
+
+### Ownership matrix — actions
+
+| Action | Vendor Administrator | Tenant Owner | Tenant Employee |
+|---|---|---|---|
+| Create company / first Owner | ✅ | ❌ | ❌ |
+| Grant/revoke module entitlement | ✅ | ❌ | ❌ |
+| Set subscription state | ✅ | ❌ | ❌ |
+| Set seat limit | ✅ | ❌ | ❌ |
+| Suspend/reactivate company | ✅ | ❌ | ❌ |
+| Create/invite employees (within seat limit) | ❌ | ✅ | ❌ |
+| **Assign** initial RepairFlow business profile (at provisioning) | ✅ | ❌ | ❌ |
+| **Change** business profile after operational data exists | ✅ (on tenant request, after compatibility review + approval) | ❌ — may **request** only | ❌ |
+| View assigned business profile | ✅ | ✅ (read-only) | ✅ (read-only) |
+| Configure workflow templates/statuses/warranty defaults **within** the assigned profile | ❌ | ✅ | per future permission (today: none exist beyond Owner) |
+| List/browse other companies | ✅ (Control Plane only) | ❌ | ❌ |
+| See own company's audit trail | ❌ (vendor's `platform_audit_log` is a separate record; vendor internal notes stay vendor-only) | ✅ | ❌ |
+| Read cross-tenant administrative **metadata** (identity, subscription, entitlements, seats, profile, suspension, health/version, support notes, platform audit) | ✅ | ❌ | ❌ |
+| Read tenant **operational data** (customers, assets, orders, engagements, documents, invoices/transactions, customer-authored notes) | ❌ — aggregate counts only | ✅ | ✅ (same as Owner today — no finer read-permission exists yet) |
+
+## 6. Recommended data model changes (not implemented — approval required before any migration)
+
+Per this task's Phase 4 rule, none of the following are built. Each is
+proposed here with rationale, shape, compatibility impact, and rollback
+strategy, for explicit approval before a migration is authored.
+
+### 6.1 `platform_admins` (Core, new table)
+
+- **Why now**: ADR-BOS-009 requires vendor identity to be structurally
+  separate from `users`; no existing table can hold it without violating
+  that separation.
+- **Proposed schema**: `id uuid pk`, `name text`, `email text unique`,
+  `password_hash text`, `is_active bool default true`, `created_at`,
+  `updated_at`. No `company_id` — RLS-exempt by construction, same
+  compensating-control discipline as `companies`/`users`.
+- **Compatibility impact**: additive only, zero impact on existing tables or
+  queries.
+- **Rollback**: drop table; nothing references it yet.
+
+### 6.2 `platform_audit_log` (Core, new table)
+
+- **Why now**: ADR-BOS-009 §Decision requires vendor mutations audited; the
+  existing `audit_log`'s `user_id` FK is typed to `users.id`, incompatible
+  with a `platform_admins.id` actor without a dual-typed column.
+- **Proposed schema**: `id uuid pk`, `platform_admin_id uuid fk
+  platform_admins.id`, `company_id uuid fk companies.id nullable` (nullable
+  for actions with no single target, e.g. a companies-list view logged for
+  security review), `action text`, `detail jsonb default '{}'`, `reason
+  text nullable`, `created_at`.
+- **Compatibility impact**: additive only.
+- **Rollback**: drop table.
+
+### 6.3 Subscription state on `companies` (or a sibling table)
+
+- **Why now**: ADR-BOS-012 needs somewhere to persist
+  `trial|active|grace_period|suspended|cancelled` plus the dates that drive
+  it.
+- **Proposed shape (two options, decide at implementation time)**:
+  (a) columns directly on `companies` — `subscription_state text`,
+  `subscription_state_changed_at timestamptz`, `trial_ends_at
+  timestamptz nullable`, `seat_limit int nullable` (nullable = unlimited,
+  a deliberate escape hatch for the vendor's own test/demo companies); or
+  (b) a `company_subscriptions` sibling table (1:1 with `companies`) if the
+  column count grows once ADR-018's provider fields (customer id, plan id)
+  eventually land — **recommend (a) for V1** (fewer moving parts, matches
+  `companies.settings`-adjacent precedent) with an explicit note that (b)
+  is the natural migration target when ADR-018's provider integration
+  starts, not before.
+- **Compatibility impact**: additive columns on an existing table — every
+  current company needs a backfill default (`subscription_state = 'active'`
+  for all pre-existing seeded companies, so nothing currently running
+  degrades on migration day).
+- **Rollback**: drop columns; no other table references them.
+
+### 6.4 Company-scoped `asset_types` (RepairFlow, schema change to an existing table)
+
+- **Why now**: ADR-BOS-011 requires per-company asset-type rows; today's
+  `code`-only primary key structurally cannot express two companies with
+  different definitions of "vehicle."
+- **Proposed schema**: add `company_id uuid fk companies.id` to
+  `asset_types`; primary key becomes `(company_id, code)` (or a new
+  UUIDv7 `id` with a unique `(company_id, code)` constraint, consistent
+  with ADR-013's "every domain record carries a UUIDv7 id" — **recommend
+  the UUIDv7-id form** to match the rest of the schema rather than a
+  composite key, which nothing else in this codebase uses). Add RLS
+  (`FORCE ROW LEVEL SECURITY`, the standard tenant policy) — `asset_types`
+  moves from RLS-exempt (it isn't currently RLS'd because it's global
+  reference data) to a normal tenant table.
+- **Backfill**: every existing company gets its own copy of today's four
+  types (`phone`, `vehicle`, `laptop`, `other`) with today's exact
+  `field_defs`, tagged `business_profile = generic_repair` — behavior-
+  identical to today for every current tenant.
+- **Compatibility impact**: **real** — `assets.asset_type_code` currently
+  FKs to a global `asset_types.code`; that FK needs to become
+  company-aware (either compound FK or resolved via the new `id`). This
+  touches `assets/models.py`, `assets/service.py`, `assets/router.py`, and
+  every test/fixture that references a bare asset-type code. The largest of
+  the four proposed changes — should land as its own reviewed migration PR,
+  not bundled with §6.1–6.3.
+- **Rollback**: non-trivial once any company has a second profile's asset
+  types — plan the migration as additive-first (new scoped table populated
+  alongside the old global one, cut over reads, then drop the global table
+  in a second migration) rather than an in-place ALTER, so each step is
+  independently reversible.
+
+## 7. V1 Vendor Console — documented scope only (nothing built)
+
+Ten screens, matching the task's own enumeration, each mapped to the ADR
+that governs it:
+
+1. **Companies list** — ADR-BOS-009 (Control Plane read)
+2. **Company details** — ADR-BOS-009
+3. **Create company** — ADR-BOS-009 §Decision (Vendor Administrator only).
+   Per clarification 1, **assigning the initial RepairFlow business profile
+   is part of this action**, not an optional follow-up: a company cannot be
+   provisioned without one (`generic_repair` is the explicit default).
+4. **Create first Owner** — ADR-BOS-009, same action as #3 in practice
+5. **Activated applications** — ADR-BOS-010 (entitlement grant/revoke)
+6. **RepairFlow business profile** — ADR-BOS-011 §Decision 3. Per PO
+   clarification 1 this is a **vendor-owned assignment**, so the console is
+   the *primary* place it is set: chosen during company provisioning
+   (screen 3) and changeable afterwards only through the controlled path
+   (tenant request → compatibility review → vendor approval → audited
+   change). The tenant-side settings UI shows it read-only. This screen
+   therefore needs both the assignment control and the compatibility-review
+   view that must precede any post-data change.
+7. **Subscription/licence dates and status** — ADR-BOS-012
+8. **Seat limit and current usage** — ADR-BOS-009 ownership matrix row 6;
+   "current usage" reads the tenant's own `users` count, read-only from the
+   vendor side
+9. **Suspend/reactivate company** — ADR-BOS-012 state transitions
+10. **Internal notes and audit history** — ADR-BOS-009 §Decision
+    (`platform_audit_log`); internal notes are vendor-only, never surfaced
+    to any tenant role (ownership matrix, §5)
+
+**Out of scope for V1** (restated from the task, unchanged, binding): automated
+card billing, payment gateway integration, tax invoices for the subscription
+itself, customer self-service purchase, marketplace, usage-based billing,
+complex plan catalogue, vendor impersonation (unless separately security
+reviewed), hard tenant deletion, generic no-code profile builder.
+
+## 8. Testing strategy — required future tests
+
+None of these exist yet (nothing to test — no code built). Documented so the
+Vendor Console's first PR ships with them, not after:
+
+- Vendor admin can create a company (+ its first Owner, atomically).
+- Vendor admin can assign/revoke module entitlements; the change is visible
+  via `GET /auth/me`'s `active_modules` on the tenant's next request.
+- **Tenant Owner cannot assign entitlements** — a negative test hitting
+  whatever entitlement-mutation endpoint exists with a tenant session,
+  expecting 403/404, never 200. (Mirrors the isolation-suite discipline
+  ADR-016's P0-9 already established for cross-tenant reads — same rigor,
+  applied to cross-plane writes.)
+- Vendor admin can set a seat limit.
+- Tenant Owner cannot exceed the seat limit when creating employees
+  (boundary test: exactly at the limit succeeds, one over fails with a
+  clear message_key).
+- Tenant Owner can create employees within the limit.
+- A `suspended` company's protected endpoints reject mutations
+  (`require_subscription_ok`) while reads/export continue to succeed —
+  both halves of ADR-009/018's degradation promise, tested explicitly, not
+  assumed.
+- One tenant cannot access another tenant's data via any Vendor Control
+  Plane code path either (extends the existing isolation suite to the new
+  plane — a vendor-scoped query that forgets to take `company_id` as an
+  explicit parameter must still be impossible to coerce into leaking a
+  second company's rows).
+- RepairFlow business profile controls which asset types/fields are
+  accepted (positive: profile's own types validate; negative: a field not
+  in the active profile is rejected server-side even if sent directly to
+  the API, bypassing the frontend).
+- **A vendor administrator can assign a business profile during company
+  provisioning**, and a company cannot be created without one (default
+  `generic_repair` applied when unspecified).
+- **A Tenant Owner cannot change the business profile** — negative test:
+  any tenant-session attempt at the profile-change path returns 403/404,
+  never 200. (Same shape as the entitlement negative test above; both are
+  cross-plane write attempts.)
+- **A profile change after operational data exists requires the controlled
+  path** — a vendor-initiated change against a company that already has
+  assets/orders is rejected unless the compatibility review has been
+  performed and approval recorded; the resulting change writes a
+  `platform_audit_log` row carrying the review outcome and reason.
+- Changing a company's business profile does not corrupt/drop existing
+  assets' `field_values` (regression test: create an asset under profile A,
+  change to profile B via the controlled path, re-fetch the asset, assert
+  its stored values are byte-identical and the asset still renders).
+- **Vendor metadata/operational-data boundary** (clarification 2): a
+  vendor-session request can read a company's administrative metadata
+  (identity, subscription, entitlements, seat usage, profile, suspension,
+  audit history) **and** aggregate counts, but every attempt to read
+  individual tenant operational rows — customers, assets, orders,
+  engagements, documents, invoices, contact notes — fails. Tested per
+  entity family, not once generically, so a future endpoint that forgets
+  the rule fails a named test rather than slipping through.
+- **A vendor session yields no `TenantContext`** — a structural test that
+  the two session kinds cannot cross-resolve in either direction
+  (complements the endpoint-level tests above by proving the mechanism,
+  not just its current call sites).
+- Every vendor mutation (entitlement change, subscription transition, seat
+  limit change, suspend/reactivate, company create) produces exactly one
+  `platform_audit_log` row with the correct actor/target/action/reason.
+
+## 9. Recommended implementation phases and commits
+
+Sequenced so each phase ships independently and reversibly, per this
+project's existing ratchet discipline (docs/business-os/08 Phase 1/2
+precedent):
+
+1. **Vendor Control Plane foundation** — `platform_admins` +
+   `platform_audit_log` migrations (§6.1/6.2), vendor session kind,
+   `require_platform_admin` dependency, empty console shell (companies list
+   + details, read-only). No entitlement/subscription mutation yet.
+   *Commit shape:* `feat(business-os): add vendor control plane foundation`.
+2. **Company provisioning** — Create company + first Owner from the
+   console, replacing the CLI/seed path for anything beyond local dev.
+   *Commit:* `feat(business-os): vendor console company provisioning`.
+3. **Entitlement management** — wire ADR-BOS-010's grant/revoke UI to the
+   existing `activate_module`/`is_module_active` machinery (finally giving
+   it a real caller beyond seed.py).
+   *Commit:* `feat(business-os): vendor-managed module entitlements`.
+4. **Manually managed V1 subscriptions** — `companies` subscription-state
+   columns (§6.3), `require_subscription_ok`, console screen #7/#9.
+   *Commit:* `feat(business-os): manual subscription lifecycle (ADR-BOS-012)`.
+5. **Seat limits** — column + enforcement on the (still-unbuilt) employee
+   creation endpoint; console screen #8.
+   *Commit:* `feat(business-os): seat limit enforcement`.
+6. **RepairFlow business profiles** — the §6.4 migration (its own PR, largest
+   of the set), profile selector in tenant settings, backend field-def
+   resolution switched from global to company-scoped.
+   *Commit:* `feat(repairflow): company-scoped business profiles (ADR-BOS-011)`.
+7. **Tenant user management** — the employee invite/deactivate flow docs/13
+   Étап 3 already scheduled, now bounded by seat limits from phase 5.
+   *Commit:* `feat(business-os): tenant employee management`.
+8. **Security/audit hardening** — the §8 test suite in full, the Étап-3
+   threat-model rewrite docs/11 already schedules, extended for the new
+   plane.
+   *Commit:* `test(business-os): vendor/tenant isolation + audit suite`.
+9. **Optional, later**: ADR-018's automated billing, superseding phase 4's
+   manual transitions one trigger at a time (webhook replaces vendor click,
+   nothing else changes per ADR-BOS-012 §Consequences).
+
+Each phase is independently shippable and none blocks ServiceFlow/PropertyFlow
+product work, matching the standing governing constraint (docs/business-os/08
+§Governing constraints: "Business OS phases interleave with Étап 2–5; none of
+them may delay or destabilize a stage").

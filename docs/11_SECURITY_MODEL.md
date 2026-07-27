@@ -6,7 +6,14 @@ internet-facing multi-tenant SaaS before Етап 3 exposes a public host** (new
 threats: cross-tenant access → ADR-016; credential stuffing/brute force; public
 attack surface; billing webhooks). §2, §3 and §6 remain valid as written; §1's
 likelihood table and §7 are stale. The rewrite is an Етап-3 entry task in plan
-v3.0. · Date: 10.07.2026 · Basis: ADR-008/016/017/018, blueprint Part 6
+v3.0. **§2 amended 26.07.2026** with the audit-driven vendor/tenant role
+separation target **and the metadata-first vendor visibility rule**
+(documentation only — see
+[business-os/18](business-os/18_VENDOR_TENANT_ADMINISTRATION.md)); §7's "vendor
+cloud" (license API/update feed) describes the **parked local edition**, not
+the SaaS Vendor Control Plane above — the two are different concepts sharing
+the word "vendor," disambiguated so the Étап-3 rewrite doesn't merge them by
+accident. · Date: 10.07.2026 · Basis: ADR-008/016/017/018, blueprint Part 6
 
 ## 1. Threat model (what we actually defend against)
 
@@ -29,6 +36,41 @@ already-authenticated devices only (never remote login) · idle window → PIN p
 rate limiting on login and PIN attempts (lockout with Owner unlock). Authorization:
 one Owner boolean checked at the API layer (08 §identity); the permission matrix is
 02 §12 verbatim. Every mutation records the acting user (BR-5).
+
+**Vendor/tenant role separation (added 26.07.2026, audit-driven — full model in
+[business-os/18_VENDOR_TENANT_ADMINISTRATION.md](business-os/18_VENDOR_TENANT_ADMINISTRATION.md),
+ADR-BOS-009/010):** today exactly one role bit exists (`is_owner`), scoped to
+one tenant; no vendor/platform-admin identity exists in code. The target model
+— not yet built — keeps a Vendor Administrator identity (a new, `company_id`-
+less table, its own session kind) permanently structurally separate from
+`users`/`is_owner`: no boolean-on-`users` shortcut, no shared session type,
+no implicit cross-tenant read. Vendor Control Plane routes will require their
+own `require_platform_admin` dependency, satisfiable only by a vendor session,
+and every vendor mutation will be audited (actor, target company, action,
+reason, timestamp) in a Core-owned log distinct from the tenant `audit_log`.
+This paragraph documents the target for the Étап-3 rewrite below to build
+against; it does not itself change current behavior.
+
+**Vendor data visibility — metadata-first, not tenant-business-data-first
+(PO clarification, 26.07.2026 — ADR-BOS-009 §Vendor data visibility).** A
+vendor administrator administers *companies as customers*, not *companies'
+businesses*. Visible by default: company identity, subscription/licence
+status, activated applications, seat limit and usage, RepairFlow business
+profile, suspension status, deployment/version/health metadata, internal
+support notes, platform audit history. **Not** visible: customers, assets,
+service orders, engagements, documents, invoices and tenant transactions,
+and notes belonging to the customer company — aggregate counts over these
+are metadata and stay visible, individual rows do not. This matters for the
+threat model specifically because the prohibited set is where the tenant's
+*own customers'* personal data lives, including device passcodes (§5), for
+which the tenant — not the vendor — is the GDPR controller (§6). Mechanically
+the default is already fail-closed: a vendor session produces no
+`TenantContext`, so RLS's unset-GUC policy (ADR-016) returns zero rows; the
+Control Plane must be built never to need an RLS exemption rather than being
+granted one for convenience. Any future support access to tenant operational
+data must be separately designed, explicitly authorised, time-bounded where
+practical, and strongly audited per accessed record — out of scope for the V1
+Vendor Console, as is vendor impersonation.
 
 ## 3. Application controls (standard, non-negotiable)
 

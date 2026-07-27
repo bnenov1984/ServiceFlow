@@ -1,7 +1,9 @@
 # BOS-08 — Evolution Roadmap
 
 Status: **Phase 0 discovery — proposed sequencing, needs PO approval** ·
-Date: 17.07.2026
+Date: 17.07.2026, amended 26.07.2026 (Phase 4.5 — Vendor Control Plane &
+RepairFlow business profiles, documentation only, see
+[18_VENDOR_TENANT_ADMINISTRATION.md](18_VENDOR_TENANT_ADMINISTRATION.md))
 
 Governing constraints:
 
@@ -173,6 +175,65 @@ Implemented 18.07.2026 — see
 - **Exit criteria:** commercial imports service_orders *contracts only*
   (lint-enforced); P0-2/P0-3 green.
 - **Model:** Fable 5 for contract design; Sonnet acceptable for the CRUD bulk.
+
+## Phase 4.5 — Vendor Control Plane & RepairFlow business profiles (audit-driven, 26.07.2026)
+
+Documented this session — see
+[18_VENDOR_TENANT_ADMINISTRATION.md](18_VENDOR_TENANT_ADMINISTRATION.md) for
+the full audit, ownership matrix and proposed schemas; ADR-BOS-009…012 carry
+the actual decisions. **Nothing in this phase is built** — it is inserted
+here (ahead of Phase 5) because it answers ownership questions Phase 5's
+"second real module" and RepairFlow's own profile work both depend on, not
+because it has shipped. Sequenced as nine independently-shippable
+sub-workstreams (docs/business-os/18 §9 has the full commit-by-commit
+breakdown):
+
+1. **Vendor Control Plane foundation** — `platform_admins` +
+   `platform_audit_log` (new Core tables, proposed not built), vendor
+   session kind, `require_platform_admin`, read-only console shell.
+2. **Company provisioning** — create company + first Owner from the console,
+   superseding the CLI/seed-only path for anything beyond local dev.
+   **Includes assigning the initial RepairFlow business profile** — a
+   required input of company creation, not a later step (ADR-BOS-011
+   §Decision 3, PO clarification 26.07.2026).
+3. **Entitlement management** — vendor-only grant/revoke UI wired to the
+   already-existing `activate_module`/`is_module_active` machinery
+   (ADR-BOS-010).
+4. **Manually managed V1 subscriptions** (ADR-BOS-012) — state columns on
+   `companies`, `require_subscription_ok`, no payment provider.
+5. **Seat limits** — column + enforcement, tied to workstream 7.
+6. **RepairFlow business profiles** (ADR-BOS-011) — company-scoped
+   `asset_types` (the largest single schema change of the set), vendor-side
+   assignment + compatibility-review view, tenant-side **read-only** display
+   with a request affordance (never a selector — PO clarification
+   26.07.2026). Depends on workstream 2 for the provisioning-time
+   assignment path.
+7. **Tenant user management** — the employee invite/deactivate flow already
+   named in docs/13 Étап 3, now bounded by seat limits.
+8. **Security/audit hardening** — the full test suite named in
+   [18](18_VENDOR_TENANT_ADMINISTRATION.md) §8, folded into the Étап-3
+   threat-model rewrite docs/11 already schedules.
+9. **Optional, later**: ADR-018's automated billing supersedes workstream
+   4's manual transitions one trigger at a time — no state rename, no
+   degradation-behavior change.
+
+- **Code impact**: four new/changed tables across workstreams 1, 4, 6 (§6.1–
+  6.4 of doc 18); no migration authored by this phase's documentation pass.
+- **DB impact**: see doc 18 §6 per table, including backfill and rollback
+  strategy for each — explicit PO approval required before any migration
+  lands (per this phase's own originating task constraint).
+- **Risks**: workstream 6 (business profiles) touches a table
+  (`asset_types`) every existing RepairFlow company already depends on —
+  doc 18 §6.4 requires an additive-first, two-step migration specifically
+  to keep it reversible.
+- **Prerequisites**: none blocking — every workstream is designed to not
+  require Phase 3 (package rename) or Phase 5 (second module) first, since
+  entitlements/subscriptions are Core concerns regardless of module count.
+- **Exit criteria**: per workstream, see doc 18 §8's test list — each
+  workstream's own tests green before the next starts.
+- **Model**: Fable 5 for workstreams 1, 3, 4, 6 (boundary/schema judgment
+  dominates); Sonnet acceptable for 2, 5, 7 (CRUD against an approved
+  design); Fable 5 reviews 8.
 
 ## Phase 5 — Second real module (the platform proof)
 

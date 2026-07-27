@@ -3,7 +3,11 @@
 Status: **v3.0 — web-first SaaS restage after the 11.07.2026 pivot (doc 14)**;
 carries the PO stage philosophy of v2.1 (core flow → administration → commercial
 documents → hardening). Planned for one developer; every stage ends runnable.
-BR-2 amendment (reopen rule + Owner unlock) included in Етап 2.
+BR-2 amendment (reopen rule + Owner unlock) included in Етап 2. **Étап 3's
+vendor/tenant administration bullets cross-referenced 26.07.2026** to
+ADR-BOS-009…012 and
+[business-os/18_VENDOR_TENANT_ADMINISTRATION.md](business-os/18_VENDOR_TENANT_ADMINISTRATION.md)
+(audit-driven ownership model; documentation only, no stage timeline change).
 
 ## Етап 0 — Foundation ✅ (revalidated for SaaS)
 
@@ -58,11 +62,35 @@ started — gated (see below).
   ≤3-стъпков wizard, «Зареди примерни данни» demo seeding.
 - **Абонаменти и billing (ADR-018):** 14-дневен trial без карта, един месечен
   план, provider adapter + webhook inbox (P0-10: webhook idempotency), dunning,
-  read-only + export degradation.
+  read-only + export degradation. **V1 landing (26.07.2026 audit,
+  ADR-BOS-012):** същите състояния, преходи задвижвани ръчно от vendor admin
+  вместо от webhook, докато provider интеграцията (по-горе) не е готова —
+  вижте [business-os/18](business-os/18_VENDOR_TENANT_ADMINISTRATION.md) §9
+  workstream 4.
 - **Администрация (tenant):** users/roles UI (invite/deactivate, progressive
-  disclosure), settings (фирмени данни, статуси rename/toggle, warranty defaults).
+  disclosure, ограничено от vendor-зададен seat limit — ADR-BOS-009), settings
+  (фирмени данни, статуси rename/toggle, warranty defaults, workflow
+  templates — всичко това **в рамките на назначения RepairFlow business
+  profile**). Самият profile се показва **read-only** с „заявка за промяна"
+  — назначава се от vendor при provisioning и се сменя само по контролиран
+  път (ADR-BOS-011, PO уточнение 26.07.2026); не е нито entitlement, нито
+  обикновена tenant настройка.
 - **Платформена админ конзола (vendor):** companies + subscriptions overview,
-  extend/suspend/override с причина, audit.
+  provisioning (компания + първи Owner + начален business profile),
+  entitlements, seat limits, extend/suspend/override с причина, audit.
+  Ролята "vendor admin" е структурно отделна от `users`/`is_owner` (никога
+  слята с tenant ролите), а видимостта е **metadata-first**: vendor вижда
+  административни данни за тенанта (идентичност, абонамент, приложения,
+  seats, profile, suspension, health/version, вътрешни бележки, platform
+  audit), но **не** оперативните данни на клиента (клиенти, активи, поръчки,
+  ангажименти, документи, фактури, бележки) — само агрегирани броеве.
+  Пълен модел, ownership matrix и предложени схеми:
+  [ADR-BOS-009](adr/ADR-BOS-009-vendor-control-plane-vs-tenant-workspace.md)
+  (vendor vs tenant разделение),
+  [ADR-BOS-010](adr/ADR-BOS-010-application-entitlement-ownership.md)
+  (activation/entitlement собственост),
+  [business-os/18](business-os/18_VENDOR_TENANT_ADMINISTRATION.md) (одит +
+  V1 обхват на конзолата, §7).
 - **Диагностика:** health endpoint → uptime мониторинг + error tracking; tenant
   export artifact (ADR-012 — GDPR + бъдеща локална едиция).
 

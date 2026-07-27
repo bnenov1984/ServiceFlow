@@ -1,8 +1,11 @@
 # BOS-17 — Business Capabilities Matrix
 
 Status: **Recommended — forward-looking registry, PO reviews on each
-addition** · Date: 21.07.2026 · Source: PO review of docs/business-os +
-modules/professional-services (this session)
+addition** · Date: 21.07.2026, amended 26.07.2026 (Vendor Control Plane /
+RepairFlow business profiles rows — see
+[18_VENDOR_TENANT_ADMINISTRATION.md](18_VENDOR_TENANT_ADMINISTRATION.md)) ·
+Source: PO review of docs/business-os + modules/professional-services (this
+session)
 
 ## 1. Purpose
 
@@ -41,11 +44,13 @@ to (`modules/professional-services/docs/38_TRACEABILITY_MATRIX.md` §4).
 | Domain event bus (mechanism) | Core | Existing | `shared_kernel/events.py`, ADR-011 |
 | i18n mechanism (message keys, catalog pattern) | Core | Existing | ADR-015 |
 | Health endpoint | Core | Existing | `platform/health.py` |
-| Registration, subscriptions, billing, admin console | Core | Documented (Етап 3) | ADR-017/018 |
+| Vendor Control Plane (companies, entitlements, subscriptions, seats, vendor audit) | Core | Documented (Étап 3) | ADR-BOS-009/010/012, [18](18_VENDOR_TENANT_ADMINISTRATION.md) |
+| Registration, subscriptions, billing, admin console | Core | Documented (Етап 3) | ADR-017/018, narrowed for V1 by ADR-BOS-012 |
 | Backup / export envelope | Core | Documented | ADR-012 |
 | Module registry / activation | Core | Future candidate — owner assigned | BOS-03 §2.6 |
 | Global search facade | Core | Future candidate — owner assigned | ADR-BOS-006 |
 | Customers & Assets (repair-shop) | ServiceFlow | Existing | `customers/`, `assets/` |
+| RepairFlow business profiles (automotive/phone/electronics/appliance/generic — vendor-assigned at provisioning, tenant-configured within; asset-field configuration, not a fork, not an entitlement) | ServiceFlow (RepairFlow) — assignment action owned by Core's Vendor Control Plane | Documented (audit-driven, not built) | ADR-BOS-011, [18](18_VENDOR_TENANT_ADMINISTRATION.md) §6.4 |
 | Service Operations (orders, diagnosis, parts/labor, tasks, attachments, contacts, timeline, protocol PDF) | ServiceFlow | Existing | `service_orders/` + siblings |
 | Order/invoice numbering (`document_sequences`) | ServiceFlow (`service_orders`) | Existing | ADR-BOS-005 |
 | Invoicing, payments (commercial documents) | Commercial Documents | Existing (in progress, Етап 4) | `commercial/`, ADR-BOS-005 |
