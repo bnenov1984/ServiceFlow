@@ -83,6 +83,7 @@ def client(migrated_db: str, tmp_path) -> Iterator[TestClient]:  # noqa: ANN001
             "TRUNCATE contact_records, attachments, tasks, timeline_events, "
             "accessory_items, labor_lines, part_lines, diagnoses, service_orders, "
             "document_sequences, asset_identifiers, assets, customers, audit_log, "
+            "platform_audit_log, platform_admin_sessions, platform_admins, "
             "sessions, users, companies RESTART IDENTITY CASCADE"
         ))
     get_settings.cache_clear()

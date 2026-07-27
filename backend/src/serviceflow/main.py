@@ -12,6 +12,7 @@ import serviceflow.timeline.service  # noqa: F401 — registers the timeline sub
 from business_os.identity.router import router as auth_router
 from business_os.identity.router import users_router
 from business_os.platform.health import router as health_router
+from business_os.platform_admin.router import router as platform_admin_router
 from professional_services.actions.router import router as ps_actions_router
 from professional_services.assignments.router import router as ps_assignments_router
 from professional_services.catalog.router import router as ps_catalog_router
@@ -85,6 +86,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     app.include_router(health_router, prefix="/api/v1/platform", tags=["platform"])
+    # Vendor Control Plane (ADR-BOS-009): a structurally separate namespace whose
+    # every route is guarded by require_platform_admin — no tenant session can
+    # satisfy it, and nothing under it takes a TenantDep.
+    app.include_router(platform_admin_router, prefix="/api/v1/platform-admin",
+                       tags=["platform-admin"])
     app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
     app.include_router(customers_router, prefix="/api/v1/customers", tags=["customers"])
     app.include_router(assets_router, prefix="/api/v1", tags=["assets"])

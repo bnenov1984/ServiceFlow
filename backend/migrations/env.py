@@ -6,6 +6,7 @@ from sqlalchemy import engine_from_config, pool
 
 # Import every module that defines tables so autogenerate sees the full metadata.
 from business_os.identity import models as _identity_models  # noqa: F401
+from business_os.platform_admin import models as _platform_admin_models  # noqa: F401
 from business_os.shared_kernel.db import Base
 from professional_services.actions import models as _ps_actions_models  # noqa: F401
 from professional_services.assignments import models as _ps_assignments_models  # noqa: F401

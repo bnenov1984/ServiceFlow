@@ -1,34 +1,24 @@
-"""Password/PIN hashing (argon2id, portable per constraint C5) and session tokens."""
+"""Password/PIN hashing (argon2id, portable per constraint C5) and session tokens.
 
-import hashlib
-import secrets
+The implementations moved to `shared_kernel.passwords` when the Vendor Control
+Plane arrived (ADR-BOS-009): `platform_admin` needs the same primitives but must
+not import `identity` (protected boundary, docs/business-os/16). This module
+stays as identity's own name for them — every existing `security.hash_secret(...)`
+call site is unaffected.
+"""
 
-from argon2 import PasswordHasher
-from argon2.exceptions import VerifyMismatchError
+from business_os.shared_kernel.passwords import (
+    hash_secret,
+    hash_token,
+    new_csrf_token,
+    new_session_token,
+    verify_secret,
+)
 
-_hasher = PasswordHasher()  # argon2id defaults
-
-
-def hash_secret(secret: str) -> str:
-    return _hasher.hash(secret)
-
-
-def verify_secret(hashed: str, secret: str) -> bool:
-    try:
-        return _hasher.verify(hashed, secret)
-    except VerifyMismatchError:
-        return False
-
-
-def new_session_token() -> tuple[str, str]:
-    """Returns (raw_token_for_cookie, sha256_hash_for_storage)."""
-    raw = secrets.token_urlsafe(32)
-    return raw, hash_token(raw)
-
-
-def hash_token(raw: str) -> str:
-    return hashlib.sha256(raw.encode()).hexdigest()
-
-
-def new_csrf_token() -> str:
-    return secrets.token_urlsafe(24)
+__all__ = [
+    "hash_secret",
+    "hash_token",
+    "new_csrf_token",
+    "new_session_token",
+    "verify_secret",
+]

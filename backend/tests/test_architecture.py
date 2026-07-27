@@ -14,11 +14,13 @@ Pure introspection of SQLAlchemy metadata: no database connection, no
 network, runs in milliseconds.
 """
 
+from collections.abc import Iterator
 from pathlib import Path
 
 # Import every module that defines tables so metadata is complete — mirrors
 # migrations/env.py's import list (the same models Alembic autogenerate needs).
 from business_os.identity import models as _identity_models  # noqa: F401
+from business_os.platform_admin import models as _platform_admin_models  # noqa: F401
 from business_os.shared_kernel.db import Base
 from professional_services.actions import models as _ps_actions_models  # noqa: F401
 from professional_services.assignments import models as _ps_assignments_models  # noqa: F401
@@ -45,6 +47,11 @@ TABLE_OWNERS = {
     "users": "business_os.identity",
     "sessions": "business_os.identity",
     "audit_log": "business_os.identity",
+    # Vendor Control Plane (ADR-BOS-009) — Core, but a different plane from
+    # identity: no company_id, never read or written by tenant code.
+    "platform_admins": "business_os.platform_admin",
+    "platform_admin_sessions": "business_os.platform_admin",
+    "platform_audit_log": "business_os.platform_admin",
     "customers": "serviceflow.customers",
     "asset_types": "serviceflow.assets",
     "assets": "serviceflow.assets",
@@ -309,3 +316,202 @@ def test_commercial_service_orders_contracts_do_not_reexport_internals() -> None
     assert not hasattr(service_orders_contracts, "service")
     assert not hasattr(service_orders_contracts, "lines")
     assert not hasattr(commercial_contracts, "service")
+
+
+# --- Vendor Control Plane boundary (ADR-BOS-009, docs/business-os/18 §9
+# phase 1) -------------------------------------------------------------
+#
+# Vendor Administrators and tenant users are different security principals.
+# The tests below prove that structurally — at the import graph and at the
+# FastAPI dependency graph — rather than only at the HTTP layer (which
+# tests/test_vendor_security.py covers).
+
+_VENDOR_CONTRACTS = ("vendor-plane-not-tenant-code", "vendor-plane-private")
+
+
+def test_vendor_plane_boundary_contracts_currently_kept() -> None:
+    """Regression guard under pytest, not only under `lint-imports`."""
+    report = _importlinter_report(_VENDOR_CONTRACTS)
+    assert not report.contains_failures, (  # type: ignore[attr-defined]
+        "Vendor Control Plane boundary contracts are broken — "
+        "run `uv run lint-imports` for the full report"
+    )
+
+
+def test_import_linter_catches_vendor_importing_tenant_repository() -> None:
+    """Detection capability, direction 1: the vendor plane reaching into a
+    tenant operational repository to read tenant data must fail. This is the
+    'vendor visibility is metadata-first' rule expressed as an import rule."""
+    graph = _real_graph()
+    graph.add_import(  # type: ignore[attr-defined]
+        importer="business_os.platform_admin.service",
+        imported="serviceflow.customers.service",
+        line_number=1, line_contents="from serviceflow.customers import service",
+    )
+    report = _importlinter_report(("vendor-plane-not-tenant-code",), graph=graph)
+    assert report.contains_failures  # type: ignore[attr-defined]
+
+
+def test_import_linter_catches_vendor_importing_tenant_deps() -> None:
+    """Same direction, sharper case: importing identity.deps is how a vendor
+    module would get its hands on TenantDep/get_tenant_db — the one thing a
+    vendor request must never acquire."""
+    graph = _real_graph()
+    graph.add_import(  # type: ignore[attr-defined]
+        importer="business_os.platform_admin.router",
+        imported="business_os.identity.deps",
+        line_number=1, line_contents="from business_os.identity.deps import TenantDep",
+    )
+    report = _importlinter_report(("vendor-plane-not-tenant-code",), graph=graph)
+    assert report.contains_failures  # type: ignore[attr-defined]
+
+
+def test_import_linter_catches_tenant_writing_platform_audit_log() -> None:
+    """Detection capability, direction 2 — the requirement 'tenant code cannot
+    write platform audit records'. `platform_admin.audit.record` is the only
+    write path to `platform_audit_log`; a tenant module importing it is exactly
+    the violation, and it must break the contract."""
+    graph = _real_graph()
+    graph.add_import(  # type: ignore[attr-defined]
+        importer="serviceflow.customers.service",
+        imported="business_os.platform_admin.audit",
+        line_number=1, line_contents="from business_os.platform_admin import audit",
+    )
+    report = _importlinter_report(("vendor-plane-private",), graph=graph)
+    assert report.contains_failures  # type: ignore[attr-defined]
+
+
+def test_no_tenant_module_depends_on_the_vendor_plane_today() -> None:
+    """Current-state assertion over the real graph: nothing in the tenant
+    application depends on `business_os.platform_admin` at all. Only
+    `serviceflow.main` may, and only to mount the router."""
+    graph = _real_graph()
+    importers = graph.find_modules_that_directly_import(  # type: ignore[attr-defined]
+        "business_os.platform_admin.router")
+    assert importers == {"serviceflow.main"}, (
+        f"unexpected importers of the vendor router: {sorted(importers)}"
+    )
+
+
+def _iter_api_routes(routes: object, prefix: str = "") -> Iterator[tuple[str, object]]:
+    """(full_path, APIRoute) for every mounted route.
+
+    This FastAPI version keeps `include_router()` results as lazy
+    `_IncludedRouter` wrappers on `app.routes` rather than flattening them, so
+    reading `app.routes` alone finds only /openapi.json and friends — which
+    would make every route-shaped assertion below pass vacuously.
+    """
+    for route in routes:  # type: ignore[attr-defined]
+        context = getattr(route, "include_context", None)
+        if context is not None:
+            yield from _iter_api_routes(route.original_router.routes, prefix + context.prefix)
+        elif hasattr(route, "dependant"):
+            yield prefix + route.path, route
+
+
+def _vendor_routes() -> list[tuple[str, object]]:
+    from serviceflow.main import create_app
+
+    return [
+        (path, route) for path, route in _iter_api_routes(create_app().routes)
+        if path.startswith("/api/v1/platform-admin")
+    ]
+
+
+def _dependant_callables(dependant: object) -> list[object]:
+    """Flatten a FastAPI dependant tree into every callable it will invoke."""
+    found: list[object] = []
+    call = getattr(dependant, "call", None)
+    if call is not None:
+        found.append(call)
+    for sub in getattr(dependant, "dependencies", []):
+        found.extend(_dependant_callables(sub))
+    return found
+
+
+def test_vendor_routes_never_depend_on_tenant_identity() -> None:
+    """No `/api/v1/platform-admin/*` route resolves a dependency that lives in
+    `business_os.identity` — so no vendor request can construct a
+    `TenantContext`, bind the tenant RLS GUC, or evaluate `require_owner`.
+    Checked against the assembled app's real dependency graph, which is what
+    FastAPI actually executes, not against the source text."""
+    routes = _vendor_routes()
+    assert routes, "no vendor routes are mounted — the boundary test is vacuous"
+    for path, route in routes:
+        modules = {
+            getattr(fn, "__module__", "")
+            for fn in _dependant_callables(route.dependant)  # type: ignore[attr-defined]
+        }
+        leaked = {m for m in modules if m.startswith("business_os.identity")}
+        assert not leaked, f"vendor route {path} depends on tenant identity: {leaked}"
+
+
+def test_every_vendor_route_except_login_is_guarded() -> None:
+    """`require_platform_admin` is not something a new vendor endpoint may
+    forget: every route under the namespace carries it, except the login
+    endpoint that issues the session in the first place."""
+    from business_os.platform_admin.deps import require_platform_admin
+
+    for path, route in _vendor_routes():
+        guarded = require_platform_admin in _dependant_callables(route.dependant)  # type: ignore[attr-defined]
+        if path.endswith("/auth/login"):
+            assert not guarded, "login cannot require an existing vendor session"
+        else:
+            assert guarded, f"vendor route {path} is not behind require_platform_admin"
+
+
+def test_tenant_routes_are_unaffected_by_the_vendor_plane() -> None:
+    """The other half: no tenant route acquired a vendor dependency. Adding a
+    plane must not change the plane that already existed."""
+    from serviceflow.main import create_app
+
+    checked = 0
+    for path, route in _iter_api_routes(create_app().routes):
+        if path.startswith("/api/v1/platform-admin"):
+            continue
+        checked += 1
+        modules = {
+            getattr(fn, "__module__", "")
+            for fn in _dependant_callables(route.dependant)  # type: ignore[attr-defined]
+        }
+        leaked = {m for m in modules if m.startswith("business_os.platform_admin")}
+        assert not leaked, f"tenant route {path} depends on the vendor plane: {leaked}"
+    assert checked > 20, f"only {checked} tenant routes seen — the sweep is not finding them"
+
+
+def test_platform_admin_has_no_company_id() -> None:
+    """The whole separation in one assertion: a Vendor Administrator is not
+    scoped to a tenant, so the column that would scope them must not exist —
+    on the identity, its session, or (as a scope) its audit trail."""
+    from business_os.platform_admin.models import (
+        PlatformAdmin,
+        PlatformAdminSession,
+        PlatformAuditLog,
+    )
+
+    assert "company_id" not in PlatformAdmin.__table__.columns
+    assert not hasattr(PlatformAdmin, "company_id")
+    assert "company_id" not in PlatformAdminSession.__table__.columns
+    # platform_audit_log DOES carry company_id — as a nullable *target*
+    # reference (which company an action was about), never as a tenancy scope.
+    # Asserted explicitly so the distinction is deliberate, not accidental.
+    assert PlatformAuditLog.__table__.columns["company_id"].nullable
+
+
+def test_platform_audit_log_has_no_mutation_api() -> None:
+    """Append-only at the application layer: `audit` exposes one writer and no
+    update/delete of any kind (the DB trigger from migration 0012 is the
+    role-independent backstop, tested against the live database in
+    tests/test_vendor_security.py)."""
+    import inspect
+
+    from business_os.platform_admin import audit
+
+    own_functions = {
+        name for name, obj in vars(audit).items()
+        if inspect.isfunction(obj) and obj.__module__ == audit.__name__
+    }
+    assert own_functions == {"record"}, (
+        f"unexpected functions in platform_admin.audit: {own_functions} — this "
+        "module is the append-only write path and must gain no update/delete API"
+    )

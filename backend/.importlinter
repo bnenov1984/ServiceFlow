@@ -46,6 +46,7 @@ source_modules =
 forbidden_modules =
     business_os.identity
     business_os.platform
+    business_os.platform_admin
     serviceflow.customers
     serviceflow.assets
     serviceflow.service_orders
@@ -65,12 +66,15 @@ forbidden_modules =
 ; already true today (Core imports only shared_kernel/config) — this contract
 ; ratchets that fact so it cannot regress silently. See
 ; docs/business-os/12_PHASE_1_IMPLEMENTATION.md.
+; business_os.platform_admin added 27.07.2026 (Vendor Control Plane foundation,
+; ADR-BOS-009): it is Core like identity/platform, so the same rule binds it.
 [importlinter:contract:core-not-modules]
 name = Business OS Core (identity, platform) must not import ServiceFlow modules
 type = forbidden
 source_modules =
     business_os.identity
     business_os.platform
+    business_os.platform_admin
 forbidden_modules =
     serviceflow.customers
     serviceflow.assets
@@ -176,6 +180,60 @@ protected_modules =
     serviceflow.commercial.router
 allowed_importers =
     serviceflow.commercial
+    serviceflow.main
+
+; Vendor Control Plane, direction 1 (ADR-BOS-009, docs/business-os/18 §9 phase
+; 1): the vendor plane must not reach into tenant operational code. This is
+; wider than core-not-modules above, which only covers ServiceFlow verticals:
+; it also forbids `business_os.identity.deps`, the request-scoped tenant surface
+; (TenantDep, get_tenant_db, require_owner). A Vendor Administrator has no
+; TenantContext by design, so a vendor module importing the module that
+; *constructs* one is always a mistake — either a bypass attempt or a
+; misunderstanding of the boundary. `business_os.identity.contracts` stays
+; permitted: that is the sanctioned, non-request-scoped way the next slice
+; (company provisioning) will read company metadata, and it is exactly the
+; "explicit, named function" ADR-BOS-009 §Consequences asks for instead of
+; ad-hoc queries. identity's internals (models/service/security/router) are
+; already unreachable from here via identity-public-boundary above, whose
+; allowed_importers list deliberately does not name platform_admin.
+[importlinter:contract:vendor-plane-not-tenant-code]
+name = Vendor Control Plane must not import tenant operational code
+type = forbidden
+source_modules =
+    business_os.platform_admin
+forbidden_modules =
+    business_os.identity.deps
+    serviceflow.customers
+    serviceflow.assets
+    serviceflow.service_orders
+    serviceflow.commercial
+    serviceflow.timeline
+    serviceflow.attachments
+    serviceflow.contacts
+    serviceflow.search
+    serviceflow.tasks
+    serviceflow.dashboard
+    professional_services
+
+; Vendor Control Plane, direction 2: no tenant application code may import the
+; vendor plane's implementation. This is what makes "tenant users cannot write
+; platform audit records" structural rather than a matter of discipline — the
+; only write path is platform_admin.audit.record, and nothing outside the
+; package (bar the composition root, which mounts the router) may reach it.
+; `protected`, not `forbidden`, for the same reason identity-public-boundary is:
+; a forbidden contract walks the transitive closure and would flag serviceflow.main
+; for every module the router legitimately pulls in behind it.
+[importlinter:contract:vendor-plane-private]
+name = Vendor Control Plane implementation is private to business_os.platform_admin
+type = protected
+protected_modules =
+    business_os.platform_admin.models
+    business_os.platform_admin.service
+    business_os.platform_admin.audit
+    business_os.platform_admin.deps
+    business_os.platform_admin.router
+allowed_importers =
+    business_os.platform_admin
     serviceflow.main
 
 ; Finer independence contracts tighten in Stage 1 when real module code exists.
