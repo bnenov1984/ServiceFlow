@@ -4,10 +4,12 @@ Status: **Documentation-first audit + target model — Accepted with two PO
 clarifications applied 26.07.2026** (C1: business-profile ownership is
 vendor-assigned at provisioning, not a tenant preference — §5 Q5, ADR-BOS-011;
 C2: vendor visibility is metadata-first, not tenant-business-data-first — §5
-Q9, ADR-BOS-009). Not part of the frozen ADR set. · Date: 26.07.2026 ·
-Source: PO directive accepting the frozen product model (Business OS +
-sibling apps + RepairFlow business profiles); read-only audit of the
-repository as it stands after the PropertyFlow dashboard slice
+Q9, ADR-BOS-009). Not part of the frozen ADR set. · Date: 26.07.2026, §10 added
+27.07.2026 (vendor session observability + mandatory audit correlation,
+migration 0013 — a hardening follow-up to phase 1, §9, ahead of Company
+Provisioning) · Source: PO directive accepting the frozen product model
+(Business OS + sibling apps + RepairFlow business profiles); read-only audit
+of the repository as it stands after the PropertyFlow dashboard slice
 (`frontend/src/ps/`, uncommitted at audit time — see §8).
 
 This document is the audit trail and the answer key. The actual decisions are
@@ -498,3 +500,83 @@ Each phase is independently shippable and none blocks ServiceFlow/PropertyFlow
 product work, matching the standing governing constraint (docs/business-os/08
 §Governing constraints: "Business OS phases interleave with Étап 2–5; none of
 them may delay or destabilize a stage").
+
+## 10. Vendor session observability & audit correlation (hardening, 27.07.2026)
+
+A narrow follow-up to phase 1 (§9), landed before Company Provisioning
+(migration 0013). Two independent additions, both to the tables phase 1
+already introduced — no new tables, no schema change to anything tenant-owned.
+
+### 10.1 Session metadata — what is stored, what deliberately is not
+
+`platform_admin_sessions` gained two nullable columns, in preparation for a
+future "active sessions" / "revoke another session" screen (not built by this
+hardening pass):
+
+- **`user_agent`** — captured verbatim from the HTTP `User-Agent` header at
+  login, bounded to 300 characters
+  (`platform_admin.service.MAX_USER_AGENT_LENGTH`). Diagnostic only: never
+  read for authentication or authorization, never updated after login (a
+  session doesn't change browsers mid-life).
+- **`client_label`** — reserved for a future user-assigned name ("Office
+  PC", "Laptop"). Nullable, unused by any code path in this slice, and
+  **never auto-populated from `user_agent`** — inventing a device identity
+  from a header string would misrepresent something nobody confirmed.
+
+**Deliberately not stored**: IP address, precise geolocation, browser
+fingerprinting beyond the raw `User-Agent` string, or the raw session token
+itself. IP address in particular was considered and rejected for this slice —
+there is no concrete support/security workflow that needs it yet, and adding
+it later requires its own documented retention policy (how long kept, who may
+read it, GDPR posture per docs/11 §6) rather than being smuggled in as a side
+effect of a session-metadata column.
+
+**`last_seen_at`** (added by phase 1, migration 0012) already existed and was
+already written unconditionally on every authenticated request — found during
+this hardening pass's audit as exactly the write-amplification pattern this
+document warns against for new fields. Fixed in the same slice: it now updates
+only when more than `LAST_SEEN_UPDATE_INTERVAL` (1 minute) has elapsed since
+the last write, cutting the per-request DB round trip to roughly once per
+minute of activity instead of once per request.
+
+### 10.2 Request correlation — design and propagation
+
+`business_os.shared_kernel.correlation` (neutral, like `passwords.py` — used
+by both the tenant application and the vendor plane, so it cannot live in
+either):
+
+- every HTTP request (tenant and vendor alike — the middleware in
+  `serviceflow/main.py` is global) is bound to a freshly **server-generated**
+  UUID4 for its duration, via a `contextvars.ContextVar`;
+- returned in the `X-Request-ID` response header;
+- attached to every application log line through a `logging.Filter`
+  (`CorrelationLogFilter`), closing a pre-existing gap where the log
+  formatter already supported a `request_id` field but nothing ever
+  populated it;
+- persisted as `platform_audit_log.request_id` (migration 0013, `NOT NULL`)
+  for every vendor audit row, via `platform_admin.audit.record()`'s
+  mandatory `request_id` parameter — there is no code path that writes a
+  vendor audit row without one;
+- CLI/background operations are not HTTP requests, so they bind their own
+  id at their own entry point (`business_os.platform_admin.bootstrap.main()`
+  calls `correlation.bind()` before doing anything else) — the same
+  contextvar mechanism, a different boundary.
+
+**A previously-incoming `X-Request-ID` header is never adopted.** The
+pre-hardening middleware accepted any client-supplied value verbatim, with no
+length bound or format check — audited and found to be exactly the "already
+follows the convention AND validates it" condition failing, so the value is
+now always freshly generated server-side regardless of what a caller sends.
+This is a deliberate, documented policy choice, not an oversight: a client
+cannot inject an arbitrary string into application logs or the audit trail
+merely by setting a header, and no correlation id is ever treated as unique
+because a client supplied it. If a genuine need for validated cross-service
+trace propagation arises later, it should be added as its own reviewed
+decision (a strict allow-list pattern, a bound length), not by reverting to
+the old blind pass-through.
+
+**Correlation ids are observability data, not security credentials.** They
+are never checked for authorization, never used to resolve a session or a
+`TenantContext`, and their presence or value has no bearing on what a request
+is permitted to do — only on how it can be found in logs and the audit trail
+after the fact.

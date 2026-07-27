@@ -42,7 +42,22 @@ class PlatformAdminSession(Base):
     than a `kind` discriminator on `sessions`, because that table's `company_id`
     and `user_id` are both NOT NULL FKs — a vendor session has neither, and
     making them nullable would weaken every tenant-scoping assumption built on
-    them."""
+    them.
+
+    `user_agent` and `client_label` are observability metadata for a future
+    "active sessions" / "revoke another session" screen — not built in this
+    slice. `user_agent` is captured verbatim from the HTTP header at login,
+    bounded and untrusted; it is never an authentication factor and is never
+    updated after login (a session doesn't change browsers mid-life).
+    `client_label` is a future user-assigned name ("Office PC") — nullable,
+    never auto-populated: inventing a device name from a User-Agent string
+    would misrepresent something nobody actually confirmed.
+
+    Deliberately **not** stored: IP address (no documented security need or
+    retention policy yet — see docs/business-os/18 §Vendor session
+    observability), precise geolocation, browser fingerprints, or anything
+    beyond what a session list screen would show.
+    """
 
     __tablename__ = "platform_admin_sessions"
 
@@ -50,6 +65,8 @@ class PlatformAdminSession(Base):
     platform_admin_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("platform_admins.id"))
     token_hash: Mapped[str] = mapped_column(unique=True)
     csrf_token: Mapped[str]
+    user_agent: Mapped[str | None] = mapped_column(default=None)
+    client_label: Mapped[str | None] = mapped_column(default=None)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     last_seen_at: Mapped[datetime] = mapped_column(server_default=func.now())
     expires_at: Mapped[datetime]
@@ -78,6 +95,13 @@ class PlatformAuditLog(Base):
 
     UPDATE/DELETE are blocked by a DB trigger (migration 0012), the same
     role-independent discipline `timeline_events` and `ps_deadline_changes` use.
+
+    `request_id` (migration 0013) ties this row to the HTTP request or CLI
+    invocation that produced it — `business_os.shared_kernel.correlation`,
+    bound once per request/CLI run and read here via `audit.record()`'s
+    mandatory parameter, never invented ad hoc at a call site. It is
+    observability data (matches a response header and a log line), never a
+    security credential.
     """
 
     __tablename__ = "platform_audit_log"
@@ -90,4 +114,5 @@ class PlatformAuditLog(Base):
     action: Mapped[str]
     detail: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default=text("'{}'"))
     reason: Mapped[str | None] = mapped_column(default=None)
+    request_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

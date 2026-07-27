@@ -6,6 +6,8 @@ Rule from docs/11_SECURITY_MODEL.md par.3: log ids, never names/phones/PII.
 import logging
 import sys
 
+from business_os.shared_kernel.correlation import CorrelationLogFilter
+
 
 class KeyValueFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
@@ -24,6 +26,7 @@ class KeyValueFormatter(logging.Formatter):
 def setup_logging(level: str = "INFO") -> None:
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(KeyValueFormatter())
+    handler.addFilter(CorrelationLogFilter())
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(level.upper())

@@ -54,7 +54,8 @@ def vendor_login(body: VendorLoginRequest, request: Request, response: Response,
                  db: VendorDbDep) -> PlatformAdminMe:
     try:
         session, raw_token = service.login(
-            db, body.email, body.password, _client_key(request)
+            db, body.email, body.password, _client_key(request),
+            user_agent=request.headers.get("user-agent"),
         )
     except service.VendorAuthError as e:
         raise HTTPException(status_code=e.status, detail={

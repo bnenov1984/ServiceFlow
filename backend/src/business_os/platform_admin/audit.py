@@ -16,6 +16,13 @@ here when a new vendor action ships; never inline a literal at the call site.
 
 **Never** put a password, session token, CSRF token or any other secret in
 `detail` — it is a plain JSONB column read by whoever reviews vendor activity.
+
+**Correlation is mandatory, not optional.** `request_id` has no default —
+`record()` cannot be called without one, so a row can never land with no way
+to trace it back to the request or CLI run that wrote it. Callers get the
+value from `business_os.shared_kernel.correlation.ensure_bound()`, which
+reuses whatever the current request/CLI operation already bound rather than
+each call site inventing its own.
 """
 
 import uuid
@@ -45,6 +52,7 @@ KNOWN_ACTIONS = frozenset({
 def record(
     db: Session,
     action: str,
+    request_id: str,
     platform_admin_id: uuid.UUID | None = None,
     company_id: uuid.UUID | None = None,
     detail: dict[str, Any] | None = None,
@@ -52,7 +60,12 @@ def record(
 ) -> None:
     """Append one vendor audit row. Does not commit — the caller's transaction
     decides, so the audit row and the action it describes land together or not
-    at all (same discipline as identity's `_audit`)."""
+    at all (same discipline as identity's `_audit`).
+
+    `request_id` is a required parameter, not one that quietly defaults to
+    `None` — see the module docstring. Pass
+    `business_os.shared_kernel.correlation.ensure_bound()`, not a literal.
+    """
     if action not in KNOWN_ACTIONS:
         raise ValueError(
             f"unknown platform audit action {action!r} — add a constant to "
@@ -64,4 +77,5 @@ def record(
         action=action,
         detail=detail or {},
         reason=reason,
+        request_id=uuid.UUID(request_id),
     ))

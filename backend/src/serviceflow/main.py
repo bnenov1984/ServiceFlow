@@ -1,7 +1,6 @@
 """App factory. API error contract per docs/09_API_SPECIFICATION.md par.1."""
 
 import logging
-import uuid
 from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request, Response
@@ -13,6 +12,7 @@ from business_os.identity.router import router as auth_router
 from business_os.identity.router import users_router
 from business_os.platform.health import router as health_router
 from business_os.platform_admin.router import router as platform_admin_router
+from business_os.shared_kernel import correlation
 from professional_services.actions.router import router as ps_actions_router
 from professional_services.assignments.router import router as ps_assignments_router
 from professional_services.catalog.router import router as ps_catalog_router
@@ -56,9 +56,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def request_id_middleware(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:12]
-        response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
+        """Every request gets a freshly server-generated correlation id, bound
+        for the lifetime of the request so logs and platform audit rows written
+        during it can be tied together (business_os.shared_kernel.correlation).
+
+        A previously incoming `X-Request-ID` is never adopted: this project has
+        no validated convention for trusting one (no length/charset check ever
+        existed), and a client-supplied value is not guaranteed unique or safe
+        to log/persist regardless. If a genuine cross-service tracing need
+        arises later, add a validated accept-if-well-formed path deliberately —
+        do not resurrect the old blind pass-through.
+        """
+        request_id = correlation.new_id()
+        token = correlation.bind(request_id)
+        try:
+            response = await call_next(request)
+        finally:
+            correlation.reset(token)
+        response.headers[correlation.REQUEST_ID_HEADER] = request_id
         return response
 
     @app.exception_handler(RequestValidationError)

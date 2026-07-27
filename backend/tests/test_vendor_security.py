@@ -383,10 +383,11 @@ def test_platform_audit_log_rejects_an_unknown_action(client: TestClient) -> Non
     this file — it is the fixture that migrates the schema and truncates
     afterwards; a test that skips it leaks rows into the ones that follow.)"""
     from business_os.platform_admin import audit
+    from business_os.shared_kernel import correlation
 
     for db in _db():
         with pytest.raises(ValueError, match="unknown platform audit action"):
-            audit.record(db, "something.improvised")  # type: ignore[arg-type]
+            audit.record(db, "something.improvised", correlation.ensure_bound())
 
 
 def test_platform_audit_log_is_append_only_in_the_database(client: TestClient) -> None:
@@ -528,3 +529,244 @@ def test_vendor_login_is_rate_limited(client: TestClient) -> None:
     assert resp.status_code == 429
     assert resp.json()["detail"]["message_key"] == "errors.auth.locked_out"
     _reset_rate_limiter()
+
+
+# --- Request correlation -------------------------------------------------
+#
+# business_os.shared_kernel.correlation: every HTTP request (vendor and
+# tenant alike, the middleware is global) is bound to a freshly server-
+# generated id, echoed in X-Request-ID, and every platform_audit_log row
+# written during that request must carry the same value.
+
+
+def test_vendor_response_includes_a_request_id_header(client: TestClient) -> None:
+    resp = client.get(f"{VENDOR}/me")  # 401 is fine — the header is set either way
+    assert resp.headers["X-Request-ID"]
+
+
+def test_two_independent_requests_get_different_request_ids(client: TestClient) -> None:
+    first = client.get(f"{VENDOR}/me").headers["X-Request-ID"]
+    second = client.get(f"{VENDOR}/me").headers["X-Request-ID"]
+    assert first != second
+
+
+def test_incoming_client_request_id_header_is_never_trusted(client: TestClient) -> None:
+    """Chosen policy (see the audit in this slice's report): the project had no
+    validated convention for accepting a client-supplied id, so it does not
+    adopt one — every response gets a freshly server-generated value regardless
+    of what the client sent."""
+    resp = client.get(f"{VENDOR}/me", headers={"X-Request-ID": "client-supplied-value"})
+    assert resp.headers["X-Request-ID"] != "client-supplied-value"
+
+
+def test_oversized_or_malformed_incoming_request_id_is_ignored_safely(
+    client: TestClient,
+) -> None:
+    """Same code path as above handles the adversarial input too: nothing about
+    a 10 000-character or control-character-laden header is ever propagated,
+    logged, or persisted — it is simply never read."""
+    hostile = "x" * 10_000
+    resp = client.get(f"{VENDOR}/me", headers={"X-Request-ID": hostile})
+    assert resp.status_code in (200, 401)
+    assert hostile not in resp.headers["X-Request-ID"]
+    assert len(resp.headers["X-Request-ID"]) < 100
+
+
+def test_request_id_does_not_affect_authorisation_or_tenant_scope(client: TestClient) -> None:
+    """Observability data, never a credential: a forged/oversized incoming id
+    neither grants vendor access nor leaks into tenant scope."""
+    _reset_rate_limiter()
+    _seed_tenant()
+    headers = {"X-Request-ID": "'; DROP TABLE platform_admins; --"}
+
+    assert client.get(f"{VENDOR}/me", headers=headers).status_code == 401
+    me = _tenant_login(client)
+    assert me["is_owner"] is True  # tenant auth is completely unaffected
+    assert client.get(f"{VENDOR}/me", headers=headers).status_code == 401
+
+
+def test_vendor_audit_row_carries_the_response_request_id(client: TestClient) -> None:
+    """The whole point of correlation: given the X-Request-ID a caller saw, the
+    audit row that request produced can be found by it."""
+    from sqlalchemy import select
+
+    from business_os.platform_admin.models import PlatformAuditLog
+
+    _reset_rate_limiter()
+    _seed_admin()
+    resp = client.post(f"{VENDOR}/auth/login",
+                       json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
+    request_id = resp.headers["X-Request-ID"]
+
+    for db in _db():
+        row = db.scalar(select(PlatformAuditLog)  # type: ignore[attr-defined]
+                        .where(PlatformAuditLog.action == "platform_admin.login"))
+        assert row is not None
+        assert str(row.request_id) == request_id
+
+
+def test_bootstrap_cli_audit_row_has_a_generated_operation_id(client: TestClient) -> None:
+    """The CLI is its own operation boundary (no HTTP request exists) — its
+    audit row still carries a real, non-null, well-formed correlation id."""
+    import uuid as uuid_module
+
+    from sqlalchemy import select
+
+    from business_os.platform_admin.models import PlatformAuditLog
+    from business_os.platform_admin.service import create_platform_admin
+    from business_os.shared_kernel import correlation
+
+    token = correlation.bind()  # simulate bootstrap.main()'s own boundary bind
+    try:
+        for db in _db():
+            create_platform_admin(db, "Вендор Админ", ADMIN_EMAIL, ADMIN_PASSWORD)
+    finally:
+        correlation.reset(token)
+
+    for db in _db():
+        row = db.scalar(select(PlatformAuditLog)  # type: ignore[attr-defined]
+                        .where(PlatformAuditLog.action == "platform_admin.bootstrapped"))
+        assert row is not None
+        assert isinstance(row.request_id, uuid_module.UUID)
+
+
+def test_audit_record_requires_a_request_id_argument() -> None:
+    """`request_id` has no default — a call site that forgets it fails
+    immediately with a TypeError, not a silently-NULL column."""
+    import inspect
+
+    from business_os.platform_admin import audit
+
+    params = inspect.signature(audit.record).parameters
+    assert params["request_id"].default is inspect.Parameter.empty
+
+
+# --- Session metadata (user_agent / client_label) -----------------------
+
+
+def test_login_records_a_bounded_user_agent(client: TestClient) -> None:
+    from sqlalchemy import select
+
+    from business_os.platform_admin.models import PlatformAdminSession
+
+    _reset_rate_limiter()
+    _seed_admin()
+    client.post(f"{VENDOR}/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
+               headers={"User-Agent": "Mozilla/5.0 Test Runner"})
+
+    for db in _db():
+        session = db.scalar(select(PlatformAdminSession))  # type: ignore[attr-defined]
+        assert session.user_agent == "Mozilla/5.0 Test Runner"
+
+
+def test_login_succeeds_with_no_user_agent_header(client: TestClient) -> None:
+    from sqlalchemy import select
+
+    from business_os.platform_admin.models import PlatformAdminSession
+
+    _reset_rate_limiter()
+    _seed_admin()
+    resp = client.post(f"{VENDOR}/auth/login",
+                       json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
+                       headers={"User-Agent": ""})
+    assert resp.status_code == 200
+
+    for db in _db():
+        session = db.scalar(select(PlatformAdminSession))  # type: ignore[attr-defined]
+        assert session.user_agent is None
+
+
+def test_oversized_user_agent_is_truncated_not_rejected(client: TestClient) -> None:
+    from sqlalchemy import select
+
+    from business_os.platform_admin.models import PlatformAdminSession
+    from business_os.platform_admin.service import MAX_USER_AGENT_LENGTH
+
+    _reset_rate_limiter()
+    _seed_admin()
+    hostile = "A" * (MAX_USER_AGENT_LENGTH * 5)
+    resp = client.post(f"{VENDOR}/auth/login",
+                       json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
+                       headers={"User-Agent": hostile})
+    assert resp.status_code == 200
+
+    for db in _db():
+        session = db.scalar(select(PlatformAdminSession))  # type: ignore[attr-defined]
+        assert session.user_agent is not None
+        assert len(session.user_agent) == MAX_USER_AGENT_LENGTH
+
+
+def test_raw_session_token_is_never_stored_as_diagnostic_metadata(client: TestClient) -> None:
+    """The cookie value itself must never leak into user_agent/client_label —
+    only its hash (token_hash) is ever a credential-shaped column."""
+    from sqlalchemy import select
+
+    from business_os.platform_admin.models import PlatformAdminSession
+
+    _reset_rate_limiter()
+    _seed_admin()
+    _vendor_login(client)
+    raw_token = client.cookies.get("sf_platform_session", path="/api/v1/platform-admin")
+    assert raw_token
+
+    for db in _db():
+        session = db.scalar(select(PlatformAdminSession))  # type: ignore[attr-defined]
+        assert raw_token not in (session.user_agent or "")
+        assert raw_token not in (session.client_label or "")
+        assert raw_token != session.token_hash
+
+
+def test_client_label_stays_null_and_is_never_auto_populated(client: TestClient) -> None:
+    from sqlalchemy import select
+
+    from business_os.platform_admin.models import PlatformAdminSession
+
+    _reset_rate_limiter()
+    _seed_admin()
+    client.post(f"{VENDOR}/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
+               headers={"User-Agent": "Mozilla/5.0 Test Runner"})
+
+    for db in _db():
+        session = db.scalar(select(PlatformAdminSession))  # type: ignore[attr-defined]
+        assert session.client_label is None
+
+
+def test_last_seen_at_is_not_rewritten_on_every_request(client: TestClient) -> None:
+    """Low-write strategy: back-to-back requests within the same minute must
+    not each trigger a commit — the column should be unchanged between them."""
+    from sqlalchemy import select
+
+    from business_os.platform_admin.models import PlatformAdminSession
+
+    _reset_rate_limiter()
+    _seed_admin()
+    _vendor_login(client)
+    for db in _db():
+        first_seen = db.scalar(select(PlatformAdminSession)).last_seen_at  # type: ignore[attr-defined]
+
+    for _ in range(3):
+        assert client.get(f"{VENDOR}/me").status_code == 200
+
+    for db in _db():
+        second_seen = db.scalar(select(PlatformAdminSession)).last_seen_at  # type: ignore[attr-defined]
+    assert second_seen == first_seen
+
+
+def test_session_expiry_and_inactive_admin_behaviour_are_unchanged(client: TestClient) -> None:
+    """Regression guard: none of this slice's additions touch expiry or the
+    is_active gate — both already covered above, re-asserted together here as
+    the one property this slice must not have disturbed."""
+    from sqlalchemy import select
+
+    from business_os.platform_admin.models import PlatformAdmin
+
+    _reset_rate_limiter()
+    _seed_admin()
+    _vendor_login(client)
+    assert client.get(f"{VENDOR}/me").status_code == 200
+
+    for db in _db():
+        admin = db.scalar(select(PlatformAdmin))  # type: ignore[attr-defined]
+        admin.is_active = False
+        db.commit()  # type: ignore[attr-defined]
+    assert client.get(f"{VENDOR}/me").status_code == 401

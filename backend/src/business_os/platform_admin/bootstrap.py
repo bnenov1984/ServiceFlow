@@ -22,6 +22,7 @@ import os
 import sys
 
 from business_os.platform_admin.service import create_platform_admin
+from business_os.shared_kernel import correlation
 from business_os.shared_kernel.db import open_session
 from serviceflow.config import get_settings
 
@@ -57,6 +58,11 @@ def main() -> None:
 
     name, email = sys.argv[1], sys.argv[2]
     password = read_password()
+
+    # This CLI run is its own operation, distinct from any HTTP request — give
+    # it one correlation id up front so its platform_audit_log row is
+    # traceable to this invocation (business_os.shared_kernel.correlation).
+    correlation.bind()
 
     for db in open_session(settings.database_url):
         admin, created = create_platform_admin(db, name, email, password)

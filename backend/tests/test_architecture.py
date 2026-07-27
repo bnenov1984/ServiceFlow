@@ -515,3 +515,58 @@ def test_platform_audit_log_has_no_mutation_api() -> None:
         f"unexpected functions in platform_admin.audit: {own_functions} — this "
         "module is the append-only write path and must gain no update/delete API"
     )
+
+
+# --- Request correlation (vendor session observability hardening,
+# 27.07.2026) — the shared primitive must stay neutral, and the guarantees
+# the previous slice established must survive its addition. ----------------
+
+
+def test_correlation_lives_in_shared_kernel_not_a_higher_layer() -> None:
+    """business_os.shared_kernel.correlation is imported by both the tenant
+    application (serviceflow.logging_setup, serviceflow.main) and the vendor
+    plane (platform_admin.service, .bootstrap) — it can only live at the
+    bottom layer, which `shared-kernel-bottom` (backend/.importlinter) already
+    enforces for the whole package. This test documents that the correlation
+    module specifically is covered, not just shared_kernel in general."""
+    from business_os.shared_kernel import correlation
+
+    assert correlation.__name__ == "business_os.shared_kernel.correlation"
+    report = _importlinter_report(("shared-kernel-bottom",))
+    assert not report.contains_failures  # type: ignore[attr-defined]
+
+
+def test_vendor_plane_boundary_contracts_still_kept_with_correlation_added() -> None:
+    """Regression guard: adding a shared_kernel import to platform_admin.service
+    and .bootstrap must not open a path around vendor-plane-not-tenant-code or
+    vendor-plane-private."""
+    report = _importlinter_report(_VENDOR_CONTRACTS)
+    assert not report.contains_failures  # type: ignore[attr-defined]
+
+
+def test_tenant_code_still_cannot_import_platform_audit() -> None:
+    """Same detection-capability proof as before (this slice only changed
+    `audit.record`'s signature, not who may import `audit` at all)."""
+    graph = _real_graph()
+    graph.add_import(  # type: ignore[attr-defined]
+        importer="serviceflow.customers.router",
+        imported="business_os.platform_admin.audit",
+        line_number=1, line_contents="from business_os.platform_admin import audit",
+    )
+    report = _importlinter_report(("vendor-plane-private",), graph=graph)
+    assert report.contains_failures  # type: ignore[attr-defined]
+
+
+def test_vendor_routes_still_construct_no_tenant_context_with_correlation_middleware() -> None:
+    """The global request-id middleware wraps every route including the vendor
+    ones — re-run the existing no-TenantContext proof to confirm that adding
+    it did not smuggle a tenant dependency in through the composition root."""
+    routes = _vendor_routes()
+    assert routes, "no vendor routes are mounted — the boundary test is vacuous"
+    for path, route in routes:
+        modules = {
+            getattr(fn, "__module__", "")
+            for fn in _dependant_callables(route.dependant)  # type: ignore[attr-defined]
+        }
+        leaked = {m for m in modules if m.startswith("business_os.identity")}
+        assert not leaked, f"vendor route {path} depends on tenant identity: {leaked}"
