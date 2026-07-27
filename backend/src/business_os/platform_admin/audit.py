@@ -31,6 +31,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from business_os.platform_admin.models import PlatformAuditLog
+from business_os.shared_kernel.ids import new_id
 
 # Authentication.
 ADMIN_BOOTSTRAPPED = "platform_admin.bootstrapped"
@@ -61,7 +62,7 @@ def record(
     company_id: uuid.UUID | None = None,
     detail: dict[str, Any] | None = None,
     reason: str | None = None,
-) -> None:
+) -> uuid.UUID:
     """Append one vendor audit row. Does not commit — the caller's transaction
     decides, so the audit row and the action it describes land together or not
     at all (same discipline as identity's `_audit`).
@@ -69,13 +70,20 @@ def record(
     `request_id` is a required parameter, not one that quietly defaults to
     `None` — see the module docstring. Pass
     `business_os.shared_kernel.correlation.ensure_bound()`, not a literal.
+
+    Returns the new row's id, generated here (not left to the mapped column's
+    default) so the caller has it immediately without an extra flush — e.g.
+    `ProvisionCompany` hands it back as `ProvisionResult.audit_id`, a durable
+    reference to the exact audit record this operation produced.
     """
     if action not in KNOWN_ACTIONS:
         raise ValueError(
             f"unknown platform audit action {action!r} — add a constant to "
             "business_os.platform_admin.audit rather than passing a literal"
         )
+    audit_id = new_id()
     db.add(PlatformAuditLog(
+        id=audit_id,
         platform_admin_id=platform_admin_id,
         company_id=company_id,
         action=action,
@@ -83,3 +91,4 @@ def record(
         reason=reason,
         request_id=uuid.UUID(request_id),
     ))
+    return audit_id

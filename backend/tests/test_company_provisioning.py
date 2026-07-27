@@ -114,8 +114,10 @@ def test_provision_company_creates_everything_atomically(client: TestClient) -> 
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["business_profile"] == "phone_repair"
-    assert body["active_modules"] == ["professional-services"]
+    assert body["activated_modules"] == ["professional-services"]
     assert body["subscription_state"] == "trial"
+    assert body["trial_ends_at"]
+    assert body["audit_id"]
 
     for db in _db():
         company = db.get(Company, uuid.UUID(body["company_id"]))  # type: ignore[attr-defined]
@@ -133,6 +135,14 @@ def test_provision_company_creates_everything_atomically(client: TestClient) -> 
 
     assert _audit_actions().count("company.provisioned") == 1
 
+    from business_os.platform_admin.models import PlatformAuditLog
+
+    for db in _db():
+        row = db.get(PlatformAuditLog, uuid.UUID(body["audit_id"]))  # type: ignore[attr-defined]
+        assert row is not None
+        assert row.action == "company.provisioned"
+        assert row.company_id == uuid.UUID(body["company_id"])
+
 
 def test_provision_company_defaults_to_generic_repair_profile(client: TestClient) -> None:
     _reset_rate_limiter()
@@ -143,7 +153,7 @@ def test_provision_company_defaults_to_generic_repair_profile(client: TestClient
                        json=_provision_payload())
     assert resp.status_code == 200, resp.text
     assert resp.json()["business_profile"] == "generic_repair"
-    assert resp.json()["active_modules"] == []
+    assert resp.json()["activated_modules"] == []
 
 
 def test_provision_company_rejects_an_invalid_business_profile(client: TestClient) -> None:

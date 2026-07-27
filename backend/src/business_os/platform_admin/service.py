@@ -227,12 +227,22 @@ class ProvisioningError(Exception):
 
 
 @dataclass(frozen=True)
-class ProvisionCompanyResult:
+class ProvisionResult:
+    """The provisioning contract's own result shape — belongs to
+    `provision_company` alone. A later slice (entitlement management,
+    subscription transitions) must not bolt ad hoc fields onto this or grow
+    a second, slightly-different result type; extend here if a genuine new
+    provisioning-time fact needs surfacing, since this dataclass is the
+    single definition every caller (the router, tests, any future non-HTTP
+    caller) reads."""
+
     company_id: uuid.UUID
     owner_id: uuid.UUID
-    business_profile: str
-    active_modules: list[str]
     subscription_state: str
+    trial_ends_at: datetime
+    business_profile: str
+    activated_modules: list[str]
+    audit_id: uuid.UUID
 
 
 def provision_company(
@@ -244,7 +254,7 @@ def provision_company(
     owner_password: str,
     business_profile: str = DEFAULT_BUSINESS_PROFILE,
     modules: Sequence[str] = (),
-) -> ProvisionCompanyResult:
+) -> ProvisionResult:
     """The single atomic command that creates a new customer company: the
     company itself, its first Tenant Owner, the initial RepairFlow business
     profile, initial module entitlements, a subscription/licence baseline,
@@ -275,9 +285,11 @@ def provision_company(
     identity_contracts.set_business_profile(db, provisioned.company_id, business_profile)
     for module_key in modules:
         identity_contracts.grant_module(db, provisioned.company_id, module_key)
-    identity_contracts.set_subscription_trial(db, provisioned.company_id, TRIAL_DAYS)
+    trial_ends_at = identity_contracts.set_subscription_trial(
+        db, provisioned.company_id, TRIAL_DAYS
+    )
 
-    audit.record(
+    audit_id = audit.record(
         db, audit.COMPANY_PROVISIONED, correlation.ensure_bound(),
         platform_admin_id=platform_admin_id,
         company_id=provisioned.company_id,
@@ -289,12 +301,14 @@ def provision_company(
     )
     db.commit()
 
-    return ProvisionCompanyResult(
+    return ProvisionResult(
         company_id=provisioned.company_id,
         owner_id=provisioned.owner_id,
-        business_profile=business_profile,
-        active_modules=list(modules),
         subscription_state="trial",
+        trial_ends_at=trial_ends_at,
+        business_profile=business_profile,
+        activated_modules=list(modules),
+        audit_id=audit_id,
     )
 
 

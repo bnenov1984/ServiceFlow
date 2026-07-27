@@ -619,6 +619,50 @@ resolved server-side — existence is never inferred from anything
 client-supplied (ADR-BOS-009 §Tenant isolation requirement, restated for the
 Control Plane).
 
+### 11.6 `ProvisionResult` — a fixed contract, not a growable response
+
+Follow-up (27.07.2026, same day) to close a gap noticed before Entitlement
+Management started: `provision_company()`'s result was already a named
+dataclass (`ProvisionCompanyResult`, not a bare tuple), but it was missing
+two facts a caller of the command legitimately needs — the computed trial
+end date, and a durable reference to the exact audit row this operation
+produced. Renamed to `ProvisionResult` and completed to:
+
+```
+ProvisionResult
+- company_id
+- owner_id
+- subscription_state
+- trial_ends_at
+- business_profile
+- activated_modules
+- audit_id
+```
+
+No migration, no new business logic — `trial_ends_at` was already computed
+inside `identity.service.set_subscription_trial`, just discarded; it now
+returns it (`identity.contracts.set_subscription_trial` too), so
+`ProvisionCompany` hands back the exact value it wrote rather than
+re-deriving `_now() + timedelta(...)` a second time. `audit_id` required one
+real change: `platform_admin.audit.record()` now generates the row's id
+explicitly (`shared_kernel.ids.new_id()`) instead of leaving it to the mapped
+column's implicit default, so it can return it without an extra flush.
+
+**This is a deliberate boundary**: `ProvisionResult` belongs to the
+provisioning contract alone. Entitlement Management (phase 3) and
+subscription transitions (phase 4) read and act on a company's *current*
+state through the company detail route (§11.5) or their own future
+endpoints — neither should grow `ProvisionResult` with fields describing
+what happens *after* provisioning, and neither should invent a second,
+slightly different result shape next to it.
+
+Note the one intentional naming difference from §11.5: `ProvisionResult.
+activated_modules` (what this specific operation just granted) vs.
+`CompanyAdminMetadata`/`CompanySummary.active_modules` (the company's full
+current set, read fresh from `companies.settings`) — same list in the
+common case of a first provisioning call, but a different question, so a
+different name.
+
 ## 10. Vendor session observability & audit correlation (hardening, 27.07.2026)
 
 A narrow follow-up to phase 1 (§9), landed before Company Provisioning

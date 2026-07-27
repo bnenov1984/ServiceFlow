@@ -127,10 +127,11 @@ def get_business_profile(db: Session, company_id: uuid.UUID) -> str:
     return _service.get_business_profile(db, company_id)
 
 
-def set_subscription_trial(db: Session, company_id: uuid.UUID, trial_days: int) -> None:
+def set_subscription_trial(db: Session, company_id: uuid.UUID, trial_days: int) -> datetime:
     """Baseline subscription state for a freshly provisioned company
-    (ADR-BOS-012). Non-committing — composed inside `ProvisionCompany`."""
-    _service.set_subscription_trial(db, company_id, trial_days)
+    (ADR-BOS-012). Non-committing — composed inside `ProvisionCompany`.
+    Returns the computed `trial_ends_at`."""
+    return _service.set_subscription_trial(db, company_id, trial_days)
 
 
 @dataclass(frozen=True)

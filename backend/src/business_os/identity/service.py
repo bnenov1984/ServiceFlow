@@ -241,16 +241,24 @@ def get_business_profile(db: Session, company_id: uuid.UUID) -> str:
     return result
 
 
-def set_subscription_trial(db: Session, company_id: uuid.UUID, trial_days: int) -> None:
+def set_subscription_trial(db: Session, company_id: uuid.UUID, trial_days: int) -> datetime:
     """Baseline subscription state for a freshly provisioned company
     (ADR-BOS-012: every vendor-created company starts in `trial`, full
     functionality, a fixed number of days). Non-committing — composed inside
-    `ProvisionCompany`'s single transaction."""
+    `ProvisionCompany`'s single transaction.
+
+    Returns the computed `trial_ends_at` so the caller (`ProvisionCompany`,
+    via `identity.contracts`) can hand it back as `ProvisionResult.
+    trial_ends_at` without re-deriving `_now() + timedelta(...)` a second
+    time and risking the two computations drifting apart by a few
+    microseconds."""
     company = get_company(db, company_id)
     assert company is not None
     company.subscription_state = DEFAULT_SUBSCRIPTION_STATE
     company.subscription_state_changed_at = _now()
-    company.trial_ends_at = _now() + timedelta(days=trial_days)
+    trial_ends_at = _now() + timedelta(days=trial_days)
+    company.trial_ends_at = trial_ends_at
+    return trial_ends_at
 
 
 def create_company_with_owner(

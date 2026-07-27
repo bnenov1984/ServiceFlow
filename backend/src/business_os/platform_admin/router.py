@@ -166,11 +166,17 @@ class ProvisionCompanyRequest(BaseModel):
 
 
 class ProvisionCompanyResponse(BaseModel):
+    """Mirrors `service.ProvisionResult` field-for-field — the HTTP shape of
+    the provisioning contract, not a place to add response-only fields of
+    its own."""
+
     company_id: uuid.UUID
     owner_id: uuid.UUID
-    business_profile: str
-    active_modules: list[str]
     subscription_state: str
+    trial_ends_at: datetime
+    business_profile: str
+    activated_modules: list[str]
+    audit_id: uuid.UUID
 
 
 @router.post("/companies", dependencies=[Depends(require_platform_csrf)])
@@ -192,6 +198,7 @@ def provision_company(
         }) from e
     return ProvisionCompanyResponse(
         company_id=result.company_id, owner_id=result.owner_id,
-        business_profile=result.business_profile, active_modules=result.active_modules,
-        subscription_state=result.subscription_state,
+        subscription_state=result.subscription_state, trial_ends_at=result.trial_ends_at,
+        business_profile=result.business_profile, activated_modules=result.activated_modules,
+        audit_id=result.audit_id,
     )
