@@ -2,7 +2,12 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from business_os.identity.deps import TenantDbDep, TenantDep, require_csrf
+from business_os.identity.deps import (
+    TenantDbDep,
+    TenantDep,
+    require_csrf,
+    require_subscription_ok,
+)
 from professional_services.catalog.service import CatalogError
 from professional_services.deps import require_ps_active
 
@@ -52,7 +57,8 @@ def list_assignments(db: TenantDbDep, tenant: TenantDep) -> list[AssignmentOut]:
     return [_out(db, tenant, a) for a in service.list_assignments(db, tenant)]
 
 
-@router.post("/assignments", dependencies=[Depends(require_csrf)])
+@router.post("/assignments",
+            dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
 def create_assignment(
     body: AssignmentCreate, db: TenantDbDep, tenant: TenantDep
 ) -> AssignmentOut:
@@ -81,7 +87,8 @@ def list_assignment_stages(
     return [_stage_out(s) for s in service.list_assignment_stages(db, tenant, assignment_id)]
 
 
-@router.post("/assignments/{assignment_id}/stage", dependencies=[Depends(require_csrf)])
+@router.post("/assignments/{assignment_id}/stage",
+            dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
 def change_stage(
     assignment_id: uuid.UUID, body: StageChange, db: TenantDbDep, tenant: TenantDep,
 ) -> AssignmentOut:
@@ -96,7 +103,8 @@ def change_stage(
         }) from e
 
 
-@router.post("/assignments/{assignment_id}/deadline", dependencies=[Depends(require_csrf)])
+@router.post("/assignments/{assignment_id}/deadline",
+            dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
 def change_deadline(
     assignment_id: uuid.UUID, body: DeadlineChangeIn, db: TenantDbDep, tenant: TenantDep,
 ) -> AssignmentOut:
@@ -125,7 +133,8 @@ def list_deadline_changes(
     ]
 
 
-@router.post("/assignments/evaluate-risk", dependencies=[Depends(require_csrf)])
+@router.post("/assignments/evaluate-risk",
+            dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
 def evaluate_risk(db: TenantDbDep, tenant: TenantDep) -> dict[str, int]:
     """Manual trigger for the per-tenant deadline/staleness recompute
     (PS-13 §7's "morning job", not yet wired to any scheduler - see

@@ -2,15 +2,16 @@
 §Console deployment shape).
 
 Authenticate, identify yourself, log out; read-only company list/detail; the
-atomic company-provisioning command; grant/revoke module entitlements. No
-subscription *transitions* (suspend/reactivate/grace period), no seat-limit
-enforcement, no tenant employee management — those remain later slices
-(docs/business-os/18 §9 phase 4+) and must not be smuggled in here.
+atomic company-provisioning command; grant/revoke module entitlements;
+subscription lifecycle transitions. No seat-limit enforcement, no tenant
+employee management — those remain later slices (docs/business-os/18 §9
+phase 5+) and must not be smuggled in here.
 
 Every route here is a thin wrapper around `platform_admin.service` — no
-provisioning or entitlement logic lives in this file (docs/business-os/18
-§9 phases 2-3: `service.provision_company`/`grant_entitlement`/
-`revoke_entitlement` are the only supported orchestration entry points).
+provisioning, entitlement or subscription logic lives in this file
+(docs/business-os/18 §9 phases 2-4: `service.provision_company`/
+`grant_entitlement`/`revoke_entitlement`/`transition_subscription` are the
+only supported orchestration entry points).
 
 Error contract per docs/09 §1: message keys, never prose.
 """
@@ -264,3 +265,49 @@ def revoke_entitlement(
             "code": "entitlement_failed", "message_key": e.message_key, "params": {},
         }) from e
     return _to_entitlement_response(result)
+
+
+# --- Subscription lifecycle (docs/business-os/18 §9 phase 4, ADR-BOS-012) --
+
+
+class SubscriptionTransitionRequest(BaseModel):
+    new_state: str
+    reason: str = Field(min_length=1, max_length=2000)
+
+
+class SubscriptionTransitionResponse(BaseModel):
+    """Mirrors `service.SubscriptionTransitionResult` field-for-field."""
+
+    company_id: uuid.UUID
+    old_state: str
+    new_state: str
+    reason: str
+    audit_id: uuid.UUID
+
+
+@router.post("/companies/{company_id}/subscription/transitions",
+           dependencies=[Depends(require_platform_csrf)])
+def transition_subscription(
+    body: SubscriptionTransitionRequest, auth: PlatformAdminDep, db: VendorDbDep,
+    company_id: uuid.UUID,
+) -> SubscriptionTransitionResponse:
+    """Transition a company's subscription lifecycle state (trial / active /
+    grace_period / suspended / cancelled) — always with a mandatory reason.
+    One endpoint, not one per state ("suspend", "reactivate", ...): the
+    operation is the same reasoned-change shape regardless of direction, and
+    the console's suspend/reactivate buttons are just this call with a
+    different `new_state`."""
+    _, admin = auth
+    try:
+        result = service.transition_subscription(
+            db, admin.id, company_id, body.new_state, body.reason,
+        )
+    except service.SubscriptionError as e:
+        raise HTTPException(status_code=e.status, detail={
+            "code": "subscription_transition_failed", "message_key": e.message_key,
+            "params": {},
+        }) from e
+    return SubscriptionTransitionResponse(
+        company_id=result.company_id, old_state=result.old_state, new_state=result.new_state,
+        reason=result.reason, audit_id=result.audit_id,
+    )

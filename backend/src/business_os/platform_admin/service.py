@@ -423,3 +423,70 @@ def revoke_entitlement(
         company_id=company_id, module_key=module_key,
         active_modules=updated.active_modules, changed=changed, audit_id=audit_id,
     )
+
+
+# --- Subscription lifecycle (docs/business-os/18 §9 phase 4, ADR-BOS-012) --
+#
+# Transitions are Vendor-Administrator-only, always with a mandatory reason,
+# recorded append-only — the same reasoned-change shape `PSDeadlineChange`
+# established (ADR-BOS-012 §Decision), reused rather than invented. Unlike
+# entitlement management, there is no "idempotent no-op" concept here: a
+# transition is a real historical event, so `set_subscription_state` never
+# checks whether `new_state` equals the current one — it just records what
+# the vendor asserted, exactly as `change_deadline` never checks whether a
+# new deadline equals the old one.
+#
+# Independent of entitlement (ADR-BOS-010 §Decision 3, restated from the
+# other side): this never reads or writes `active_modules`. The actual
+# mutation gate this feeds is `identity.deps.require_subscription_ok` —
+# wired onto professional_services' own mutating routes in this slice
+# (§12.4), not the whole application yet.
+
+
+class SubscriptionError(Exception):
+    def __init__(self, message_key: str, status: int = 409) -> None:
+        self.message_key = message_key
+        self.status = status
+
+
+@dataclass(frozen=True)
+class SubscriptionTransitionResult:
+    company_id: uuid.UUID
+    old_state: str
+    new_state: str
+    reason: str
+    audit_id: uuid.UUID
+
+
+def transition_subscription(
+    db: Session, platform_admin_id: uuid.UUID, company_id: uuid.UUID,
+    new_state: str, reason: str,
+) -> SubscriptionTransitionResult:
+    """Transition a company's subscription lifecycle state — its own atomic
+    operation (validation, existence check, mutation, one audit row, one
+    commit). `reason` is mandatory and free text (ADR-BOS-012 §Decision) —
+    the first real use of `platform_audit_log.reason`, unused since it was
+    added in migration 0012.
+    """
+    if new_state not in identity_contracts.SUBSCRIPTION_STATES:
+        raise SubscriptionError("errors.subscription.invalid_state", status=400)
+    stripped_reason = reason.strip()
+    if not stripped_reason:
+        raise SubscriptionError("errors.subscription.reason_required", status=400)
+
+    metadata = identity_contracts.get_company_admin_metadata(db, company_id)
+    if metadata is None:
+        raise SubscriptionError("errors.provisioning.company_not_found", status=404)
+
+    old_state = identity_contracts.set_subscription_state(db, company_id, new_state)
+    audit_id = audit.record(
+        db, audit.SUBSCRIPTION_TRANSITIONED, correlation.ensure_bound(),
+        platform_admin_id=platform_admin_id, company_id=company_id,
+        detail={"from": old_state, "to": new_state}, reason=stripped_reason,
+    )
+    db.commit()
+
+    return SubscriptionTransitionResult(
+        company_id=company_id, old_state=old_state, new_state=new_state,
+        reason=stripped_reason, audit_id=audit_id,
+    )

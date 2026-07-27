@@ -3,7 +3,12 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from business_os.identity.deps import TenantDbDep, TenantDep, require_csrf
+from business_os.identity.deps import (
+    TenantDbDep,
+    TenantDep,
+    require_csrf,
+    require_subscription_ok,
+)
 from professional_services.deps import require_ps_active
 
 from . import service
@@ -29,14 +34,16 @@ def list_actions(
     return [_out(a) for a in service.list_actions(db, tenant, assignment_id)]
 
 
-@router.post("/next-actions", dependencies=[Depends(require_csrf)])
+@router.post("/next-actions",
+            dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
 def create_action(body: NextActionCreate, db: TenantDbDep, tenant: TenantDep) -> NextActionOut:
     return _out(service.create_action(
         db, tenant, body.assignment_id, body.title, body.owner_user_id, body.due_on,
     ))
 
 
-@router.post("/next-actions/{action_id}/complete", dependencies=[Depends(require_csrf)])
+@router.post("/next-actions/{action_id}/complete",
+            dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
 def complete_action(action_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep) -> NextActionOut:
     action = service.get_action(db, tenant, action_id)
     if action is None:

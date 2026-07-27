@@ -20,6 +20,12 @@ external call sites at Phase 3, not just documented — docs/business-os/16
   6 of 8 external routers.
 - `require_owner` — request guard for owner-only endpoints. Used by
   `customers/router.py` today; narrower but real.
+- `require_subscription_ok` — Core-owned mutation gate (ADR-BOS-012), sibling
+  to each module's own `require_<module>_active` (ADR-BOS-010). Apply
+  per-route, next to `require_csrf`, on mutating endpoints only — never at
+  router level like `require_ps_active`, which also gates reads; a suspended
+  company's data must stay fully readable (ADR-009's degradation philosophy).
+  First consumer: `professional_services`'s own mutating routes.
 - `AuthDep` / `get_auth` — the resolved (session, user) pair. **No external
   consumer exists today** (verified by Phase 3 discovery) — used only by
   `identity.router` itself. Kept available (a handler needing session/user
@@ -115,3 +121,21 @@ def require_owner(auth: AuthDep) -> None:
     _, user = auth
     if not user.is_owner:
         raise _error(403, "owner_required", "errors.auth.owner_required")
+
+
+def require_subscription_ok(tenant: TenantDep, db: DbDep) -> None:
+    """Core-owned mutation gate (ADR-BOS-012): 402s a mutating request when
+    the company's subscription is `grace_period`/`suspended`/`cancelled`.
+    Never applied to reads or export/backup endpoints — those must keep
+    working regardless of subscription standing (ADR-009's degradation
+    philosophy, carried into ADR-018: "your data is always yours").
+
+    Independent of module entitlement (`require_<module>_active`,
+    ADR-BOS-010 §Decision 3): this checks subscription standing only, never
+    `active_modules` — a suspended company keeps every entitlement it had,
+    it just can't write anything until its standing improves.
+    """
+    company = _service.get_company(db, tenant.company_id)
+    assert company is not None
+    if company.subscription_state not in _service.MUTATION_ALLOWED_SUBSCRIPTION_STATES:
+        raise _error(402, "subscription_not_active", "errors.subscription.mutations_blocked")

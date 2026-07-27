@@ -11,7 +11,10 @@ Provisioning), §11 added 27.07.2026 (Company Provisioning Foundation — phase
 2 done: atomic `ProvisionCompany`, migration 0014, identity's first write
 contract), §12 added 27.07.2026 (Entitlement Management — phase 3 done:
 grant/revoke module entitlement routes, no migration, no new import-linter
-contract) · Source: PO directive accepting the frozen product model
+contract), §13 added 27.07.2026 (Subscription Lifecycle Transitions — phase
+4 done: reasoned state transitions, `require_subscription_ok` wired onto
+professional_services only by explicit scope decision, platform-wide
+retrofit deferred) · Source: PO directive accepting the frozen product model
 (Business OS + sibling apps + RepairFlow business profiles); read-only audit
 of the repository as it stands after the PropertyFlow dashboard slice
 (`frontend/src/ps/`, uncommitted at audit time — see §8).
@@ -492,10 +495,13 @@ precedent):
    covers. `require_ps_active` (ADR-BOS-010 §Decision 2) is unchanged;
    proven end-to-end that the new audited path actually flips what it reads.
    *Commit:* `feat(business-os): vendor-managed module entitlements`.
-4. **Manually managed V1 subscriptions — schema done early (§2 above);
-   remaining scope narrowed to `require_subscription_ok` and the
-   suspend/reactivate/grace-period transition screens** (console #7/#9).
-   *Commit:* `feat(business-os): manual subscription lifecycle (ADR-BOS-012)`.
+4. **Manually managed V1 subscriptions — Done (27.07.2026), see §13.**
+   `POST /companies/{id}/subscription/transitions` (one endpoint, any state,
+   mandatory reason — console #7/#9's suspend/reactivate buttons are just
+   this call with a different `new_state`) plus `require_subscription_ok`,
+   wired onto `professional_services`' own mutating routes only (explicit
+   scope decision — not a platform-wide retrofit in this slice; see §13.3).
+   *Commit:* `feat(business-os): add subscription lifecycle transitions`.
 5. **Seat limits** — column + enforcement on the (still-unbuilt) employee
    creation endpoint; console screen #8.
    *Commit:* `feat(business-os): seat limit enforcement`.
@@ -794,4 +800,75 @@ reads live state), and 404s again the moment the vendor revokes it
 (the exact same fact — no such company — as the company-detail route
 already established in phase 2) rather than a differently-named entitlement
 key for what is semantically identical.
+
+## 13. Subscription Lifecycle Transitions (phase 4, 27.07.2026, ADR-BOS-012)
+
+### 13.1 One reasoned-change endpoint, not one per state
+
+`POST /companies/{company_id}/subscription/transitions` moves a company
+between `trial | active | grace_period | suspended | cancelled`, always with
+a mandatory `reason`. One endpoint handles every direction — the console's
+"suspend" and "reactivate" buttons are the same call with a different
+`new_state`, not two backend paths. This is the same reasoned-change shape
+`PSDeadlineChange` established (ADR-BOS-012 §Decision: "reused rather than
+invented") — including its one real difference from entitlement management:
+**there is no idempotent no-op here.** `identity.service.
+set_subscription_state` never checks whether `new_state` equals the current
+value; re-asserting the same state (e.g. confirming payment again) still
+writes its own audit row, exactly as `change_deadline` never suppresses a
+deadline "change" to the same date. A transition is a historical event, not
+a boolean flag flip.
+
+`platform_audit_log.reason` — a column that has existed, unused, since
+migration 0012 first defined the table — gets its first real writer here.
+
+### 13.2 `SUBSCRIPTION_STATES` is Core-owned, unlike profile/module vocabulary
+
+Unlike RepairFlow's business-profile slugs or module keys (both explicitly
+*not* identity's vocabulary to validate — §11.3, §12), the five subscription
+states live in `identity.service`/`identity.contracts` as real constants
+(`SUBSCRIPTION_STATES`, `MUTATION_ALLOWED_SUBSCRIPTION_STATES`), because
+ADR-BOS-012 itself calls the enforcement point "Core-owned" and that
+enforcement point (`require_subscription_ok`) has to live in the same
+module that already owns `Company`. `platform_admin.service.
+transition_subscription` validates a requested `new_state` against
+`identity_contracts.SUBSCRIPTION_STATES` before ever touching the row.
+
+### 13.3 `require_subscription_ok` — wired narrowly, on purpose
+
+Built as a Core dependency (`identity.deps.require_subscription_ok`,
+sibling to each module's own `require_<module>_active`, ADR-BOS-010), but —
+an explicit scope decision made with the PO before implementation — wired
+onto **`professional_services`'s own mutating routes only** in this slice,
+not retrofitted across `serviceflow.customers`/`.assets`/`.service_orders`/
+`.commercial`/`.tasks`/`.attachments`/`.contacts`. That retrofit is real,
+mechanical, and larger than anything else in this document's phase list (8+
+router files outside Business OS's own module boundaries) — a deliberate
+follow-up, not an oversight. Until it lands, subscription suspension is
+enforced for Professional Services only; RepairFlow's own mutations are
+unaffected by a company's subscription state.
+
+**Applied per-route, never at router level.** `require_ps_active` gates its
+whole router — reads included — because an inactive *module* really does
+mean "hide everything." `require_subscription_ok` must never do that:
+ADR-009's degradation promise ("all data visible, export/backup always
+available") means reads stay open in every subscription state, including
+`cancelled`. It sits next to `require_csrf` on each of the 8 routes that
+already required it — the existing CSRF-required set turned out to be
+exactly the mutation set ADR-BOS-012 means, so no separate classification
+was needed.
+
+**402 Payment Required**, `errors.subscription.mutations_blocked` — the one
+new HTTP status this document introduces; no other endpoint in the
+codebase needed it before this exact scenario existed.
+
+### 13.4 Verified independent of entitlement, not just declared so
+
+ADR-BOS-010 §Decision 3 ("entitlement and subscription standing are
+independent checks") is proven in tests, not only asserted in this
+document: a company with `professional-services` entitled but subscription
+`suspended` reads successfully (both guards are read-transparent) and gets
+blocked on write with `errors.subscription.mutations_blocked` — never an
+entitlement-shaped error, and `transition_subscription` never reads or
+writes `active_modules` at all.
 

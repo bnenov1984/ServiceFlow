@@ -51,7 +51,9 @@ __all__ = [
     "provision_company",
     "revoke_module",
     "set_business_profile",
+    "set_subscription_state",
     "set_subscription_trial",
+    "SUBSCRIPTION_STATES",
 ]
 
 
@@ -141,6 +143,21 @@ def set_subscription_trial(db: Session, company_id: uuid.UUID, trial_days: int) 
     (ADR-BOS-012). Non-committing — composed inside `ProvisionCompany`.
     Returns the computed `trial_ends_at`."""
     return _service.set_subscription_trial(db, company_id, trial_days)
+
+
+# The lifecycle vocabulary itself — re-exported as data, not a mechanism,
+# since it's Core-owned (ADR-BOS-012), unlike the RepairFlow profile/module
+# vocabularies. `platform_admin.service.transition_subscription` validates
+# a requested `new_state` against this before calling `set_subscription_state`.
+SUBSCRIPTION_STATES = _service.SUBSCRIPTION_STATES
+
+
+def set_subscription_state(db: Session, company_id: uuid.UUID, new_state: str) -> str:
+    """A vendor-initiated subscription lifecycle transition (ADR-BOS-012).
+    Non-committing — composed inside `platform_admin.service.
+    transition_subscription`'s single transaction. Returns the *old* state,
+    needed for the audit record."""
+    return _service.set_subscription_state(db, company_id, new_state)
 
 
 @dataclass(frozen=True)

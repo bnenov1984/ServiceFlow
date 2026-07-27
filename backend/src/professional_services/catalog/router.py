@@ -2,7 +2,12 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from business_os.identity.deps import TenantDbDep, TenantDep, require_csrf
+from business_os.identity.deps import (
+    TenantDbDep,
+    TenantDep,
+    require_csrf,
+    require_subscription_ok,
+)
 from professional_services.deps import require_ps_active
 
 from . import service
@@ -28,7 +33,8 @@ def list_templates(db: TenantDbDep, tenant: TenantDep) -> list[WorkflowTemplateO
     return [_out(db, tenant, t) for t in service.list_templates(db, tenant)]
 
 
-@router.post("/workflow-templates", dependencies=[Depends(require_csrf)])
+@router.post("/workflow-templates",
+            dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
 def create_template(
     body: WorkflowTemplateCreate, db: TenantDbDep, tenant: TenantDep
 ) -> WorkflowTemplateOut:

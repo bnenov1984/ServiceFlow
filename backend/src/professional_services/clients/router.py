@@ -2,7 +2,12 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from business_os.identity.deps import TenantDbDep, TenantDep, require_csrf
+from business_os.identity.deps import (
+    TenantDbDep,
+    TenantDep,
+    require_csrf,
+    require_subscription_ok,
+)
 from professional_services.deps import require_ps_active
 
 from . import service
@@ -21,7 +26,8 @@ def list_clients(db: TenantDbDep, tenant: TenantDep) -> list[ClientOut]:
     return [_out(c) for c in service.list_clients(db, tenant)]
 
 
-@router.post("/clients", dependencies=[Depends(require_csrf)])
+@router.post("/clients",
+            dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
 def create_client(body: ClientCreate, db: TenantDbDep, tenant: TenantDep) -> ClientOut:
     return _out(service.create_client(db, tenant, body.name, body.kind))
 

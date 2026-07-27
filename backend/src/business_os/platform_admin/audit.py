@@ -46,9 +46,12 @@ COMPANY_PROVISIONED = "company.provisioned"
 MODULE_GRANTED = "company.module_granted"
 MODULE_REVOKED = "company.module_revoked"
 
+# Subscription lifecycle (docs/business-os/18 §9 phase 4, ADR-BOS-012).
+SUBSCRIPTION_TRANSITIONED = "company.subscription_transitioned"
+
 # Every action this slice knows about. Kept as a frozenset so `record()` can
 # reject a typo'd or ad-hoc action string at the call site rather than silently
-# writing an unreviewable row (BOS-18 §9 phase 4 extends this list further).
+# writing an unreviewable row (BOS-18 §9 phase 5+ extends this list further).
 KNOWN_ACTIONS = frozenset({
     ADMIN_BOOTSTRAPPED,
     ADMIN_LOGIN,
@@ -57,6 +60,7 @@ KNOWN_ACTIONS = frozenset({
     COMPANY_PROVISIONED,
     MODULE_GRANTED,
     MODULE_REVOKED,
+    SUBSCRIPTION_TRANSITIONED,
 })
 
 

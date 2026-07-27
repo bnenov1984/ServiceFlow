@@ -34,6 +34,20 @@ DEFAULT_BUSINESS_PROFILE = "generic_repair"
 # ADR-BOS-012: baseline for every vendor-provisioned company.
 DEFAULT_SUBSCRIPTION_STATE = "trial"
 
+# ADR-BOS-012 §Decision: the whole lifecycle. Unlike business_profile/
+# module_key, identity DOES own this vocabulary — the enforcement point
+# (require_subscription_ok, below) lives in this same module, and the ADR
+# itself calls the state machine "Core-owned," not a vertical's concern.
+SUBSCRIPTION_STATES = frozenset({"trial", "active", "grace_period", "suspended", "cancelled"})
+
+# ADR-BOS-012 + ADR-009's degradation philosophy, carried into ADR-018 and
+# restated here: only these two states permit tenant mutations. The other
+# three (grace_period, suspended, cancelled) are read-only — all data
+# visible, export/backup always available, mutations blocked with an
+# explanation — never a full lockout. `require_subscription_ok` is the one
+# enforcement point; nothing else in the codebase should re-derive this set.
+MUTATION_ALLOWED_SUBSCRIPTION_STATES = frozenset({"trial", "active"})
+
 
 class ProvisioningError(Exception):
     """Raised by `create_company_with_owner` on a state that must abort the
@@ -276,6 +290,30 @@ def set_subscription_trial(db: Session, company_id: uuid.UUID, trial_days: int) 
     trial_ends_at = _now() + timedelta(days=trial_days)
     company.trial_ends_at = trial_ends_at
     return trial_ends_at
+
+
+def set_subscription_state(db: Session, company_id: uuid.UUID, new_state: str) -> str:
+    """A vendor-initiated subscription lifecycle transition (ADR-BOS-012) —
+    non-committing, composed inside
+    `platform_admin.service.transition_subscription`'s single transaction,
+    the same reasoned-change discipline `PSDeadlineChange` established
+    (mandatory reason, always recorded — validated by the caller, not here).
+
+    Does not validate `new_state` against `SUBSCRIPTION_STATES` — that is
+    the caller's job, mirroring `_activate_module` never validating
+    `module_key` and `set_business_profile` never validating the RepairFlow
+    vocabulary.
+
+    Returns the *old* state, since the caller needs it for the audit
+    record's `detail.from` — re-reading it after the assignment below would
+    just return the new value.
+    """
+    company = get_company(db, company_id)
+    assert company is not None
+    old_state = company.subscription_state
+    company.subscription_state = new_state
+    company.subscription_state_changed_at = _now()
+    return old_state
 
 
 def create_company_with_owner(
