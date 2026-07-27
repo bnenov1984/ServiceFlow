@@ -328,3 +328,98 @@ def get_company(
     inferred from anything client-supplied (ADR-BOS-009 §Tenant isolation
     requirement, restated for the Control Plane)."""
     return identity_contracts.get_company_admin_metadata(db, company_id)
+
+
+# --- Entitlement management (docs/business-os/18 §9 phase 3, ADR-BOS-010) --
+#
+# Entitlement mutation is exclusively a Vendor Control Plane action
+# (ADR-BOS-010 §Decision 1) — never tenant-triggered, never a general
+# company-settings PATCH (§Decision 5). Independent of subscription state
+# (§Decision 3): neither function here reads or writes
+# subscription_state/trial_ends_at/seat_limit — a suspended company's
+# entitlements can still be changed, and changing an entitlement never
+# touches subscription standing. The actual enforcement point remains
+# `require_<module>_active` on each module's own router (e.g.
+# professional_services.deps.require_ps_active), unchanged by this slice —
+# granting/revoking here only flips the same `active_modules` flag that
+# guard already reads.
+
+
+class EntitlementError(Exception):
+    def __init__(self, message_key: str, status: int = 409) -> None:
+        self.message_key = message_key
+        self.status = status
+
+
+@dataclass(frozen=True)
+class EntitlementResult:
+    company_id: uuid.UUID
+    module_key: str
+    active_modules: list[str]
+    changed: bool
+    audit_id: uuid.UUID
+
+
+def grant_entitlement(
+    db: Session, platform_admin_id: uuid.UUID, company_id: uuid.UUID, module_key: str,
+) -> EntitlementResult:
+    """Grant one module entitlement to an existing company — its own atomic
+    operation (existence check, mutation, one audit row, one commit): the
+    audited-endpoint path ADR-BOS-010 §Decision 5 requires ("never a general
+    company-settings PATCH"). Idempotent — granting an already-active module
+    changes nothing (`changed=False`) but is still audited, since a vendor
+    action attempted is itself worth a record even when it was a no-op.
+
+    Validates nothing about `module_key` beyond non-emptiness (enforced by
+    the router's `Path` constraint) — there is no module-key registry yet
+    (ADR-BOS-010 §Alternatives: deferred until per-module trial/expiry is a
+    real requirement), the same as `identity.service._activate_module`.
+    """
+    metadata = identity_contracts.get_company_admin_metadata(db, company_id)
+    if metadata is None:
+        raise EntitlementError("errors.provisioning.company_not_found", status=404)
+
+    changed = module_key not in metadata.active_modules
+    identity_contracts.grant_module(db, company_id, module_key)
+    audit_id = audit.record(
+        db, audit.MODULE_GRANTED, correlation.ensure_bound(),
+        platform_admin_id=platform_admin_id, company_id=company_id,
+        detail={"module_key": module_key, "changed": changed},
+    )
+    db.commit()
+
+    updated = identity_contracts.get_company_admin_metadata(db, company_id)
+    assert updated is not None
+    return EntitlementResult(
+        company_id=company_id, module_key=module_key,
+        active_modules=updated.active_modules, changed=changed, audit_id=audit_id,
+    )
+
+
+def revoke_entitlement(
+    db: Session, platform_admin_id: uuid.UUID, company_id: uuid.UUID, module_key: str,
+) -> EntitlementResult:
+    """Revoke one module entitlement — symmetric to `grant_entitlement` in
+    every respect (existence check, one audit row, one commit, idempotent).
+    Does not touch subscription state: a company can lose one module's
+    entitlement while remaining fully paid up on everything else
+    (ADR-BOS-010 §Decision 3)."""
+    metadata = identity_contracts.get_company_admin_metadata(db, company_id)
+    if metadata is None:
+        raise EntitlementError("errors.provisioning.company_not_found", status=404)
+
+    changed = module_key in metadata.active_modules
+    identity_contracts.revoke_module(db, company_id, module_key)
+    audit_id = audit.record(
+        db, audit.MODULE_REVOKED, correlation.ensure_bound(),
+        platform_admin_id=platform_admin_id, company_id=company_id,
+        detail={"module_key": module_key, "changed": changed},
+    )
+    db.commit()
+
+    updated = identity_contracts.get_company_admin_metadata(db, company_id)
+    assert updated is not None
+    return EntitlementResult(
+        company_id=company_id, module_key=module_key,
+        active_modules=updated.active_modules, changed=changed, audit_id=audit_id,
+    )

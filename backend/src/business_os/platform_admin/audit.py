@@ -42,15 +42,21 @@ ADMIN_LOGOUT = "platform_admin.logout"
 # Company provisioning (docs/business-os/18 §9 phase 2).
 COMPANY_PROVISIONED = "company.provisioned"
 
+# Entitlement management (docs/business-os/18 §9 phase 3, ADR-BOS-010).
+MODULE_GRANTED = "company.module_granted"
+MODULE_REVOKED = "company.module_revoked"
+
 # Every action this slice knows about. Kept as a frozenset so `record()` can
 # reject a typo'd or ad-hoc action string at the call site rather than silently
-# writing an unreviewable row (BOS-18 §9 phases 3-4 extend this list further).
+# writing an unreviewable row (BOS-18 §9 phase 4 extends this list further).
 KNOWN_ACTIONS = frozenset({
     ADMIN_BOOTSTRAPPED,
     ADMIN_LOGIN,
     ADMIN_LOGIN_FAILED,
     ADMIN_LOGOUT,
     COMPANY_PROVISIONED,
+    MODULE_GRANTED,
+    MODULE_REVOKED,
 })
 
 

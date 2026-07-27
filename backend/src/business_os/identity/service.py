@@ -218,6 +218,23 @@ def activate_module(db: Session, company_id: uuid.UUID, module_key: str) -> None
     db.commit()
 
 
+def _deactivate_module(db: Session, company_id: uuid.UUID, module_key: str) -> None:
+    """Idempotent, non-committing — symmetric to `_activate_module`. Revoking
+    an entitlement is exclusively a Vendor Control Plane action
+    (ADR-BOS-010 §Decision 1); the only caller today is
+    `identity.contracts.revoke_module`, composed inside
+    `platform_admin.service.revoke_entitlement`'s single-commit operation
+    (docs/business-os/18 §9 phase 3). No standalone `deactivate_module`
+    exists — nothing outside the Vendor Control Plane needs to revoke a
+    module today, unlike `activate_module`'s CLI/dev seed use."""
+    company = get_company(db, company_id)
+    assert company is not None
+    current: list[str] = list(company.settings.get("active_modules", []))
+    if module_key in current:
+        current.remove(module_key)
+        company.settings = {**company.settings, "active_modules": current}
+
+
 def set_business_profile(db: Session, company_id: uuid.UUID, profile: str) -> None:
     """Writes the RepairFlow business profile slug into
     `companies.settings.repairflow.business_profile` (ADR-BOS-011 §Decision 2)

@@ -9,6 +9,8 @@ Q9, ADR-BOS-009). Not part of the frozen ADR set. · Date: 26.07.2026, §10 adde
 migration 0013 — a hardening follow-up to phase 1, §9, ahead of Company
 Provisioning), §11 added 27.07.2026 (Company Provisioning Foundation — phase
 2 done: atomic `ProvisionCompany`, migration 0014, identity's first write
+contract), §12 added 27.07.2026 (Entitlement Management — phase 3 done:
+grant/revoke module entitlement routes, no migration, no new import-linter
 contract) · Source: PO directive accepting the frozen product model
 (Business OS + sibling apps + RepairFlow business profiles); read-only audit
 of the repository as it stands after the PropertyFlow dashboard slice
@@ -482,11 +484,13 @@ precedent):
    *transition* screens (suspend/reactivate/grace period) — this phase only
    ever writes `'trial'`, once, at creation.
    *Commit:* `feat(business-os): add company provisioning foundation`.
-3. **Entitlement management** — wire ADR-BOS-010's grant/revoke UI to the
-   existing `activate_module`/`is_module_active` machinery, now that it has
-   a real caller beyond seed.py (`identity.contracts.grant_module`,
-   §11) — this phase adds *editing* entitlements after provisioning, not the
-   initial grant, which phase 2 already covers.
+3. **Entitlement management — Done (27.07.2026), see §12.** `PUT`/`DELETE
+   /companies/{id}/modules/{module_key}`, wired to the existing
+   `activate_module`/`is_module_active` machinery via new symmetric
+   `identity.contracts.grant_module`/`revoke_module` — *editing* entitlements
+   after provisioning, distinct from the initial grant phase 2 (§11) already
+   covers. `require_ps_active` (ADR-BOS-010 §Decision 2) is unchanged;
+   proven end-to-end that the new audited path actually flips what it reads.
    *Commit:* `feat(business-os): vendor-managed module entitlements`.
 4. **Manually managed V1 subscriptions — schema done early (§2 above);
    remaining scope narrowed to `require_subscription_ok` and the
@@ -514,6 +518,86 @@ Each phase is independently shippable and none blocks ServiceFlow/PropertyFlow
 product work, matching the standing governing constraint (docs/business-os/08
 §Governing constraints: "Business OS phases interleave with Étап 2–5; none of
 them may delay or destabilize a stage").
+
+## 10. Vendor session observability & audit correlation (hardening, 27.07.2026)
+
+A narrow follow-up to phase 1 (§9), landed before Company Provisioning
+(migration 0013). Two independent additions, both to the tables phase 1
+already introduced — no new tables, no schema change to anything tenant-owned.
+
+### 10.1 Session metadata — what is stored, what deliberately is not
+
+`platform_admin_sessions` gained two nullable columns, in preparation for a
+future "active sessions" / "revoke another session" screen (not built by this
+hardening pass):
+
+- **`user_agent`** — captured verbatim from the HTTP `User-Agent` header at
+  login, bounded to 300 characters
+  (`platform_admin.service.MAX_USER_AGENT_LENGTH`). Diagnostic only: never
+  read for authentication or authorization, never updated after login (a
+  session doesn't change browsers mid-life).
+- **`client_label`** — reserved for a future user-assigned name ("Office
+  PC", "Laptop"). Nullable, unused by any code path in this slice, and
+  **never auto-populated from `user_agent`** — inventing a device identity
+  from a header string would misrepresent something nobody confirmed.
+
+**Deliberately not stored**: IP address, precise geolocation, browser
+fingerprinting beyond the raw `User-Agent` string, or the raw session token
+itself. IP address in particular was considered and rejected for this slice —
+there is no concrete support/security workflow that needs it yet, and adding
+it later requires its own documented retention policy (how long kept, who may
+read it, GDPR posture per docs/11 §6) rather than being smuggled in as a side
+effect of a session-metadata column.
+
+**`last_seen_at`** (added by phase 1, migration 0012) already existed and was
+already written unconditionally on every authenticated request — found during
+this hardening pass's audit as exactly the write-amplification pattern this
+document warns against for new fields. Fixed in the same slice: it now updates
+only when more than `LAST_SEEN_UPDATE_INTERVAL` (1 minute) has elapsed since
+the last write, cutting the per-request DB round trip to roughly once per
+minute of activity instead of once per request.
+
+### 10.2 Request correlation — design and propagation
+
+`business_os.shared_kernel.correlation` (neutral, like `passwords.py` — used
+by both the tenant application and the vendor plane, so it cannot live in
+either):
+
+- every HTTP request (tenant and vendor alike — the middleware in
+  `serviceflow/main.py` is global) is bound to a freshly **server-generated**
+  UUID4 for its duration, via a `contextvars.ContextVar`;
+- returned in the `X-Request-ID` response header;
+- attached to every application log line through a `logging.Filter`
+  (`CorrelationLogFilter`), closing a pre-existing gap where the log
+  formatter already supported a `request_id` field but nothing ever
+  populated it;
+- persisted as `platform_audit_log.request_id` (migration 0013, `NOT NULL`)
+  for every vendor audit row, via `platform_admin.audit.record()`'s
+  mandatory `request_id` parameter — there is no code path that writes a
+  vendor audit row without one;
+- CLI/background operations are not HTTP requests, so they bind their own
+  id at their own entry point (`business_os.platform_admin.bootstrap.main()`
+  calls `correlation.bind()` before doing anything else) — the same
+  contextvar mechanism, a different boundary.
+
+**A previously-incoming `X-Request-ID` header is never adopted.** The
+pre-hardening middleware accepted any client-supplied value verbatim, with no
+length bound or format check — audited and found to be exactly the "already
+follows the convention AND validates it" condition failing, so the value is
+now always freshly generated server-side regardless of what a caller sends.
+This is a deliberate, documented policy choice, not an oversight: a client
+cannot inject an arbitrary string into application logs or the audit trail
+merely by setting a header, and no correlation id is ever treated as unique
+because a client supplied it. If a genuine need for validated cross-service
+trace propagation arises later, it should be added as its own reviewed
+decision (a strict allow-list pattern, a bound length), not by reverting to
+the old blind pass-through.
+
+**Correlation ids are observability data, not security credentials.** They
+are never checked for authorization, never used to resolve a session or a
+`TenantContext`, and their presence or value has no bearing on what a request
+is permitted to do — only on how it can be found in logs and the audit trail
+after the fact.
 
 ## 11. Company Provisioning Foundation (phase 2, 27.07.2026)
 
@@ -663,82 +747,51 @@ current set, read fresh from `companies.settings`) — same list in the
 common case of a first provisioning call, but a different question, so a
 different name.
 
-## 10. Vendor session observability & audit correlation (hardening, 27.07.2026)
+## 12. Entitlement Management (phase 3, 27.07.2026, ADR-BOS-010)
 
-A narrow follow-up to phase 1 (§9), landed before Company Provisioning
-(migration 0013). Two independent additions, both to the tables phase 1
-already introduced — no new tables, no schema change to anything tenant-owned.
+`PUT`/`DELETE /companies/{company_id}/modules/{module_key}` — grant/revoke
+one module entitlement for an already-provisioned company, each its own
+atomic vendor operation (existence check, one JSONB mutation, one audit row,
+one commit), symmetric to `ProvisionCompany`'s initial grant.
 
-### 10.1 Session metadata — what is stored, what deliberately is not
+**No new storage, no registry.** Still `companies.settings.active_modules`
+(ADR-BOS-010 §Decision 1: the boolean-set shape shipped correctly the first
+time); `identity.service._deactivate_module`/`identity.contracts.
+revoke_module` are new, symmetric to the existing `_activate_module`/
+`grant_module`, equally unvalidating of `module_key` — no registry exists
+yet (§Alternatives: deferred until per-module trial/expiry is a real
+requirement).
 
-`platform_admin_sessions` gained two nullable columns, in preparation for a
-future "active sessions" / "revoke another session" screen (not built by this
-hardening pass):
+**Idempotent, but never silently unaudited.** Granting an already-active
+module (or revoking an already-inactive one) changes nothing —
+`EntitlementResult.changed=False` — but still writes an audit row
+(`company.module_granted`/`company.module_revoked`, `detail.changed`
+records which it was). A vendor action attempted is worth a record even as
+a no-op; the alternative (skip the audit write when nothing changed) would
+make "did the vendor try this and it was already so" indistinguishable from
+"the vendor never tried."
 
-- **`user_agent`** — captured verbatim from the HTTP `User-Agent` header at
-  login, bounded to 300 characters
-  (`platform_admin.service.MAX_USER_AGENT_LENGTH`). Diagnostic only: never
-  read for authentication or authorization, never updated after login (a
-  session doesn't change browsers mid-life).
-- **`client_label`** — reserved for a future user-assigned name ("Office
-  PC", "Laptop"). Nullable, unused by any code path in this slice, and
-  **never auto-populated from `user_agent`** — inventing a device identity
-  from a header string would misrepresent something nobody confirmed.
+**Independent of subscription state, mechanically, not just by policy**
+(ADR-BOS-010 §Decision 3): `grant_entitlement`/`revoke_entitlement` never
+read or write `subscription_state`/`subscription_state_changed_at`/
+`trial_ends_at`/`seat_limit` — a suspended company's entitlements remain
+fully editable, and granting/revoking a module never touches subscription
+standing. Verified in tests, not just asserted in prose
+(`test_entitlement_change_never_touches_subscription_state`).
 
-**Deliberately not stored**: IP address, precise geolocation, browser
-fingerprinting beyond the raw `User-Agent` string, or the raw session token
-itself. IP address in particular was considered and rejected for this slice —
-there is no concrete support/security workflow that needs it yet, and adding
-it later requires its own documented retention policy (how long kept, who may
-read it, GDPR posture per docs/11 §6) rather than being smuggled in as a side
-effect of a session-metadata column.
+**The actual enforcement point is unchanged and untouched**:
+`professional_services.deps.require_ps_active` (the ADR-BOS-010 §Decision 2
+template every future module's router copies) still reads
+`companies.settings.active_modules` the same way it always has — this slice
+only adds an audited path to flip that flag, never a second enforcement
+mechanism. Proven end-to-end in tests, not just at the storage layer: a
+tenant's own request against a professional-services route 404s before any
+grant, 200s the moment the vendor grants the module (no re-login — the guard
+reads live state), and 404s again the moment the vendor revokes it
+(`test_granting_and_revoking_actually_changes_what_the_tenant_can_reach`).
 
-**`last_seen_at`** (added by phase 1, migration 0012) already existed and was
-already written unconditionally on every authenticated request — found during
-this hardening pass's audit as exactly the write-amplification pattern this
-document warns against for new fields. Fixed in the same slice: it now updates
-only when more than `LAST_SEEN_UPDATE_INTERVAL` (1 minute) has elapsed since
-the last write, cutting the per-request DB round trip to roughly once per
-minute of activity instead of once per request.
+**`errors.provisioning.company_not_found`** is reused for the 404 here
+(the exact same fact — no such company — as the company-detail route
+already established in phase 2) rather than a differently-named entitlement
+key for what is semantically identical.
 
-### 10.2 Request correlation — design and propagation
-
-`business_os.shared_kernel.correlation` (neutral, like `passwords.py` — used
-by both the tenant application and the vendor plane, so it cannot live in
-either):
-
-- every HTTP request (tenant and vendor alike — the middleware in
-  `serviceflow/main.py` is global) is bound to a freshly **server-generated**
-  UUID4 for its duration, via a `contextvars.ContextVar`;
-- returned in the `X-Request-ID` response header;
-- attached to every application log line through a `logging.Filter`
-  (`CorrelationLogFilter`), closing a pre-existing gap where the log
-  formatter already supported a `request_id` field but nothing ever
-  populated it;
-- persisted as `platform_audit_log.request_id` (migration 0013, `NOT NULL`)
-  for every vendor audit row, via `platform_admin.audit.record()`'s
-  mandatory `request_id` parameter — there is no code path that writes a
-  vendor audit row without one;
-- CLI/background operations are not HTTP requests, so they bind their own
-  id at their own entry point (`business_os.platform_admin.bootstrap.main()`
-  calls `correlation.bind()` before doing anything else) — the same
-  contextvar mechanism, a different boundary.
-
-**A previously-incoming `X-Request-ID` header is never adopted.** The
-pre-hardening middleware accepted any client-supplied value verbatim, with no
-length bound or format check — audited and found to be exactly the "already
-follows the convention AND validates it" condition failing, so the value is
-now always freshly generated server-side regardless of what a caller sends.
-This is a deliberate, documented policy choice, not an oversight: a client
-cannot inject an arbitrary string into application logs or the audit trail
-merely by setting a header, and no correlation id is ever treated as unique
-because a client supplied it. If a genuine need for validated cross-service
-trace propagation arises later, it should be added as its own reviewed
-decision (a strict allow-list pattern, a bound length), not by reverting to
-the old blind pass-through.
-
-**Correlation ids are observability data, not security credentials.** They
-are never checked for authorization, never used to resolve a session or a
-`TenantContext`, and their presence or value has no bearing on what a request
-is permitted to do — only on how it can be found in logs and the audit trail
-after the fact.

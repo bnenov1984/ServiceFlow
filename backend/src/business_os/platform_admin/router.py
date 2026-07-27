@@ -2,15 +2,15 @@
 §Console deployment shape).
 
 Authenticate, identify yourself, log out; read-only company list/detail; the
-atomic company-provisioning command. No entitlement *editing* UI beyond the
-initial grant at provisioning, no subscription *transitions*, no seat-limit
+atomic company-provisioning command; grant/revoke module entitlements. No
+subscription *transitions* (suspend/reactivate/grace period), no seat-limit
 enforcement, no tenant employee management — those remain later slices
-(docs/business-os/18 §9 phases 3+) and must not be smuggled in here.
+(docs/business-os/18 §9 phase 4+) and must not be smuggled in here.
 
 Every route here is a thin wrapper around `platform_admin.service` — no
-provisioning logic lives in this file (docs/business-os/18 §9 phase 2,
-"Provisioning as a Domain Command": `service.provision_company` is the only
-supported orchestration entry point).
+provisioning or entitlement logic lives in this file (docs/business-os/18
+§9 phases 2-3: `service.provision_company`/`grant_entitlement`/
+`revoke_entitlement` are the only supported orchestration entry points).
 
 Error contract per docs/09 §1: message keys, never prose.
 """
@@ -18,7 +18,7 @@ Error contract per docs/09 §1: message keys, never prose.
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response
 from pydantic import BaseModel, EmailStr, Field
 
 from business_os.identity.contracts import CompanyAdminMetadata
@@ -202,3 +202,65 @@ def provision_company(
         business_profile=result.business_profile, activated_modules=result.activated_modules,
         audit_id=result.audit_id,
     )
+
+
+# --- Entitlement management (docs/business-os/18 §9 phase 3, ADR-BOS-010) --
+
+
+class EntitlementResponse(BaseModel):
+    """Mirrors `service.EntitlementResult` field-for-field. `active_modules`
+    is the company's full set *after* this call — a vendor UI can render it
+    directly without a second GET."""
+
+    company_id: uuid.UUID
+    module_key: str
+    active_modules: list[str]
+    changed: bool
+    audit_id: uuid.UUID
+
+
+def _to_entitlement_response(result: service.EntitlementResult) -> EntitlementResponse:
+    return EntitlementResponse(
+        company_id=result.company_id, module_key=result.module_key,
+        active_modules=result.active_modules, changed=result.changed,
+        audit_id=result.audit_id,
+    )
+
+
+@router.put("/companies/{company_id}/modules/{module_key}",
+           dependencies=[Depends(require_platform_csrf)])
+def grant_entitlement(
+    auth: PlatformAdminDep, db: VendorDbDep, company_id: uuid.UUID,
+    module_key: str = Path(min_length=1, max_length=50),
+) -> EntitlementResponse:
+    """Grant one module entitlement. Idempotent: calling this again on an
+    already-active module is a harmless no-op (`changed=False` in the
+    response), not an error."""
+    _, admin = auth
+    try:
+        result = service.grant_entitlement(db, admin.id, company_id, module_key)
+    except service.EntitlementError as e:
+        raise HTTPException(status_code=e.status, detail={
+            "code": "entitlement_failed", "message_key": e.message_key, "params": {},
+        }) from e
+    return _to_entitlement_response(result)
+
+
+@router.delete("/companies/{company_id}/modules/{module_key}",
+               dependencies=[Depends(require_platform_csrf)])
+def revoke_entitlement(
+    auth: PlatformAdminDep, db: VendorDbDep, company_id: uuid.UUID,
+    module_key: str = Path(min_length=1, max_length=50),
+) -> EntitlementResponse:
+    """Revoke one module entitlement. Idempotent, symmetric to
+    `grant_entitlement`. Never touches subscription state (ADR-BOS-010
+    §Decision 3) — a company can lose one module while remaining fully paid
+    up on everything else."""
+    _, admin = auth
+    try:
+        result = service.revoke_entitlement(db, admin.id, company_id, module_key)
+    except service.EntitlementError as e:
+        raise HTTPException(status_code=e.status, detail={
+            "code": "entitlement_failed", "message_key": e.message_key, "params": {},
+        }) from e
+    return _to_entitlement_response(result)

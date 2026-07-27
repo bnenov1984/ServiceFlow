@@ -49,6 +49,7 @@ __all__ = [
     "is_module_active",
     "list_companies_admin_metadata",
     "provision_company",
+    "revoke_module",
     "set_business_profile",
     "set_subscription_trial",
 ]
@@ -114,6 +115,14 @@ def grant_module(db: Session, company_id: uuid.UUID, module_key: str) -> None:
     composing inside `ProvisionCompany`'s single transaction. Idempotent, and
     validates nothing about `module_key` — same as the committing version."""
     _service._activate_module(db, company_id, module_key)
+
+
+def revoke_module(db: Session, company_id: uuid.UUID, module_key: str) -> None:
+    """Revokes one module entitlement (ADR-BOS-010 §Decision 1: entitlement
+    mutation is Vendor Control Plane's exclusively) — the sanctioned path
+    `platform_admin.service.revoke_entitlement` uses. Non-committing and
+    idempotent, symmetric to `grant_module`."""
+    _service._deactivate_module(db, company_id, module_key)
 
 
 def set_business_profile(db: Session, company_id: uuid.UUID, profile: str) -> None:
