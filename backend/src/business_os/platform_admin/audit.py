@@ -32,20 +32,24 @@ from sqlalchemy.orm import Session
 
 from business_os.platform_admin.models import PlatformAuditLog
 
-# Authentication (this slice).
+# Authentication.
 ADMIN_BOOTSTRAPPED = "platform_admin.bootstrapped"
 ADMIN_LOGIN = "platform_admin.login"
 ADMIN_LOGIN_FAILED = "platform_admin.login_failed"
 ADMIN_LOGOUT = "platform_admin.logout"
 
+# Company provisioning (docs/business-os/18 §9 phase 2).
+COMPANY_PROVISIONED = "company.provisioned"
+
 # Every action this slice knows about. Kept as a frozenset so `record()` can
 # reject a typo'd or ad-hoc action string at the call site rather than silently
-# writing an unreviewable row (BOS-18 §9 phases 2-4 extend this list).
+# writing an unreviewable row (BOS-18 §9 phases 3-4 extend this list further).
 KNOWN_ACTIONS = frozenset({
     ADMIN_BOOTSTRAPPED,
     ADMIN_LOGIN,
     ADMIN_LOGIN_FAILED,
     ADMIN_LOGOUT,
+    COMPANY_PROVISIONED,
 })
 
 

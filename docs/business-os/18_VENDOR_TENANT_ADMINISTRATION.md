@@ -7,7 +7,9 @@ C2: vendor visibility is metadata-first, not tenant-business-data-first — §5
 Q9, ADR-BOS-009). Not part of the frozen ADR set. · Date: 26.07.2026, §10 added
 27.07.2026 (vendor session observability + mandatory audit correlation,
 migration 0013 — a hardening follow-up to phase 1, §9, ahead of Company
-Provisioning) · Source: PO directive accepting the frozen product model
+Provisioning), §11 added 27.07.2026 (Company Provisioning Foundation — phase
+2 done: atomic `ProvisionCompany`, migration 0014, identity's first write
+contract) · Source: PO directive accepting the frozen product model
 (Business OS + sibling apps + RepairFlow business profiles); read-only audit
 of the repository as it stands after the PropertyFlow dashboard slice
 (`frontend/src/ps/`, uncommitted at audit time — see §8).
@@ -468,15 +470,27 @@ precedent):
    `require_platform_admin` dependency, empty console shell (companies list
    + details, read-only). No entitlement/subscription mutation yet.
    *Commit shape:* `feat(business-os): add vendor control plane foundation`.
-2. **Company provisioning** — Create company + first Owner from the
-   console, replacing the CLI/seed path for anything beyond local dev.
-   *Commit:* `feat(business-os): vendor console company provisioning`.
+2. **Company provisioning — Done (27.07.2026), see §11.** Atomic
+   `ProvisionCompany` command (company + first Owner + initial RepairFlow
+   profile + initial entitlements + subscription trial baseline + one audit
+   row, one transaction) plus read-only `GET /companies`/`GET
+   /companies/{id}`. Pulled forward from phase 4 below: the
+   `subscription_state`/`trial_ends_at`/`seat_limit`/
+   `subscription_state_changed_at` columns (§6.3) were needed for the
+   baseline this phase sets, so migration 0014 built them now rather than
+   waiting. What phase 4 still owes: `require_subscription_ok` and the
+   *transition* screens (suspend/reactivate/grace period) — this phase only
+   ever writes `'trial'`, once, at creation.
+   *Commit:* `feat(business-os): add company provisioning foundation`.
 3. **Entitlement management** — wire ADR-BOS-010's grant/revoke UI to the
-   existing `activate_module`/`is_module_active` machinery (finally giving
-   it a real caller beyond seed.py).
+   existing `activate_module`/`is_module_active` machinery, now that it has
+   a real caller beyond seed.py (`identity.contracts.grant_module`,
+   §11) — this phase adds *editing* entitlements after provisioning, not the
+   initial grant, which phase 2 already covers.
    *Commit:* `feat(business-os): vendor-managed module entitlements`.
-4. **Manually managed V1 subscriptions** — `companies` subscription-state
-   columns (§6.3), `require_subscription_ok`, console screen #7/#9.
+4. **Manually managed V1 subscriptions — schema done early (§2 above);
+   remaining scope narrowed to `require_subscription_ok` and the
+   suspend/reactivate/grace-period transition screens** (console #7/#9).
    *Commit:* `feat(business-os): manual subscription lifecycle (ADR-BOS-012)`.
 5. **Seat limits** — column + enforcement on the (still-unbuilt) employee
    creation endpoint; console screen #8.
@@ -500,6 +514,110 @@ Each phase is independently shippable and none blocks ServiceFlow/PropertyFlow
 product work, matching the standing governing constraint (docs/business-os/08
 §Governing constraints: "Business OS phases interleave with Étап 2–5; none of
 them may delay or destabilize a stage").
+
+## 11. Company Provisioning Foundation (phase 2, 27.07.2026)
+
+### 11.1 Provisioning as a domain command
+
+`business_os.platform_admin.service.provision_company()` is the **only**
+supported orchestration entry point for creating a company. Future vendor
+features — wizard UI, CLI, import tools, reseller APIs, marketplace
+onboarding, automated signup — must all call it; none may assemble their own
+create-company/create-owner/assign-modules sequence. This is enforced by a
+naming-convention test
+(`tests/test_company_provisioning.py::test_provision_company_is_the_only_public_write_entry_point_in_its_module`),
+not by an import-linter contract — there is exactly one module
+(`platform_admin.service`) where a second orchestrator could plausibly
+appear, so a grep-shaped test is proportionate; a second package attempting
+its own orchestration would already be caught by `vendor-plane-private`
+(only `platform_admin` and the composition root may import its internals).
+
+### 11.2 Atomicity
+
+The whole operation — company, first Tenant Owner, RepairFlow profile,
+initial entitlements, subscription trial baseline, and exactly one
+`platform_audit_log` row — commits **once**, at the end of
+`provision_company()`. Every step it composes is deliberately
+non-committing:
+
+- `identity.contracts.provision_company` (company + Owner, via
+  `identity.service.create_company_with_owner`);
+- `identity.contracts.set_business_profile`;
+- `identity.contracts.grant_module` (one call per requested module);
+- `identity.contracts.set_subscription_trial`.
+
+This was a real risk, not a hypothetical one: `identity.service.seed_company`
+and `.activate_module` — the two existing building blocks a naive
+implementation would have reached for — each call `db.commit()` internally.
+Composing them as-is would not have been atomic: a failure after
+`seed_company`'s own commit would have left a company with an Owner but no
+profile, entitlements, subscription state, or audit trail. The fix was new
+non-committing variants (`create_company_with_owner`,
+`_activate_module`/`grant_module`, `set_business_profile`,
+`set_subscription_trial`), not a nested transaction/SAVEPOINT — simpler, and
+`activate_module` itself was refactored to call the same non-committing
+`_activate_module` plus its own commit, so its existing caller
+(`serviceflow/seed.py`) is unaffected.
+
+Provisioning is considered successful only if the business data **and** the
+audit record commit together — the audit row is part of the operation, not
+appended after it. A failure writing the audit row itself (proven in tests
+with a foreign-key violation on `platform_admin_id`) rolls back the company
+and Owner right along with it.
+
+### 11.3 The new identity write surface
+
+`identity.contracts` — previously read-only (`get_company_profile`,
+`is_module_active`) — gained its first write functions:
+`provision_company`, `grant_module`, `set_business_profile`,
+`set_subscription_trial`, plus two new read functions
+(`list_companies_admin_metadata`, `get_company_admin_metadata`) backing the
+company list/detail routes. No import-linter contract needed to change:
+`identity.contracts` was never in `identity-public-boundary`'s protected list
+(only `.models`/`.service`/`.security`/`.router` are), and
+`vendor-plane-not-tenant-code` only ever forbade `identity.deps` — this
+extension was anticipated when that contract was written (see its comment
+in `backend/.importlinter`).
+
+Neither `identity.contracts` nor `identity.service` validates RepairFlow's
+profile vocabulary or the module-key registry — that validation
+(`platform_admin.service.VALID_BUSINESS_PROFILES`) belongs to the caller
+doing the vendor-side assignment (ADR-BOS-011 §Decision 3), the same way
+`_activate_module` never validated `module_key` even before provisioning
+existed.
+
+### 11.4 Business profile and subscription baseline, scoped precisely
+
+**Business profile** (ADR-BOS-011 §Decision 2): the five-slug identifier is
+written to `companies.settings.repairflow.business_profile` — the existing
+JSONB-settings mechanism, no new column, no new table. **This is the
+identifier only.** The real schema change ADR-BOS-011 §Decision 5 describes
+— `asset_types` becoming company-scoped, seeded at profile assignment — is
+explicitly **not** part of this slice; it is BOS-18 §6.4's own, separate,
+larger migration. A newly provisioned company's asset types remain the
+current global set regardless of the profile slug recorded for it, until
+§6.4 ships.
+
+**Subscription baseline** (ADR-BOS-012): every company created by
+`ProvisionCompany` starts in `trial` with `trial_ends_at` 14 days out
+(ADR-018's number, inherited unchanged). Companies created by
+`identity.service.seed_company` (the unrelated dev/CLI path) keep defaulting
+to `'active'` via the column's `server_default` — that default is
+permanent, not a migration-day-only backfill (contrast migration 0013's
+`request_id`, whose default was dropped once every writer went through
+`audit.record()`), because `seed_company` is a legitimate, continuing
+creation path that has no reason to know about subscription states at all.
+
+### 11.5 Vendor-visible metadata (company list/detail)
+
+`GET /companies` and `GET /companies/{id}` return exactly:
+id, name, business profile, active modules, subscription state and its
+dates, seat limit, created-at. No seat *usage* count (needs a tenant
+employee count — out of scope), no tenant operational data, no owner email
+or company requisites. `GET /companies/{id}` 404s for a non-existent id,
+resolved server-side — existence is never inferred from anything
+client-supplied (ADR-BOS-009 §Tenant isolation requirement, restated for the
+Control Plane).
 
 ## 10. Vendor session observability & audit correlation (hardening, 27.07.2026)
 

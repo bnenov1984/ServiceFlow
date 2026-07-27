@@ -15,6 +15,19 @@ from business_os.shared_kernel.ids import new_id
 
 
 class Company(Base, TimestampMixin):
+    """`settings.repairflow.business_profile` (ADR-BOS-011 §Decision 2) and
+    `settings.active_modules` (BOS-06) live inside the existing JSONB — the
+    subscription columns below do not, because they are a small fixed set
+    with their own types (BOS-18 §6.3), not an open-ended settings bag.
+
+    `subscription_state` keeps a `server_default` permanently, not just for
+    migration-day backfill: it also gives every company created outside
+    `ProvisionCompany()` (`identity.service.seed_company`, the dev/CLI path)
+    a sane value without that path needing to know about subscriptions at
+    all. `ProvisionCompany()` always sets it explicitly to `'trial'`
+    (ADR-BOS-012) regardless of the default.
+    """
+
     __tablename__ = "companies"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=new_id)
@@ -26,6 +39,10 @@ class Company(Base, TimestampMixin):
     settings: Mapped[dict[str, Any]] = mapped_column(
         JSONB, default=dict, server_default=text("'{}'")
     )
+    subscription_state: Mapped[str] = mapped_column(default="active", server_default="active")
+    subscription_state_changed_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    trial_ends_at: Mapped[datetime | None] = mapped_column(default=None)
+    seat_limit: Mapped[int | None] = mapped_column(default=None)
 
 
 class User(Base, TimestampMixin):

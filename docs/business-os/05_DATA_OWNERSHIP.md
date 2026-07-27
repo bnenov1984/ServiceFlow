@@ -20,8 +20,8 @@ brevity.
 
 | Table | Current owner (package) | Proposed owner (context) | Allowed readers | Allowed writers | Migration concern | Status |
 |---|---|---|---|---|---|---|
-| `companies` | identity | Core: Identity & Tenancy | all modules (id + settings via contract) | Identity only | none | Recommended |
-| `users` | identity | Core: Identity & Tenancy | all modules (id, name for attribution) | Identity only | none | Recommended |
+| `companies` | identity | Core: Identity & Tenancy | all modules (id + settings via contract) | Identity only — the Vendor Control Plane creates rows too (`ProvisionCompany`, docs/business-os/18 §11) but only ever through `identity.contracts.provision_company`/`set_business_profile`/`set_subscription_trial`, never a direct write; gained `subscription_state`/`subscription_state_changed_at`/`trial_ends_at`/`seat_limit` (migration 0014, ADR-BOS-012) | none | Implemented (subscription columns, 27.07.2026) |
+| `users` | identity | Core: Identity & Tenancy | all modules (id, name for attribution) | Identity only — same as `companies`, the Vendor Control Plane's first-Owner creation goes through `identity.contracts.provision_company` only | none | Recommended |
 | `sessions` | identity | Core: Identity & Tenancy | Identity only | Identity only | none | Recommended |
 | `audit_log` | identity | Core: Identity & Tenancy | Identity (+ future platform admin console) | Identity only — `_audit()` is private to `identity/service.py` and no other module appends today; a Core append contract is future-if-ever-needed (review BOS-11 F6) | none | Recommended |
 | `platform_admins` | platform_admin | Core: Vendor Control Plane | Vendor Control Plane only | Vendor Control Plane only; created out of band by the bootstrap CLI, never by an HTTP route | no `company_id` — RLS-exempt like `companies`/`users`; compensating control is centralized queries in `platform_admin/service.py` plus the `vendor-plane-private` import contract | Implemented (vendor security foundation, 27.07.2026) |

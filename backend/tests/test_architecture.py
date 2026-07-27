@@ -570,3 +570,79 @@ def test_vendor_routes_still_construct_no_tenant_context_with_correlation_middle
         }
         leaked = {m for m in modules if m.startswith("business_os.identity")}
         assert not leaked, f"vendor route {path} depends on tenant identity: {leaked}"
+
+
+# --- Company Provisioning Foundation (docs/business-os/18 §9 phase 2,
+# 27.07.2026) — platform_admin.service now has a real, legitimate need to
+# reach into identity (creating a company), which is exactly the situation
+# the identity-public-boundary and vendor-plane-* contracts exist to keep
+# narrow. These tests re-prove the boundary holds now that the temptation to
+# import identity.service directly is higher than it was in the first two
+# slices. -------------------------------------------------------------------
+
+
+def test_import_linter_catches_platform_admin_importing_identity_service_directly() -> None:
+    """The real, legitimate path is business_os.identity.contracts
+    (provision_company/grant_module/set_business_profile/
+    set_subscription_trial) — a direct import of identity.service or
+    .models from platform_admin.service must still fail, exactly as it would
+    have before provisioning existed."""
+    graph = _real_graph()
+    graph.add_import(  # type: ignore[attr-defined]
+        importer="business_os.platform_admin.service",
+        imported="business_os.identity.service",
+        line_number=1, line_contents="from business_os.identity import service",
+    )
+    report = _importlinter_report(("identity-public-boundary",), graph=graph)
+    assert report.contains_failures  # type: ignore[attr-defined]
+
+
+def test_import_linter_catches_platform_admin_importing_a_tenant_vertical_directly() -> None:
+    """Same detection-capability proof as the previous slice, importer
+    updated to the module that now actually does provisioning work — a
+    regression here would mean the new code path opened a door the tests
+    didn't anticipate."""
+    graph = _real_graph()
+    graph.add_import(  # type: ignore[attr-defined]
+        importer="business_os.platform_admin.service",
+        imported="serviceflow.customers.service",
+        line_number=1, line_contents="from serviceflow.customers import service",
+    )
+    report = _importlinter_report(("vendor-plane-not-tenant-code",), graph=graph)
+    assert report.contains_failures  # type: ignore[attr-defined]
+
+
+def test_identity_contracts_exposes_the_new_provisioning_surface() -> None:
+    """Documents the intentional extension of identity's public contract
+    (docs/business-os/18 §9 phase 2) — a symbol missing here would mean
+    platform_admin.service silently fell back to a different, unreviewed
+    path into identity."""
+    from business_os.identity import contracts
+
+    for name in (
+        "provision_company", "grant_module", "set_business_profile",
+        "get_business_profile", "set_subscription_trial",
+        "list_companies_admin_metadata", "get_company_admin_metadata",
+        "ProvisioningError", "ProvisionedCompany", "CompanyAdminMetadata",
+    ):
+        assert hasattr(contracts, name), f"identity.contracts lost its {name} export"
+
+
+def test_provisioning_write_functions_never_commit() -> None:
+    """ProvisionCompany's atomicity rests on every step it composes being
+    non-committing (docs/business-os/18 §9 phase 2) — this greps the actual
+    source of the four identity.contracts wrapper functions it calls, so a
+    future edit that slips a `db.commit()` into one of them fails here
+    immediately rather than being discovered by a flaky rollback test."""
+    import inspect
+    import re
+
+    from business_os.identity import contracts
+
+    for name in ("provision_company", "grant_module", "set_business_profile",
+                 "set_subscription_trial"):
+        source = inspect.getsource(getattr(contracts, name))
+        assert not re.search(r"\.commit\s*\(", source), (
+            f"identity.contracts.{name} appears to call .commit() — this "
+            "breaks ProvisionCompany's single-transaction atomicity guarantee"
+        )

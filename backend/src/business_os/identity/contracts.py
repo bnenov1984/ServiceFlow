@@ -14,15 +14,44 @@ Internal identity module kept as `_service` (leading underscore), not
 import service` from working as a convenient re-export bypass of the
 boundary (see docs/business-os/16 for the residual limitation this does and
 does not close).
+
+**Provisioning write surface (docs/business-os/18 §9 phase 2, added
+27.07.2026).** `business_os.platform_admin` — the only module besides
+`identity` itself and the composition root allowed to import this file — can
+now create a company here, not just read one. Every function below that
+`ProvisionCompany` composes is **non-committing**: the caller (platform_admin,
+which owns the single transaction) commits exactly once, after all of them
+have run, so the whole operation is atomic. Nothing here validates
+RepairFlow's profile vocabulary or the module-key registry — those belong to
+the caller (`platform_admin.service.VALID_BUSINESS_PROFILES`), the same way
+`grant_module` never validated `module_key` even before this contract existed.
 """
 
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from business_os.identity import service as _service
+from business_os.identity.service import ProvisioningError
+
+__all__ = [
+    "CompanyAdminMetadata",
+    "CompanyProfile",
+    "ProvisionedCompany",
+    "ProvisioningError",
+    "get_business_profile",
+    "get_company_admin_metadata",
+    "get_company_profile",
+    "grant_module",
+    "is_module_active",
+    "list_companies_admin_metadata",
+    "provision_company",
+    "set_business_profile",
+    "set_subscription_trial",
+]
 
 
 @dataclass(frozen=True)
@@ -52,3 +81,108 @@ def is_module_active(db: Session, company_id: uuid.UUID, module_key: str) -> boo
     sanctioned way for another module's routes to gate themselves — never read
     `company.settings` directly; wraps `service.is_module_active`."""
     return _service.is_module_active(db, company_id, module_key)
+
+
+@dataclass(frozen=True)
+class ProvisionedCompany:
+    """What `provision_company` hands back — ids only, never the ORM rows,
+    and never the owner's password."""
+
+    company_id: uuid.UUID
+    owner_id: uuid.UUID
+
+
+def provision_company(
+    db: Session, company_name: str, owner_name: str, owner_email: str, owner_password: str,
+) -> ProvisionedCompany:
+    """Create a new company and its first Tenant Owner. **Non-committing** —
+    the caller (`platform_admin.service.provision_company`, the single
+    ProvisionCompany orchestrator, docs/business-os/18 §9 phase 2) commits
+    once, after this and every other provisioning step has run, so the whole
+    operation is atomic. Raises `ProvisioningError` (re-exported here, not
+    swallowed) on a duplicate owner email rather than the idempotent
+    "return the existing company" behavior `identity.service.seed_company`
+    uses — see that function's docstring for why."""
+    company, owner = _service.create_company_with_owner(
+        db, company_name, owner_name, owner_email, owner_password
+    )
+    return ProvisionedCompany(company_id=company.id, owner_id=owner.id)
+
+
+def grant_module(db: Session, company_id: uuid.UUID, module_key: str) -> None:
+    """Non-committing counterpart to `identity.service.activate_module`, for
+    composing inside `ProvisionCompany`'s single transaction. Idempotent, and
+    validates nothing about `module_key` — same as the committing version."""
+    _service._activate_module(db, company_id, module_key)
+
+
+def set_business_profile(db: Session, company_id: uuid.UUID, profile: str) -> None:
+    """Assigns the RepairFlow business profile at provisioning (ADR-BOS-011
+    §Decision 3). Non-committing — composed inside `ProvisionCompany`."""
+    _service.set_business_profile(db, company_id, profile)
+
+
+def get_business_profile(db: Session, company_id: uuid.UUID) -> str:
+    """`generic_repair` if never assigned (ADR-BOS-011 §Decision 2 default)."""
+    return _service.get_business_profile(db, company_id)
+
+
+def set_subscription_trial(db: Session, company_id: uuid.UUID, trial_days: int) -> None:
+    """Baseline subscription state for a freshly provisioned company
+    (ADR-BOS-012). Non-committing — composed inside `ProvisionCompany`."""
+    _service.set_subscription_trial(db, company_id, trial_days)
+
+
+@dataclass(frozen=True)
+class CompanyAdminMetadata:
+    """The Vendor Control Plane's metadata-only view of one company
+    (ADR-BOS-009 §Vendor data visibility) — administrative facts about the
+    tenancy itself, never tenant operational data. No `active_modules` count
+    of *usage* (seats in use) — that needs a tenant employee count, out of
+    scope for this slice (docs/business-os/18 §9 phase 2)."""
+
+    id: uuid.UUID
+    name: str
+    business_profile: str
+    active_modules: list[str]
+    subscription_state: str
+    subscription_state_changed_at: datetime
+    trial_ends_at: datetime | None
+    seat_limit: int | None
+    created_at: datetime
+
+
+def list_companies_admin_metadata(db: Session) -> list[CompanyAdminMetadata]:
+    """Backs the vendor company-list screen. Metadata only — see
+    `CompanyAdminMetadata`."""
+    return [_to_admin_metadata(c) for c in _service.list_companies(db)]
+
+
+def get_company_admin_metadata(db: Session, company_id: uuid.UUID) -> CompanyAdminMetadata | None:
+    """Backs the vendor company-detail screen. `None` for a non-existent id —
+    the caller (the vendor route) turns that into a 404, existence-checked
+    server-side (ADR-BOS-009 §Tenant isolation requirement, restated for the
+    Control Plane), never inferred from anything client-supplied."""
+    company = _service.get_company(db, company_id)
+    if company is None:
+        return None
+    return _to_admin_metadata(company)
+
+
+def _to_admin_metadata(company: Any) -> CompanyAdminMetadata:
+    # Reads company.settings directly (same style get_company_profile already
+    # uses for .name/.requisites) rather than calling get_business_profile(db,
+    # company_id) again — that would re-query a row this function already has
+    # in hand, once per company, turning the list endpoint into N+1 queries.
+    repairflow: dict[str, Any] = company.settings.get("repairflow", {})
+    return CompanyAdminMetadata(
+        id=company.id,
+        name=company.name,
+        business_profile=repairflow.get("business_profile", _service.DEFAULT_BUSINESS_PROFILE),
+        active_modules=list(company.settings.get("active_modules", [])),
+        subscription_state=company.subscription_state,
+        subscription_state_changed_at=company.subscription_state_changed_at,
+        trial_ends_at=company.trial_ends_at,
+        seat_limit=company.seat_limit,
+        created_at=company.created_at,
+    )

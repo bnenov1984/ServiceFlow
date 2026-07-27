@@ -13,11 +13,14 @@ tenant table — the intended default (ADR-BOS-009 §Consequences).
 
 import uuid
 from collections import defaultdict
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from business_os.identity import contracts as identity_contracts
 from business_os.platform_admin import audit
 from business_os.platform_admin.models import PlatformAdmin, PlatformAdminSession
 from business_os.shared_kernel import correlation, passwords
@@ -198,3 +201,116 @@ def create_platform_admin(db: Session, name: str, email: str, password: str
 
 def get_admin(db: Session, admin_id: uuid.UUID) -> PlatformAdmin | None:
     return db.get(PlatformAdmin, admin_id)
+
+
+# --- Company provisioning (docs/business-os/18 §9 phase 2) ------------------
+#
+# provision_company() is the ONLY entry point that may create a company.
+# Future vendor features — wizard UI, CLI, import tools, reseller APIs,
+# marketplace onboarding, automated signup — must all call it, never assemble
+# their own create-company/create-owner/assign-modules sequence. No other
+# function in this codebase may partially provision a company.
+
+VALID_BUSINESS_PROFILES = frozenset({
+    "automotive_repair", "phone_repair", "electronics_repair",
+    "appliance_repair", "generic_repair",
+})
+DEFAULT_BUSINESS_PROFILE = "generic_repair"  # ADR-BOS-011 §Decision 2
+
+TRIAL_DAYS = 14  # ADR-018's number, inherited unchanged by ADR-BOS-012
+
+
+class ProvisioningError(Exception):
+    def __init__(self, message_key: str, status: int = 409) -> None:
+        self.message_key = message_key
+        self.status = status
+
+
+@dataclass(frozen=True)
+class ProvisionCompanyResult:
+    company_id: uuid.UUID
+    owner_id: uuid.UUID
+    business_profile: str
+    active_modules: list[str]
+    subscription_state: str
+
+
+def provision_company(
+    db: Session,
+    platform_admin_id: uuid.UUID,
+    company_name: str,
+    owner_name: str,
+    owner_email: str,
+    owner_password: str,
+    business_profile: str = DEFAULT_BUSINESS_PROFILE,
+    modules: Sequence[str] = (),
+) -> ProvisionCompanyResult:
+    """The single atomic command that creates a new customer company: the
+    company itself, its first Tenant Owner, the initial RepairFlow business
+    profile, initial module entitlements, a subscription/licence baseline,
+    and exactly one platform_audit_log row — all in one transaction.
+
+    Every step below is non-committing (`identity.contracts.provision_company`
+    /`grant_module`/`set_business_profile`/`set_subscription_trial`, plus this
+    module's own `audit.record`); this function commits exactly once, at the
+    very end, right after the audit row is added. A failure at *any* step —
+    a duplicate owner email, an invalid business profile, or a failure
+    writing the audit row itself — propagates before that commit is reached,
+    so nothing here is ever partially persisted: company, owner, profile,
+    entitlements, subscription baseline and the audit row land together or
+    not at all. Provisioning is successful only if the business data and the
+    audit record commit together — the audit row is part of the operation,
+    not appended after it.
+    """
+    if business_profile not in VALID_BUSINESS_PROFILES:
+        raise ProvisioningError("errors.provisioning.invalid_business_profile", status=400)
+
+    try:
+        provisioned = identity_contracts.provision_company(
+            db, company_name, owner_name, owner_email, owner_password
+        )
+    except identity_contracts.ProvisioningError as e:
+        raise ProvisioningError(e.message_key, status=e.status) from e
+
+    identity_contracts.set_business_profile(db, provisioned.company_id, business_profile)
+    for module_key in modules:
+        identity_contracts.grant_module(db, provisioned.company_id, module_key)
+    identity_contracts.set_subscription_trial(db, provisioned.company_id, TRIAL_DAYS)
+
+    audit.record(
+        db, audit.COMPANY_PROVISIONED, correlation.ensure_bound(),
+        platform_admin_id=platform_admin_id,
+        company_id=provisioned.company_id,
+        detail={
+            "business_profile": business_profile,
+            "modules": list(modules),
+            "subscription_state": "trial",
+        },
+    )
+    db.commit()
+
+    return ProvisionCompanyResult(
+        company_id=provisioned.company_id,
+        owner_id=provisioned.owner_id,
+        business_profile=business_profile,
+        active_modules=list(modules),
+        subscription_state="trial",
+    )
+
+
+def list_companies(db: Session) -> list[identity_contracts.CompanyAdminMetadata]:
+    """Backs the vendor company-list route — metadata only (ADR-BOS-009
+    §Vendor data visibility). A thin pass-through to identity.contracts, kept
+    here (not called directly from the router) so every vendor route goes
+    through this module the same way, regardless of which read/write it needs."""
+    return identity_contracts.list_companies_admin_metadata(db)
+
+
+def get_company(
+    db: Session, company_id: uuid.UUID
+) -> identity_contracts.CompanyAdminMetadata | None:
+    """Backs the vendor company-detail route. `None` for a non-existent id —
+    the router turns that into a 404, existence-checked server-side, never
+    inferred from anything client-supplied (ADR-BOS-009 §Tenant isolation
+    requirement, restated for the Control Plane)."""
+    return identity_contracts.get_company_admin_metadata(db, company_id)

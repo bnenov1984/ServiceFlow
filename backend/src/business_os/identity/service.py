@@ -23,6 +23,29 @@ MAX_LOGIN_FAILURES = 5
 LOCKOUT = timedelta(minutes=15)
 MAX_PIN_FAILURES = 5
 
+# ADR-BOS-011 §Decision 2: identity only needs the fallback value for a
+# company that predates the profile field (every seed_company-created
+# company) — the full five-slug RepairFlow vocabulary and its validation
+# belong to the Vendor Control Plane
+# (business_os.platform_admin.service.VALID_BUSINESS_PROFILES), not to
+# identity, which stores whatever string it is given.
+DEFAULT_BUSINESS_PROFILE = "generic_repair"
+
+# ADR-BOS-012: baseline for every vendor-provisioned company.
+DEFAULT_SUBSCRIPTION_STATE = "trial"
+
+
+class ProvisioningError(Exception):
+    """Raised by `create_company_with_owner` on a state that must abort the
+    whole provisioning transaction (docs/business-os/18 §9 phase 2) — never
+    caught and silently worked around, only translated by
+    `identity.contracts.provision_company` into the public error shape
+    external callers see."""
+
+    def __init__(self, message_key: str, status: int = 409) -> None:
+        self.message_key = message_key
+        self.status = status
+
 # In-memory limiter: adequate for one process (ADR-006 topology); revisit when the
 # app scales horizontally (ADR-017 trigger).
 _failures: dict[str, list[datetime]] = defaultdict(list)
@@ -142,6 +165,13 @@ def get_company(db: Session, company_id: uuid.UUID) -> Company | None:
     return db.get(Company, company_id)
 
 
+def list_companies(db: Session) -> list[Company]:
+    """Companies are RLS-exempt (identity bootstrap) — centralized here, same
+    discipline as `list_users`. Backs the Vendor Control Plane's company list
+    (`identity.contracts.list_companies_admin_metadata`)."""
+    return list(db.scalars(select(Company).order_by(Company.created_at)))
+
+
 def is_module_active(db: Session, company_id: uuid.UUID, module_key: str) -> bool:
     """Module activation (BOS-06), stored as `active_modules` inside the existing
     `companies.settings` JSONB — no dedicated table (BOS-02's Settings precedent:
@@ -165,16 +195,95 @@ def active_modules(db: Session, company_id: uuid.UUID) -> list[str]:
     return result
 
 
-def activate_module(db: Session, company_id: uuid.UUID, module_key: str) -> None:
-    """Idempotent. Reassigns the settings dict (not an in-place mutation) so
-    SQLAlchemy's change tracking picks it up without a MutableDict wrapper."""
+def _activate_module(db: Session, company_id: uuid.UUID, module_key: str) -> None:
+    """Idempotent, non-committing. Reassigns the settings dict (not an
+    in-place mutation) so SQLAlchemy's change tracking picks it up without a
+    MutableDict wrapper. Shared by `activate_module` (below, its own commit —
+    the CLI/dev entry point) and `identity.contracts.grant_module` (no
+    commit — composed inside `ProvisionCompany`'s single transaction,
+    docs/business-os/18 §9 phase 2)."""
     company = get_company(db, company_id)
     assert company is not None
     current: list[str] = list(company.settings.get("active_modules", []))
     if module_key not in current:
         current.append(module_key)
         company.settings = {**company.settings, "active_modules": current}
-        db.commit()
+
+
+def activate_module(db: Session, company_id: uuid.UUID, module_key: str) -> None:
+    """Idempotent, standalone entry point (serviceflow/seed.py, tests) — commits.
+    A caller that owns a larger transaction should use
+    `identity.contracts.grant_module` instead."""
+    _activate_module(db, company_id, module_key)
+    db.commit()
+
+
+def set_business_profile(db: Session, company_id: uuid.UUID, profile: str) -> None:
+    """Writes the RepairFlow business profile slug into
+    `companies.settings.repairflow.business_profile` (ADR-BOS-011 §Decision 2)
+    — same settings-JSONB-key pattern as `_activate_module`. Does not
+    validate `profile`: that vocabulary belongs to the caller
+    (`business_os.platform_admin.service.VALID_BUSINESS_PROFILES`), the same
+    way `_activate_module` never validates `module_key`. Non-committing —
+    composed inside `ProvisionCompany`'s single transaction."""
+    company = get_company(db, company_id)
+    assert company is not None
+    repairflow = {**company.settings.get("repairflow", {}), "business_profile": profile}
+    company.settings = {**company.settings, "repairflow": repairflow}
+
+
+def get_business_profile(db: Session, company_id: uuid.UUID) -> str:
+    company = get_company(db, company_id)
+    if company is None:
+        return DEFAULT_BUSINESS_PROFILE
+    repairflow: dict[str, Any] = company.settings.get("repairflow", {})
+    result: str = repairflow.get("business_profile", DEFAULT_BUSINESS_PROFILE)
+    return result
+
+
+def set_subscription_trial(db: Session, company_id: uuid.UUID, trial_days: int) -> None:
+    """Baseline subscription state for a freshly provisioned company
+    (ADR-BOS-012: every vendor-created company starts in `trial`, full
+    functionality, a fixed number of days). Non-committing — composed inside
+    `ProvisionCompany`'s single transaction."""
+    company = get_company(db, company_id)
+    assert company is not None
+    company.subscription_state = DEFAULT_SUBSCRIPTION_STATE
+    company.subscription_state_changed_at = _now()
+    company.trial_ends_at = _now() + timedelta(days=trial_days)
+
+
+def create_company_with_owner(
+    db: Session, company_name: str, owner_name: str, owner_email: str, owner_password: str,
+) -> tuple[Company, User]:
+    """Non-committing counterpart to `seed_company`, for `ProvisionCompany`
+    (docs/business-os/18 §9 phase 2): the caller owns the single commit
+    boundary for the whole provisioning operation, so this never commits.
+
+    Unlike `seed_company` (an idempotent dev/CLI convenience that silently
+    returns the existing company on a duplicate owner email), this **raises**
+    `ProvisioningError` instead. `ProvisionCompany` is an audited vendor
+    action recorded against the company it believes it just created — quietly
+    handing back a different, pre-existing company would make that audit row
+    describe something that didn't happen.
+    """
+    existing = db.scalar(select(User).where(User.email.ilike(owner_email)))
+    if existing is not None:
+        raise ProvisioningError("errors.provisioning.owner_email_taken")
+
+    company = Company(name=company_name)
+    db.add(company)
+    db.flush()
+    owner = User(
+        company_id=company.id,
+        name=owner_name,
+        email=owner_email,
+        password_hash=security.hash_secret(owner_password),
+        is_owner=True,
+    )
+    db.add(owner)
+    db.flush()
+    return company, owner
 
 
 def list_users(db: Session, company_id: uuid.UUID,
