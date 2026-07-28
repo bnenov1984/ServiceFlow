@@ -80,7 +80,9 @@ def test_pin_switch_changes_acting_user(client: TestClient) -> None:
     me = _login(client)
     csrf = str(me["csrf_token"])
 
-    # Second worker in the same company, created directly (user CRUD idва в Етап 3).
+    # Second worker in the same company, created directly here rather than via
+    # POST /users (tests/test_employee_management.py covers that API) — this
+    # test is only about PIN-switch, not employee creation.
     for db in open_session(_os.environ["SERVICEFLOW_DATABASE_URL"]):
         from sqlalchemy import select
 

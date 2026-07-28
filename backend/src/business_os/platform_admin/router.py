@@ -108,9 +108,10 @@ def vendor_logout(auth: PlatformAdminDep, response: Response,
 
 class CompanySummary(BaseModel):
     """Administrative metadata only (ADR-BOS-009 §Vendor data visibility) —
-    never tenant operational data, and no seat *usage* count in this slice
-    (that needs a tenant employee count, out of scope, docs/business-os/18
-    §9 phase 2)."""
+    never tenant operational data. `seat_usage` closes a gap flagged in the
+    Company Provisioning slice: ADR-BOS-009 lists it as vendor-visible
+    metadata alongside `seat_limit`, deferred only until Tenant Employee
+    Management (docs/business-os/18 §9 phase 7) gave it something to count."""
 
     id: uuid.UUID
     name: str
@@ -119,6 +120,7 @@ class CompanySummary(BaseModel):
     subscription_state: str
     trial_ends_at: datetime | None
     seat_limit: int | None
+    seat_usage: int
     created_at: datetime
 
 
@@ -131,7 +133,7 @@ def _to_summary(metadata: CompanyAdminMetadata) -> CompanySummary:
         id=metadata.id, name=metadata.name, business_profile=metadata.business_profile,
         active_modules=metadata.active_modules, subscription_state=metadata.subscription_state,
         trial_ends_at=metadata.trial_ends_at, seat_limit=metadata.seat_limit,
-        created_at=metadata.created_at,
+        seat_usage=metadata.seat_usage, created_at=metadata.created_at,
     )
 
 

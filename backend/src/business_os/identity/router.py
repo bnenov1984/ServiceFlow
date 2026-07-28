@@ -1,8 +1,9 @@
 """Auth endpoints per docs/09: login, logout, pin-switch, me.
 
-users_router (GET /users) е отделен, защото живее на /api/v1/users, не /auth —
-Етап-2 slice: list only (PIN dialog, technician picker); POST/PATCH/deactivate
-са Етап 3 (администрация).
+users_router (`/api/v1/users`, not `/auth`) — Etap-2 shipped list-only (PIN
+dialog, technician picker); create/activate/deactivate/role-change are Etap 3
+(docs/13, docs/business-os/18 §9 phase 7): Owner-only, bounded by the
+vendor-set seat limit (ADR-BOS-009 ownership matrix).
 """
 
 import uuid
@@ -18,6 +19,8 @@ from business_os.identity.deps import (
     DbDep,
     TenantDep,
     require_csrf,
+    require_owner,
+    require_subscription_ok,
 )
 from business_os.identity.models import AuthSession, User
 from serviceflow.config import get_settings
@@ -29,16 +32,74 @@ users_router = APIRouter()
 class UserOut(BaseModel):
     id: uuid.UUID
     name: str
+    email: str
     is_owner: bool
     is_active: bool
 
 
+def _user_out(u: User) -> UserOut:
+    return UserOut(id=u.id, name=u.name, email=u.email, is_owner=u.is_owner, is_active=u.is_active)
+
+
 @users_router.get("")
 def list_users(db: DbDep, tenant: TenantDep, include_inactive: bool = False) -> list[UserOut]:
-    return [
-        UserOut(id=u.id, name=u.name, is_owner=u.is_owner, is_active=u.is_active)
-        for u in service.list_users(db, tenant.company_id, include_inactive)
-    ]
+    return [_user_out(u) for u in service.list_users(db, tenant.company_id, include_inactive)]
+
+
+class EmployeeIn(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    email: EmailStr
+    password: str = Field(min_length=12, max_length=200)
+    is_owner: bool = False
+    pin: str | None = Field(default=None, min_length=4, max_length=20)
+
+
+class EmployeePatch(BaseModel):
+    is_active: bool | None = None
+    is_owner: bool | None = None
+
+
+@users_router.post(
+    "", dependencies=[Depends(require_csrf), Depends(require_owner),
+                     Depends(require_subscription_ok)],
+    status_code=201,
+)
+def create_employee(body: EmployeeIn, db: DbDep, tenant: TenantDep) -> UserOut:
+    """Owner-only (docs/02 §12); bounded by the vendor-set seat limit
+    (`errors.employees.seat_limit_reached` when there is no room, unless
+    `seat_limit` is null — unlimited)."""
+    try:
+        employee = service.create_employee(
+            db, tenant.company_id, tenant.user_id, body.name, body.email, body.password,
+            is_owner=body.is_owner, pin=body.pin,
+        )
+    except service.EmployeeError as e:
+        raise HTTPException(status_code=e.status, detail={
+            "code": "employee_error", "message_key": e.message_key, "params": {},
+        }) from e
+    return _user_out(employee)
+
+
+@users_router.patch(
+    "/{user_id}", dependencies=[Depends(require_csrf), Depends(require_owner),
+                                Depends(require_subscription_ok)],
+)
+def update_employee(user_id: uuid.UUID, body: EmployeePatch, db: DbDep,
+                    tenant: TenantDep) -> UserOut:
+    """Activate/deactivate and/or change role in one call. Reactivating
+    counts against the seat limit like creation does; the last active Owner
+    can never be deactivated or demoted (`errors.employees.
+    last_owner_protected`)."""
+    try:
+        employee = service.update_employee(
+            db, tenant.company_id, tenant.user_id, user_id,
+            is_active=body.is_active, is_owner=body.is_owner,
+        )
+    except service.EmployeeError as e:
+        raise HTTPException(status_code=e.status, detail={
+            "code": "employee_error", "message_key": e.message_key, "params": {},
+        }) from e
+    return _user_out(employee)
 
 
 class LoginRequest(BaseModel):
@@ -56,6 +117,8 @@ class MeResponse(BaseModel):
     company_id: uuid.UUID
     csrf_token: str
     active_modules: list[str]
+    seat_limit: int | None
+    seat_usage: int
 
 
 class PinSwitchRequest(BaseModel):
@@ -68,11 +131,15 @@ def _client_key(request: Request) -> str:
 
 
 def _me(db: Session, session: AuthSession, user: User) -> MeResponse:
+    company = service.get_company(db, session.company_id)
+    assert company is not None
     return MeResponse(
         user_id=user.id, name=user.name, email=user.email, is_owner=user.is_owner,
         language=user.language, company_id=session.company_id,
         csrf_token=session.csrf_token,
         active_modules=service.active_modules(db, session.company_id),
+        seat_limit=company.seat_limit,
+        seat_usage=service.count_active_seats(db, session.company_id),
     )
 
 

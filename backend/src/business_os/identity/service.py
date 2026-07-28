@@ -359,6 +359,127 @@ def list_users(db: Session, company_id: uuid.UUID,
     return list(db.scalars(stmt.order_by(User.name)))
 
 
+# --- Tenant employee management (docs/13 Étап 3, docs/business-os/18 §9
+# phase 7) -------------------------------------------------------------
+#
+# Owner-only (enforced by identity.deps.require_owner at the route, same as
+# every other admin action in docs/02 §12's permission matrix), bounded by
+# the vendor-set seat limit (ADR-BOS-009 ownership matrix: Tenant Owner
+# operates within the limit, never raises it). Every mutation writes one row
+# to the existing tenant `audit_log` — the same table login/logout/pin_switch
+# already use, via the same `_audit()` helper; no new table.
+
+
+class EmployeeError(Exception):
+    def __init__(self, message_key: str, status: int = 409) -> None:
+        self.message_key = message_key
+        self.status = status
+
+
+def count_active_seats(db: Session, company_id: uuid.UUID) -> int:
+    """Seats = active users, Owner and Worker alike (ADR-BOS-009: "a count of
+    `users`, not the user list's business content"). A plain len() over
+    `list_users` rather than a dedicated COUNT query — company sizes here are
+    2-10 people (CLAUDE.md's own framing), so there is nothing to optimize."""
+    return len(list_users(db, company_id, include_inactive=False))
+
+
+def _count_active_owners_excluding(
+    db: Session, company_id: uuid.UUID, exclude_user_id: uuid.UUID
+) -> int:
+    return sum(
+        1 for u in list_users(db, company_id, include_inactive=False)
+        if u.is_owner and u.id != exclude_user_id
+    )
+
+
+def create_employee(
+    db: Session, company_id: uuid.UUID, actor_user_id: uuid.UUID,
+    name: str, email: str, password: str, is_owner: bool = False, pin: str | None = None,
+) -> User:
+    """Tenant Owner creates a new employee. Raises `EmployeeError` on a
+    duplicate global email (the same uniqueness `uq_users_email_lower`
+    enforces at the database) or when the vendor-set seat limit is already
+    reached — a `None` `seat_limit` means unlimited (BOS-18 §6.3's escape
+    hatch), so that check is skipped entirely when there is no limit to
+    check against."""
+    existing = db.scalar(select(User).where(User.email.ilike(email)))
+    if existing is not None:
+        raise EmployeeError("errors.employees.email_taken", status=409)
+
+    company = get_company(db, company_id)
+    assert company is not None
+    if company.seat_limit is not None and count_active_seats(db, company_id) >= company.seat_limit:
+        raise EmployeeError("errors.employees.seat_limit_reached", status=409)
+
+    employee = User(
+        company_id=company_id, name=name, email=email,
+        password_hash=security.hash_secret(password),
+        pin_hash=security.hash_secret(pin) if pin else None,
+        is_owner=is_owner,
+    )
+    db.add(employee)
+    db.flush()
+    _audit(db, company_id, actor_user_id, "employee_created",
+           {"employee_id": str(employee.id), "is_owner": is_owner})
+    db.commit()
+    return employee
+
+
+def update_employee(
+    db: Session, company_id: uuid.UUID, actor_user_id: uuid.UUID, employee_id: uuid.UUID,
+    is_active: bool | None = None, is_owner: bool | None = None,
+) -> User:
+    """Activate/deactivate an employee and/or change their role, in one
+    call (a PATCH may touch either field, both, or neither). Two invariants,
+    checked against the state this call would actually produce, not just the
+    row's current value:
+
+    - reactivating a previously-deactivated employee counts against the
+      seat limit exactly like `create_employee` (a `None` limit means
+      unlimited, same skip);
+    - the last active Owner can never be deactivated or demoted — every
+      company must keep at least one, checked by counting active owners
+      *excluding this employee* so the employee's own current contribution
+      doesn't mask the very thing being removed.
+
+    Idempotent per field (setting a value to what it already is changes
+    nothing) but always audited — a tenant admin action attempted is worth a
+    record even when it turns out to be a no-op, the same discipline
+    `platform_admin`'s entitlement grant/revoke already established.
+    """
+    employee = db.get(User, employee_id)
+    if employee is None or employee.company_id != company_id:
+        raise EmployeeError("errors.employees.not_found", status=404)
+
+    was_active, was_owner = employee.is_active, employee.is_owner
+    next_active = is_active if is_active is not None else was_active
+    next_owner = is_owner if is_owner is not None else was_owner
+
+    removing_owner_status = was_owner and not (next_active and next_owner)
+    if removing_owner_status and _count_active_owners_excluding(
+        db, company_id, employee_id
+    ) == 0:
+        raise EmployeeError("errors.employees.last_owner_protected", status=409)
+
+    if next_active and not was_active:
+        company = get_company(db, company_id)
+        assert company is not None
+        if (company.seat_limit is not None
+                and count_active_seats(db, company_id) >= company.seat_limit):
+            raise EmployeeError("errors.employees.seat_limit_reached", status=409)
+
+    employee.is_active = next_active
+    employee.is_owner = next_owner
+    changed = (was_active, was_owner) != (next_active, next_owner)
+    _audit(db, company_id, actor_user_id, "employee_updated", {
+        "employee_id": str(employee_id), "changed": changed,
+        "is_active": next_active, "is_owner": next_owner,
+    })
+    db.commit()
+    return employee
+
+
 def seed_company(db: Session, company_name: str, owner_name: str, owner_email: str,
                  owner_password: str, owner_pin: str | None = None) -> Company:
     """Idempotent dev/staging seed: company + Owner (self-serve registration is Етап 3)."""

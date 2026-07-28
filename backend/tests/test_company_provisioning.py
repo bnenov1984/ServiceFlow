@@ -246,6 +246,7 @@ def test_company_list_and_detail_expose_only_documented_metadata(client: TestCli
     assert row["subscription_state"] == "trial"
     assert "trial_ends_at" in row
     assert "seat_limit" in row
+    assert row["seat_usage"] == 1  # the first Owner ProvisionCompany just created
     # Never tenant operational data or PII beyond what's sanctioned.
     forbidden_keys = {"customers", "assets", "service_orders", "invoices", "password",
                       "password_hash", "owner_email", "requisites"}
@@ -257,6 +258,34 @@ def test_company_list_and_detail_expose_only_documented_metadata(client: TestCli
     assert detail_body["id"] == created["company_id"]
     assert "subscription_state_changed_at" in detail_body
     assert not forbidden_keys & detail_body.keys()
+
+
+def test_vendor_seat_usage_reflects_real_tenant_employees(client: TestClient) -> None:
+    """Closes the gap this file's own metadata test originally flagged
+    (ADR-BOS-009 §Vendor data visibility lists seat usage as vendor-visible
+    metadata) — added alongside Tenant Employee Management
+    (docs/business-os/18 §9 phase 7), which is what finally gives
+    `count_active_seats` something real to count."""
+    _reset_rate_limiter()
+    _seed_admin()
+    me = _vendor_login(client)
+    created = client.post(
+        f"{VENDOR}/companies", headers={"X-CSRF-Token": str(me["csrf_token"])},
+        json=_provision_payload(owner_email="owner@grows.bg"),
+    ).json()
+
+    detail = client.get(f"{VENDOR}/companies/{created['company_id']}").json()
+    assert detail["seat_usage"] == 1
+
+    tenant_login = client.post("/api/v1/auth/login",
+                               json={"email": "owner@grows.bg",
+                                     "password": "нова-парола-1234"}).json()
+    client.post("/api/v1/users", headers={"X-CSRF-Token": str(tenant_login["csrf_token"])},
+               json={"name": "Служител", "email": "worker@grows.bg",
+                     "password": "работник-парола-123"})
+
+    detail = client.get(f"{VENDOR}/companies/{created['company_id']}").json()
+    assert detail["seat_usage"] == 2
 
 
 def test_company_detail_404s_for_a_nonexistent_id(client: TestClient) -> None:

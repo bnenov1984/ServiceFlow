@@ -15,8 +15,12 @@ contract), §13 added 27.07.2026 (Subscription Lifecycle Transitions — phase
 4 done: reasoned state transitions, `require_subscription_ok` wired onto
 professional_services only by explicit scope decision), §13.3 updated
 28.07.2026 (the deferred platform-wide retrofit landed — `require_
-subscription_ok` now covers all 38 tenant mutation routes) · Source: PO
-directive accepting the frozen product model
+subscription_ok` covered all 38 tenant mutation routes at that point), §14
+added 28.07.2026 (Tenant Employee Management + Seat Limits — phases 5 and 7
+done together: seat-limit enforcement folded into employee create/
+reactivate rather than shipped as its own unconsumed engine; its own two
+new mutation routes bring the `require_subscription_ok` count to 41) ·
+Source: PO directive accepting the frozen product model
 (Business OS + sibling apps + RepairFlow business profiles); read-only audit
 of the repository as it stands after the PropertyFlow dashboard slice
 (`frontend/src/ps/`, uncommitted at audit time — see §8).
@@ -504,16 +508,21 @@ precedent):
    wired onto `professional_services`' own mutating routes only (explicit
    scope decision — not a platform-wide retrofit in this slice; see §13.3).
    *Commit:* `feat(business-os): add subscription lifecycle transitions`.
-5. **Seat limits** — column + enforcement on the (still-unbuilt) employee
-   creation endpoint; console screen #8.
-   *Commit:* `feat(business-os): seat limit enforcement`.
+5. **Seat limits — Done (28.07.2026), see §14, folded into phase 7** rather
+   than shipped separately: a seat-limit engine ahead of the one operation
+   that consumes it (employee creation/reactivation) would have been an
+   abstraction with no real caller, exactly the anti-pattern this document's
+   own §6.3 warns against.
+   *Commit:* `feat(business-os): add tenant employee management`.
 6. **RepairFlow business profiles** — the §6.4 migration (its own PR, largest
    of the set), profile selector in tenant settings, backend field-def
    resolution switched from global to company-scoped.
    *Commit:* `feat(repairflow): company-scoped business profiles (ADR-BOS-011)`.
-7. **Tenant user management** — the employee invite/deactivate flow docs/13
-   Étап 3 already scheduled, now bounded by seat limits from phase 5.
-   *Commit:* `feat(business-os): tenant employee management`.
+7. **Tenant user management — Done (28.07.2026), see §14.** Owner-only
+   create/activate/deactivate/role-change, seat-limit enforcement on
+   create/reactivate, last-active-Owner protection, tenant `audit_log`
+   entries for every mutation.
+   *Commit:* `feat(business-os): add tenant employee management`.
 8. **Security/audit hardening** — the §8 test suite in full, the Étап-3
    threat-model rewrite docs/11 already schedules, extended for the new
    plane.
@@ -893,4 +902,94 @@ document: a company with `professional-services` entitled but subscription
 blocked on write with `errors.subscription.mutations_blocked` — never an
 entitlement-shaped error, and `transition_subscription` never reads or
 writes `active_modules` at all.
+
+## 14. Tenant Employee Management + Seat Limits (phase 7, 28.07.2026)
+
+### 14.1 One combined slice, not two
+
+Seat limits (§9 phase 5) and tenant employee management (§9 phase 7) shipped
+together, deliberately not in the sequence originally listed. A seat-limit
+*engine* built ahead of the one operation that consumes it — creating or
+reactivating an employee — would have been exactly the abstraction-without-
+a-real-consumer this document's own §6.3 discipline warns against (the same
+reasoning that kept `company_modules` a JSONB set instead of a table until a
+second consumer existed). `companies.seat_limit` already existed (migration
+0014, ADR-BOS-012); this phase is the first and only code that reads it for
+enforcement:
+
+```
+Tenant Owner creates/reactivates employee
+                    ↓
+             count active seats
+                    ↓
+            compare with seat_limit
+                    ↓
+              allow or reject
+```
+
+No migration. `users` already carries every column needed
+(`company_id`, `name`, `email`, `password_hash`, `pin_hash`, `is_owner`,
+`is_active`); the existing tenant `audit_log` gains two new action strings
+(`employee_created`, `employee_updated`) via the same `_audit()` helper
+login/logout/pin-switch/`seed_company` already use — no new table, no new
+append-only trigger, no `KNOWN_ACTIONS` frozenset (that guard is
+`platform_admin.audit`'s own discipline; tenant `audit_log` never had one,
+and this phase doesn't introduce one either — consistent with what was
+already there, not a new pattern).
+
+### 14.2 `POST /users` and `PATCH /users/{id}` — Owner-only, seat-bounded
+
+`POST /users` creates a new employee (`is_owner` settable at creation).
+`PATCH /users/{id}` activates/deactivates and/or changes role in one call —
+a PATCH may touch either field, both, or neither. Both routes require
+`require_owner` (docs/02 §12: "Company settings, users... Owner ✔, Worker —")
+and `require_subscription_ok` (this phase's mutations are ordinary tenant
+mutations, gated the same mechanical way every other one is, per §13.3's
+retrofit).
+
+**Seat-limit enforcement is symmetric between create and reactivate.**
+Creating a new employee and reactivating (`is_active: false → true`) a
+previously-deactivated one are the same seat-consuming event from the
+limit's point of view, and both are checked identically:
+`company.seat_limit is not None and count_active_seats(...) >= seat_limit`.
+A `None` limit (BOS-18 §6.3's own escape hatch — "a deliberate escape hatch
+for the vendor's own test/demo companies") skips the check entirely, never
+partially — proven with a company that creates five employees in a row with
+no limit set, and a second test that hits the limit exactly at capacity.
+
+**Idempotent per field, but always audited.** Setting `is_active`/`is_owner`
+to the value they already hold changes nothing (`changed=False` is computed
+and included in the audit `detail`, same shape as `platform_admin`'s
+entitlement grant/revoke) but still writes a row — a tenant admin action
+attempted is worth a record even as a no-op.
+
+### 14.3 The last active Owner can never be removed
+
+Every company must keep at least one active Owner, always — enforced by
+counting active owners *excluding the employee being modified*, not just
+reading the row's current flag: deactivating the last Owner and demoting
+the last Owner to Worker are both blocked by the same check
+(`errors.employees.last_owner_protected`), because both are "this specific
+employee stops contributing to the active-owner count" from the
+invariant's point of view. Deactivating *an* Owner when a second one exists
+succeeds normally — the protection is about the company never reaching
+zero, not about Owners being unable to step back.
+
+### 14.4 Seat usage becomes visible on both sides
+
+`GET /auth/me` gained `seat_limit`/`seat_usage` fields (riding along next to
+the existing `active_modules`) — the Tenant Owner's own view of capacity.
+
+Separately, `CompanyAdminMetadata`/`CompanySummary` (the Vendor Control
+Plane's company list/detail, §11.5) gained `seat_usage` — closing a gap
+flagged when that dataclass was first written (Company Provisioning
+Foundation, §11): ADR-BOS-009 §Vendor data visibility explicitly lists
+"seat limit and current seat usage (a count of `users`)" as vendor-visible
+metadata, deferred at the time only because nothing yet counted active
+employees. `identity.service.count_active_seats` — built for this phase's
+own enforcement, called directly by `identity.router`'s `/me` and
+internally by `identity.contracts._to_admin_metadata` — is the same
+function both sides now read; a test creates an employee through the
+tenant API and confirms the count the vendor sees increases by exactly
+one.
 

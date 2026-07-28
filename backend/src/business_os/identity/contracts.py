@@ -164,9 +164,13 @@ def set_subscription_state(db: Session, company_id: uuid.UUID, new_state: str) -
 class CompanyAdminMetadata:
     """The Vendor Control Plane's metadata-only view of one company
     (ADR-BOS-009 §Vendor data visibility) — administrative facts about the
-    tenancy itself, never tenant operational data. No `active_modules` count
-    of *usage* (seats in use) — that needs a tenant employee count, out of
-    scope for this slice (docs/business-os/18 §9 phase 2)."""
+    tenancy itself, never tenant operational data. `seat_usage` (added
+    alongside Tenant Employee Management, docs/business-os/18 §9 phase 7)
+    closes a gap flagged when this dataclass was first written: ADR-BOS-009
+    §Vendor data visibility explicitly lists "seat limit and current seat
+    usage (a count of `users`)" as vendor-visible metadata — it was deferred
+    only because nothing yet counted active employees; `count_active_seats`
+    now does."""
 
     id: uuid.UUID
     name: str
@@ -176,13 +180,14 @@ class CompanyAdminMetadata:
     subscription_state_changed_at: datetime
     trial_ends_at: datetime | None
     seat_limit: int | None
+    seat_usage: int
     created_at: datetime
 
 
 def list_companies_admin_metadata(db: Session) -> list[CompanyAdminMetadata]:
     """Backs the vendor company-list screen. Metadata only — see
     `CompanyAdminMetadata`."""
-    return [_to_admin_metadata(c) for c in _service.list_companies(db)]
+    return [_to_admin_metadata(db, c) for c in _service.list_companies(db)]
 
 
 def get_company_admin_metadata(db: Session, company_id: uuid.UUID) -> CompanyAdminMetadata | None:
@@ -193,10 +198,10 @@ def get_company_admin_metadata(db: Session, company_id: uuid.UUID) -> CompanyAdm
     company = _service.get_company(db, company_id)
     if company is None:
         return None
-    return _to_admin_metadata(company)
+    return _to_admin_metadata(db, company)
 
 
-def _to_admin_metadata(company: Any) -> CompanyAdminMetadata:
+def _to_admin_metadata(db: Session, company: Any) -> CompanyAdminMetadata:
     # Reads company.settings directly (same style get_company_profile already
     # uses for .name/.requisites) rather than calling get_business_profile(db,
     # company_id) again — that would re-query a row this function already has
@@ -211,5 +216,6 @@ def _to_admin_metadata(company: Any) -> CompanyAdminMetadata:
         subscription_state_changed_at=company.subscription_state_changed_at,
         trial_ends_at=company.trial_ends_at,
         seat_limit=company.seat_limit,
+        seat_usage=_service.count_active_seats(db, company.id),
         created_at=company.created_at,
     )
