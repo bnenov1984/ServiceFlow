@@ -39,3 +39,11 @@ export interface ProvisionCompanyResult {
   activated_modules: string[];
   audit_id: string;
 }
+
+export interface EntitlementResult {
+  company_id: string;
+  module_key: string;
+  active_modules: string[];
+  changed: boolean;
+  audit_id: string;
+}
