@@ -19,6 +19,7 @@ function renderPage() {
       <MemoryRouter initialEntries={["/vendor/companies"]}>
         <Routes>
           <Route path="/vendor/companies" element={<VendorCompaniesPage />} />
+          <Route path="/vendor/companies/new" element={<div>NEW_COMPANY_PAGE</div>} />
           <Route path="/vendor/companies/:id" element={<div>COMPANY_DETAIL_PAGE</div>} />
         </Routes>
       </MemoryRouter>
@@ -61,5 +62,14 @@ describe("VendorCompaniesPage", () => {
 
     await user.click(screen.getByText("Сервиз А"));
     expect(await screen.findByText("COMPANY_DETAIL_PAGE")).toBeInTheDocument();
+  });
+
+  it("navigates to the new-company form", async () => {
+    mockGet.mockResolvedValue([]);
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "+ Нова компания" }));
+    expect(await screen.findByText("NEW_COMPANY_PAGE")).toBeInTheDocument();
   });
 });

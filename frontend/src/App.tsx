@@ -19,6 +19,7 @@ import { VendorAuthProvider } from "./vendor/VendorAuthContext";
 import { VendorCompaniesPage } from "./vendor/VendorCompaniesPage";
 import { VendorCompanyDetailPage } from "./vendor/VendorCompanyDetailPage";
 import { VendorLoginPage } from "./vendor/VendorLoginPage";
+import { VendorNewCompanyPage } from "./vendor/VendorNewCompanyPage";
 import { VendorShell } from "./vendor/VendorShell";
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -75,6 +76,7 @@ export function App() {
         >
           <Route index element={<Navigate to="companies" replace />} />
           <Route path="companies" element={<VendorCompaniesPage />} />
+          <Route path="companies/new" element={<VendorNewCompanyPage />} />
           <Route path="companies/:id" element={<VendorCompanyDetailPage />} />
           <Route path="*" element={<Navigate to="companies" replace />} />
         </Route>

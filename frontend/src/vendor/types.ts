@@ -20,3 +20,22 @@ export interface CompanySummary {
 export interface CompanyDetail extends CompanySummary {
   subscription_state_changed_at: string;
 }
+
+export interface ProvisionCompanyRequest {
+  company_name: string;
+  owner_name: string;
+  owner_email: string;
+  owner_password: string;
+  business_profile: string;
+  modules: string[];
+}
+
+export interface ProvisionCompanyResult {
+  company_id: string;
+  owner_id: string;
+  subscription_state: string;
+  trial_ends_at: string;
+  business_profile: string;
+  activated_modules: string[];
+  audit_id: string;
+}

@@ -19,7 +19,16 @@ export function VendorCompaniesPage() {
 
   return (
     <section>
-      <h1 className="mb-4 text-xl font-semibold text-slate-900">{t("vendor.companies_title")}</h1>
+      <div className="mb-4 flex items-center justify-between">
+        <h1 className="text-xl font-semibold text-slate-900">{t("vendor.companies_title")}</h1>
+        <button
+          type="button"
+          onClick={() => navigate("/vendor/companies/new")}
+          className="rounded-lg bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 min-h-touch"
+        >
+          {t("vendor.new_company_action")}
+        </button>
+      </div>
 
       {companies.isLoading ? (
         <div className="flex flex-col gap-2">
