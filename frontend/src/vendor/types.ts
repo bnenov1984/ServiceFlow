@@ -55,3 +55,10 @@ export interface SubscriptionTransitionResult {
   reason: string;
   audit_id: string;
 }
+
+export interface SeatLimitResult {
+  company_id: string;
+  seat_limit: number | null;
+  changed: boolean;
+  audit_id: string;
+}

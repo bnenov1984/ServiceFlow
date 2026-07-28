@@ -7,7 +7,9 @@ import { ErrorState, Skeleton } from "../components/States";
 import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
-import type { CompanyDetail, EntitlementResult, SubscriptionTransitionResult } from "./types";
+import type {
+  CompanyDetail, EntitlementResult, SeatLimitResult, SubscriptionTransitionResult,
+} from "./types";
 
 // The only module with any real enforcement anywhere in the app today
 // (professional_services.deps.require_ps_active) — no module-metadata
@@ -54,6 +56,12 @@ export function VendorCompanyDetailPage() {
   const [reason, setReason] = useState("");
   const [transitionSubmitting, setTransitionSubmitting] = useState(false);
   const [transitionError, setTransitionError] = useState<string | null>(null);
+
+  const [seatLimitEditOpen, setSeatLimitEditOpen] = useState(false);
+  const [seatLimitInput, setSeatLimitInput] = useState("");
+  const [seatLimitUnlimited, setSeatLimitUnlimited] = useState(false);
+  const [seatLimitSubmitting, setSeatLimitSubmitting] = useState(false);
+  const [seatLimitError, setSeatLimitError] = useState<string | null>(null);
 
   const isNotFound = company.isError && company.error instanceof ApiError
     && company.error.status === 404;
@@ -109,6 +117,37 @@ export function VendorCompanyDetailPage() {
     }
   };
 
+  const openSeatLimitEdit = () => {
+    const current = company.data?.seat_limit ?? null;
+    setSeatLimitUnlimited(current === null);
+    setSeatLimitInput(current === null ? "" : String(current));
+    setSeatLimitError(null);
+    setSeatLimitEditOpen(true);
+  };
+
+  const seatLimitValid = seatLimitUnlimited
+    || (seatLimitInput.trim().length > 0 && Number(seatLimitInput) > 0
+      && Number.isInteger(Number(seatLimitInput)));
+
+  const submitSeatLimit = async () => {
+    if (seatLimitSubmitting || !id || !seatLimitValid) return;
+    setSeatLimitSubmitting(true);
+    setSeatLimitError(null);
+    try {
+      await api.put<SeatLimitResult>(
+        `/platform-admin/companies/${id}/seat-limit`,
+        { seat_limit: seatLimitUnlimited ? null : Number(seatLimitInput) },
+      );
+      await queryClient.invalidateQueries({ queryKey: queryKeys.vendorCompany(id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.vendorCompanies });
+      setSeatLimitEditOpen(false);
+    } catch (err) {
+      setSeatLimitError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
+    } finally {
+      setSeatLimitSubmitting(false);
+    }
+  };
+
   return (
     <section>
       <Link to="/vendor/companies" className="mb-4 inline-block text-sm text-blue-700 hover:underline">
@@ -141,10 +180,66 @@ export function VendorCompanyDetailPage() {
             {company.data.trial_ends_at && (
               <Field label={t("vendor.field_trial_ends_at")} value={company.data.trial_ends_at} />
             )}
-            <Field
-              label={t("vendor.field_seat_usage")}
-              value={`${company.data.seat_usage}/${company.data.seat_limit ?? t("vendor.seat_limit_unlimited")}`}
-            />
+            <div>
+              <dt className="text-sm text-slate-500">{t("vendor.field_seat_usage")}</dt>
+              <dd className="flex items-center gap-2 text-slate-900">
+                <span>
+                  {company.data.seat_usage}/{company.data.seat_limit ?? t("vendor.seat_limit_unlimited")}
+                </span>
+                <button
+                  type="button"
+                  onClick={openSeatLimitEdit}
+                  className="text-sm text-blue-700 hover:underline"
+                >
+                  {t("vendor.seat_limit_edit_action")}
+                </button>
+              </dd>
+              {seatLimitEditOpen && (
+                <div className="mt-2 flex flex-col gap-2 rounded-lg border border-slate-200 p-3">
+                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={seatLimitUnlimited}
+                      onChange={(e) => setSeatLimitUnlimited(e.target.checked)}
+                    />
+                    {t("vendor.seat_limit_unlimited_checkbox")}
+                  </label>
+                  <label className="text-sm font-medium text-slate-700" htmlFor="seat-limit-new">
+                    {t("vendor.field_seat_limit_new")}
+                  </label>
+                  <input
+                    id="seat-limit-new"
+                    type="number"
+                    min={1}
+                    step={1}
+                    disabled={seatLimitUnlimited}
+                    value={seatLimitInput}
+                    onChange={(e) => setSeatLimitInput(e.target.value)}
+                    className="w-32 rounded-lg border border-slate-300 px-3 py-2 min-h-touch disabled:opacity-50"
+                  />
+                  {seatLimitError && (
+                    <p role="alert" className="text-sm text-red-700">{seatLimitError}</p>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={seatLimitSubmitting || !seatLimitValid}
+                      onClick={() => void submitSeatLimit()}
+                      className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 min-h-touch"
+                    >
+                      {seatLimitSubmitting ? t("common.loading") : t("order.confirm")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSeatLimitEditOpen(false)}
+                      className="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50 min-h-touch"
+                    >
+                      {t("common.cancel")}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
             <Field label={t("vendor.field_created_at")} value={company.data.created_at} />
             <Field
               label={t("vendor.field_subscription_changed_at")}

@@ -160,6 +160,13 @@ def set_subscription_state(db: Session, company_id: uuid.UUID, new_state: str) -
     return _service.set_subscription_state(db, company_id, new_state)
 
 
+def set_seat_limit(db: Session, company_id: uuid.UUID, new_limit: int | None) -> int | None:
+    """A vendor-initiated seat-limit change. Non-committing — composed
+    inside `platform_admin.service.set_seat_limit`'s single transaction.
+    Returns the *old* limit, needed for the audit record."""
+    return _service.set_seat_limit(db, company_id, new_limit)
+
+
 @dataclass(frozen=True)
 class CompanyAdminMetadata:
     """The Vendor Control Plane's metadata-only view of one company

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -30,6 +30,12 @@ function transitionDialog(): HTMLElement {
   );
   if (!found) throw new Error("transition dialog not found in the DOM");
   return found as HTMLElement;
+}
+
+function seatLimitEditor(): HTMLElement {
+  const input = document.getElementById("seat-limit-new");
+  if (!input?.parentElement) throw new Error("seat limit editor not found in the DOM");
+  return input.parentElement as HTMLElement;
 }
 
 function renderPage(id = "c1", queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
@@ -349,5 +355,114 @@ describe("VendorCompanyDetailPage", () => {
       reason: "test", audit_id: "a5",
     });
     await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+  });
+
+  it("pre-fills the current numeric seat limit with the unlimited checkbox unchecked", async () => {
+    mockGet.mockResolvedValue({ ...BASE_COMPANY, active_modules: [], seat_limit: 5 });
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Промени" }));
+
+    expect(screen.getByLabelText("Нов лимит на местата")).toHaveValue(5);
+    expect(screen.getByRole("checkbox")).not.toBeChecked();
+  });
+
+  it("shows the unlimited checkbox checked and the input disabled when seat_limit is null", async () => {
+    mockGet.mockResolvedValue({ ...BASE_COMPANY, active_modules: [], seat_limit: null });
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Промени" }));
+
+    expect(screen.getByRole("checkbox")).toBeChecked();
+    expect(screen.getByLabelText("Нов лимит на местата")).toBeDisabled();
+  });
+
+  it("submits a new numeric seat limit on the exact expected path", async () => {
+    mockGet.mockResolvedValue({ ...BASE_COMPANY, active_modules: [], seat_limit: 3 });
+    mockPut.mockResolvedValue({ company_id: "c1", seat_limit: 8, changed: true, audit_id: "s1" });
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Промени" }));
+    const input = screen.getByLabelText("Нов лимит на местата");
+    await user.clear(input);
+    await user.type(input, "8");
+    await user.click(within(seatLimitEditor()).getByRole("button", { name: "Потвърди" }));
+
+    await waitFor(() => expect(mockPut).toHaveBeenCalledWith(
+      "/platform-admin/companies/c1/seat-limit", { seat_limit: 8 },
+    ));
+  });
+
+  it("submits null when the unlimited checkbox is checked", async () => {
+    mockGet.mockResolvedValue({ ...BASE_COMPANY, active_modules: [], seat_limit: 5 });
+    mockPut.mockResolvedValue({ company_id: "c1", seat_limit: null, changed: true, audit_id: "s2" });
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Промени" }));
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(within(seatLimitEditor()).getByRole("button", { name: "Потвърди" }));
+
+    await waitFor(() => expect(mockPut).toHaveBeenCalledWith(
+      "/platform-admin/companies/c1/seat-limit", { seat_limit: null },
+    ));
+  });
+
+  it("invalidates both the company and companies list queries on a successful seat limit change", async () => {
+    mockGet.mockResolvedValue({ ...BASE_COMPANY, active_modules: [], seat_limit: 3 });
+    mockPut.mockResolvedValue({ company_id: "c1", seat_limit: 8, changed: true, audit_id: "s1" });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData(["vendor", "companies"], [{ id: "c1" }]);
+    renderPage("c1", queryClient);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Промени" }));
+    const input = screen.getByLabelText("Нов лимит на местата");
+    await user.clear(input);
+    await user.type(input, "8");
+    await user.click(within(seatLimitEditor()).getByRole("button", { name: "Потвърди" }));
+
+    await waitFor(() => {
+      expect(queryClient.getQueryState(["vendor", "companies"])?.isInvalidated).toBe(true);
+    });
+    await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(2));
+  });
+
+  it("shows a recoverable inline error on failure, leaving the editor open", async () => {
+    mockGet.mockResolvedValue({ ...BASE_COMPANY, active_modules: [], seat_limit: 3 });
+    mockPut.mockRejectedValue(new ApiError(500, "unknown", "errors.internal"));
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Промени" }));
+    const input = screen.getByLabelText("Нов лимит на местата");
+    await user.clear(input);
+    await user.type(input, "8");
+    await user.click(within(seatLimitEditor()).getByRole("button", { name: "Потвърди" }));
+
+    expect(await screen.findByText("Възникна неочаквана грешка. Опитайте отново.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Нов лимит на местата")).toHaveValue(8);
+  });
+
+  it("prevents a duplicate seat limit request from a rapid double-click", async () => {
+    mockGet.mockResolvedValue({ ...BASE_COMPANY, active_modules: [], seat_limit: 3 });
+    let resolvePut: (v: unknown) => void = () => {};
+    mockPut.mockReturnValue(new Promise((resolve) => { resolvePut = resolve; }));
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Промени" }));
+    const input = screen.getByLabelText("Нов лимит на местата");
+    await user.clear(input);
+    await user.type(input, "8");
+    const confirmButton = within(seatLimitEditor()).getByRole("button", { name: "Потвърди" });
+    await user.click(confirmButton);
+    await user.click(confirmButton);
+
+    resolvePut({ company_id: "c1", seat_limit: 8, changed: true, audit_id: "s1" });
+    await waitFor(() => expect(mockPut).toHaveBeenCalledTimes(1));
   });
 });

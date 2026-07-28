@@ -317,6 +317,24 @@ def set_subscription_state(db: Session, company_id: uuid.UUID, new_state: str) -
     return old_state
 
 
+def set_seat_limit(db: Session, company_id: uuid.UUID, new_limit: int | None) -> int | None:
+    """A vendor-initiated seat-limit change (docs/business-os/18 §9 phase 5)
+    — non-committing, composed inside `platform_admin.service.set_seat_limit`'s
+    single transaction. `None` means unlimited, the same nullable convention
+    `companies.seat_limit` already had (BOS-18 §6.3's escape hatch). Does not
+    validate `new_limit` beyond what the caller's Pydantic model already
+    enforces — the same posture as `set_subscription_state` not validating
+    `new_state`.
+
+    Returns the *old* limit, since the caller needs it for the audit record's
+    `detail.from`."""
+    company = get_company(db, company_id)
+    assert company is not None
+    old_limit = company.seat_limit
+    company.seat_limit = new_limit
+    return old_limit
+
+
 def create_company_with_owner(
     db: Session, company_name: str, owner_name: str, owner_email: str, owner_password: str,
 ) -> tuple[Company, User]:

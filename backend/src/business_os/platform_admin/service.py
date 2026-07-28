@@ -502,3 +502,57 @@ def transition_subscription(
         company_id=company_id, old_state=old_state, new_state=new_state,
         reason=stripped_reason, audit_id=audit_id,
     )
+
+
+# --- Seat limit (docs/business-os/18 §9 phase 5) ---------------------------
+#
+# `companies.seat_limit` (migration 0014) was read for employee-seat
+# enforcement since docs/business-os/18 §14.2, but until this slice nothing
+# ever wrote it — closer in shape to entitlement grant/revoke than to
+# subscription transitions: no mandatory reason, no historical-event
+# semantics, just a value flip that's still always audited even when the new
+# value equals the old one (a vendor action attempted is worth a record even
+# as a no-op, the same posture `grant_entitlement`/`revoke_entitlement` take).
+# Deliberately does not check the new limit against current seat usage —
+# lowering the limit below current usage is allowed; enforcement remains
+# entirely at the next employee create/reactivate call
+# (`identity.service.count_active_seats`), unrelated to this slice.
+
+
+class SeatLimitError(Exception):
+    def __init__(self, message_key: str, status: int = 404) -> None:
+        self.message_key = message_key
+        self.status = status
+
+
+@dataclass(frozen=True)
+class SeatLimitResult:
+    company_id: uuid.UUID
+    seat_limit: int | None
+    changed: bool
+    audit_id: uuid.UUID
+
+
+def set_seat_limit(
+    db: Session, platform_admin_id: uuid.UUID, company_id: uuid.UUID,
+    new_limit: int | None,
+) -> SeatLimitResult:
+    """Set a company's seat limit — its own atomic operation (existence
+    check, mutation, one audit row, one commit). `None` means unlimited.
+    Always audited, even when `new_limit` equals the current value."""
+    metadata = identity_contracts.get_company_admin_metadata(db, company_id)
+    if metadata is None:
+        raise SeatLimitError("errors.provisioning.company_not_found", status=404)
+
+    changed = metadata.seat_limit != new_limit
+    old_limit = identity_contracts.set_seat_limit(db, company_id, new_limit)
+    audit_id = audit.record(
+        db, audit.SEAT_LIMIT_CHANGED, correlation.ensure_bound(),
+        platform_admin_id=platform_admin_id, company_id=company_id,
+        detail={"from": old_limit, "to": new_limit, "changed": changed},
+    )
+    db.commit()
+
+    return SeatLimitResult(
+        company_id=company_id, seat_limit=new_limit, changed=changed, audit_id=audit_id,
+    )

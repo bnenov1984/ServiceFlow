@@ -313,3 +313,42 @@ def transition_subscription(
         company_id=result.company_id, old_state=result.old_state, new_state=result.new_state,
         reason=result.reason, audit_id=result.audit_id,
     )
+
+
+# --- Seat limit (docs/business-os/18 §9 phase 5) ----------------------------
+
+
+class SeatLimitRequest(BaseModel):
+    seat_limit: int | None = Field(gt=0)
+
+
+class SeatLimitResponse(BaseModel):
+    """Mirrors `service.SeatLimitResult` field-for-field."""
+
+    company_id: uuid.UUID
+    seat_limit: int | None
+    changed: bool
+    audit_id: uuid.UUID
+
+
+@router.put("/companies/{company_id}/seat-limit",
+           dependencies=[Depends(require_platform_csrf)])
+def set_seat_limit(
+    body: SeatLimitRequest, auth: PlatformAdminDep, db: VendorDbDep, company_id: uuid.UUID,
+) -> SeatLimitResponse:
+    """Set a company's seat limit. `null` means unlimited. Idempotent in
+    effect but always audited, even when the new value equals the current
+    one (mirrors `grant_entitlement`/`revoke_entitlement`, not the
+    reasoned-transition shape of subscription lifecycle changes — there is
+    no mandatory reason here)."""
+    _, admin = auth
+    try:
+        result = service.set_seat_limit(db, admin.id, company_id, body.seat_limit)
+    except service.SeatLimitError as e:
+        raise HTTPException(status_code=e.status, detail={
+            "code": "seat_limit_failed", "message_key": e.message_key, "params": {},
+        }) from e
+    return SeatLimitResponse(
+        company_id=result.company_id, seat_limit=result.seat_limit,
+        changed=result.changed, audit_id=result.audit_id,
+    )
