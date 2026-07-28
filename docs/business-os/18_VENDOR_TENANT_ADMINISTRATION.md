@@ -19,8 +19,12 @@ subscription_ok` covered all 38 tenant mutation routes at that point), §14
 added 28.07.2026 (Tenant Employee Management + Seat Limits — phases 5 and 7
 done together: seat-limit enforcement folded into employee create/
 reactivate rather than shipped as its own unconsumed engine; its own two
-new mutation routes bring the `require_subscription_ok` count to 41) ·
-Source: PO directive accepting the frozen product model
+new mutation routes bring the `require_subscription_ok` count to 41), §15
+added 28.07.2026 (RepairFlow Business Profiles — phase 6 done: `asset_types`
+company-scoped, migration 0015, seeded via a new `company_provisioned`
+domain event rather than a direct Core-to-vertical import; no per-profile
+content, no controlled profile-change workflow — both explicit PO
+decisions) · Source: PO directive accepting the frozen product model
 (Business OS + sibling apps + RepairFlow business profiles); read-only audit
 of the repository as it stands after the PropertyFlow dashboard slice
 (`frontend/src/ps/`, uncommitted at audit time — see §8).
@@ -514,10 +518,18 @@ precedent):
    abstraction with no real caller, exactly the anti-pattern this document's
    own §6.3 warns against.
    *Commit:* `feat(business-os): add tenant employee management`.
-6. **RepairFlow business profiles** — the §6.4 migration (its own PR, largest
-   of the set), profile selector in tenant settings, backend field-def
-   resolution switched from global to company-scoped.
-   *Commit:* `feat(repairflow): company-scoped business profiles (ADR-BOS-011)`.
+6. **RepairFlow business profiles — Done (28.07.2026), see §15.** The §6.4
+   migration (its own PR as recommended, migration 0015): `asset_types`
+   company-scoped, seeded per company via the `company_provisioned` domain
+   event, backend field-def resolution switched from global to
+   company-scoped. All five profiles seed identical content — no
+   per-profile field_defs exist yet (explicit PO decision). Not built: a
+   tenant-settings profile selector (the profile stays vendor-assigned,
+   read-only to the tenant, per ADR-BOS-011 — no selector was ever meant to
+   exist) and the §Decision 7 controlled profile-change workflow (its own
+   future domain command, `POST /company/profile-migration`, deliberately
+   not `PATCH`).
+   *Commit:* `feat(repairflow): add company-scoped business profiles`.
 7. **Tenant user management — Done (28.07.2026), see §14.** Owner-only
    create/activate/deactivate/role-change, seat-limit enforcement on
    create/reactivate, last-active-Owner protection, tenant `audit_log`
@@ -992,4 +1004,119 @@ internally by `identity.contracts._to_admin_metadata` — is the same
 function both sides now read; a test creates an employee through the
 tenant API and confirms the count the vendor sees increases by exactly
 one.
+
+## 15. RepairFlow Business Profiles (phase 6, 28.07.2026, ADR-BOS-011 §Decision 5)
+
+### 15.1 Three scope decisions, made explicitly before implementation
+
+This slice was the largest and riskiest of the four §6 proposed changes —
+a real schema transformation of a table every asset in the product FKs
+through. Three genuine product/architecture questions had no answer in the
+existing documents; the PO decided each before any code was written:
+
+1. **No per-profile content.** `automotive_repair`/`phone_repair`/
+   `electronics_repair`/`appliance_repair` are structural placeholders
+   only — identity, not behavior. All five profiles seed byte-identical
+   `field_defs` today (proven by a parametrized test comparing every
+   profile's seeded content against `generic_repair`'s). The
+   `business_profile` column exists specifically so a future migration can
+   introduce real per-profile content by branching inside
+   `serviceflow.assets.service.seed_default_types`, never by touching the
+   schema again.
+2. **A single clean migration, not §6.4's additive-first recommendation.**
+   That recommendation (new table alongside the old, cut over, drop the old
+   one in a second migration) is written for a scenario with real
+   production tenants whose data must survive a rolling deployment. This
+   project has none — Etap 2/3's frontend is unbuilt, so nothing has ever
+   been deployed. Migration 0015 transforms `asset_types` directly,
+   explicitly documented in its own docstring as a pre-launch-specific
+   choice; the additive-first strategy is what a *future* schema change
+   touching real customer data should use once the platform is live.
+3. **No controlled profile-change workflow in this slice.** ADR-BOS-011
+   §Decision 7's compatibility-review-and-vendor-approval process for
+   changing an *existing* company's profile is a distinct business
+   capability — its own domain command, not an extension of
+   `ProvisionCompany` and not a `PATCH` on the company resource. Per the
+   PO's own framing: changing a profile is an analysis, a compatibility
+   check, a possible migration, an audit, maybe a background job — a
+   `POST /company/profile-migration` domain command, when it's built, not
+   `PATCH /company/profile`. Nothing in this slice implements it; ADR-BOS-011
+   §Decision 7 is unchanged.
+
+### 15.2 The cross-boundary problem, and why domain events solved it
+
+`ProvisionCompany` (`platform_admin.service`) needs asset types seeded at
+the moment a company is created — but the seed *content* is owned by
+`serviceflow.assets`, and `platform_admin`/`identity` are structurally
+forbidden from importing any ServiceFlow module
+(`core-not-modules`/`vendor-plane-not-tenant-code`, backend/.importlinter).
+The established fix for a lateral cross-boundary need elsewhere in this
+codebase is a registered Provider port (`service_orders.contracts.
+PaymentSummaryProvider`) — but that pattern doesn't fit here: `identity.
+service.seed_company` (the dev/CLI path, used by nearly every test fixture
+in this repository) *also* needs to trigger seeding, and a Provider port
+would mean two call sites each explicitly invoking a registered callback,
+with the registration itself needing to happen before either could run.
+
+Instead, this slice reuses `business_os.shared_kernel.events` — the
+synchronous, same-transaction domain-event bus `serviceflow.timeline`
+already subscribes to for order-related events, applied for the first time
+across the Core/vertical edge instead of within ServiceFlow:
+
+- `identity.service.seed_company` and `platform_admin.service.
+  provision_company` each `publish(db, DomainEvent(type="company_provisioned",
+  company_id=..., data={"business_profile": ...}))` right before their own
+  commit — neither imports `serviceflow.assets` at all;
+- `serviceflow.assets.service` subscribes (`@subscribe`-decorated,
+  registered as a side effect of the module being imported — already
+  transitive via `serviceflow.assets.router`, itself imported by
+  `serviceflow/main.py`, mirroring exactly how `serviceflow.timeline`
+  registers) and seeds the company's own asset-type copies in the *same*
+  transaction the publisher is still inside;
+- a failure during seeding propagates back through `publish()` to the
+  publisher's own commit, so a broken seed rolls back the whole
+  provisioning operation — atomicity is free, not something this design
+  had to re-solve.
+
+Proven, not just designed: `test_import_linter_catches_identity_importing_
+serviceflow_assets`/`..._platform_admin_importing_serviceflow_assets`
+(tests/test_architecture.py) confirm a direct import would still be
+caught, and `test_asset_type_seeding_subscriber_is_registered` confirms the
+side-effect registration actually happened rather than trusting the import
+chain.
+
+**One correctness fix this design required that a Provider port wouldn't
+have**: `asset_types` is now RLS-protected (§15.3), but company
+provisioning runs as an RLS-*exempt* identity/vendor operation with no
+tenant GUC bound yet. The subscriber calls `bind_tenant_scope(db, event.
+company_id)` before seeding — without it, the very RLS policy this
+migration adds would silently reject its own seeding INSERT.
+
+### 15.3 Schema: `asset_types` company-scoped (migration 0015)
+
+`code` (a bare global primary key) becomes a UUIDv7 `id` primary key +
+`company_id` FK + unique `(company_id, code)` — the form docs/business-os/18
+§6.4 itself recommended over a compound `(company_id, code)` FK ("to match
+the rest of the schema... rather than a composite key, which nothing else
+in this codebase uses" — confirmed by grep before implementing: zero
+composite FKs exist anywhere). RLS added (`FORCE ROW LEVEL SECURITY`,
+the standard tenant policy) — `asset_types` moves from RLS-exempt global
+reference data to a normal tenant table. `TimestampMixin` added for
+consistency with every other company-scoped reference table
+(`PSWorkflowTemplate`, etc.).
+
+`assets.asset_type_code` (a global-code FK) becomes `assets.asset_type_id`
+(a UUID FK to the per-company row) internally — but **the wire-level API
+contract is completely unchanged**: `AssetIn`/`AssetOut.asset_type_code`
+still send/receive the same strings ("phone", "vehicle", ...) as before;
+`serviceflow/assets/router.py` resolves between the two at the boundary.
+Proof: `tests/test_assets.py`, the pre-existing test file, required zero
+changes — every one of its assertions about `asset_type_code` still holds
+exactly as written before this migration.
+
+Existing companies (none in any deployed environment — local/test data
+only) were backfilled in the migration itself with their own copy of the
+four current types, tagged with whatever business profile they already had
+assigned, or `generic_repair` for companies predating that field entirely
+(`identity.service.seed_company`'s own path).
 

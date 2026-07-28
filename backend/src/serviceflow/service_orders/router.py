@@ -548,7 +548,7 @@ def order_protocol(order_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep,
     asset = assets_service.get(db, tenant, order.asset_id)
     if customer is None or asset is None:
         raise _not_found()
-    asset_type = assets_service.get_type(db, asset.asset_type_code)
+    asset_type = assets_service.get_type_by_id(db, tenant, asset.asset_type_id)
     company = get_company_profile(db, tenant.company_id)
     assert asset_type is not None
 

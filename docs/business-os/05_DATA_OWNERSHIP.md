@@ -6,8 +6,10 @@ Date: 17.07.2026, §2 amended 26.07.2026 (Vendor Control Plane / RepairFlow
 business profile planned tables — see
 [18_VENDOR_TENANT_ADMINISTRATION.md](18_VENDOR_TENANT_ADMINISTRATION.md) §6),
 §1 amended 27.07.2026 (the three Vendor Control Plane tables shipped in
-migration 0012 and moved from §2 to §1; the RepairFlow `asset_types` change
-remains proposed) · Table inventory from migrations 0001–0006 and
+migration 0012 and moved from §2 to §1), §1 amended again 28.07.2026 (the
+RepairFlow `asset_types` company-scoping, migration 0015, also moved from
+§2 to §1 — the last of the four §6 proposed changes to land) · Table
+inventory from migrations 0001–0006 and
 `backend/src/serviceflow/*/models.py`.
 
 Conventions: public identifier is always the UUIDv7 `id` (ADR-013) — modules
@@ -28,7 +30,7 @@ brevity.
 | `platform_admin_sessions` | platform_admin | Core: Vendor Control Plane | Vendor Control Plane only | Vendor Control Plane only | the distinct session kind ADR-BOS-009 requires — its own table, not a `kind` column on `sessions`, whose `company_id`/`user_id` are NOT NULL | Implemented (vendor security foundation, 27.07.2026) |
 | `platform_audit_log` | platform_admin | Core: Vendor Control Plane | Vendor Control Plane only | Vendor Control Plane only, append-only (`platform_admin/audit.py::record` is the sole writer; a DB trigger forbids UPDATE/DELETE) | nullable `company_id` is a *target* reference, not a tenancy scope — no ORM-level FK (the vendor plane may not import `identity.models`), so the constraint lives in migration 0012 only | Implemented (vendor security foundation, 27.07.2026) |
 | `customers` | customers | SF: Customers & Assets | Customers & Assets; Service Ops (same vertical, R6); search/dashboard (same context) | customers service only | none | Recommended |
-| `asset_types` | assets | SF: Customers & Assets | same as customers | assets service (seeded at vendor-assigned profile, ADR-BOS-011) | **global today, no `company_id`** — proposed to become company-scoped for RepairFlow business profiles (ADR-BOS-011, [18](18_VENDOR_TENANT_ADMINISTRATION.md) §6.4); not yet changed | Recommended |
+| `asset_types` | assets | SF: Customers & Assets | same as customers | assets service only — seeded via `seed_default_types`, triggered by the `company_provisioned` domain event (never a direct call from identity/platform_admin, which may not import `serviceflow.assets` — ADR-BOS-011 §Decision 5) | **Company-scoped since migration 0015** (`company_id` + UUIDv7 `id`, RLS FORCE, unique `(company_id, code)`); `assets.asset_type_code` became `assets.asset_type_id` internally, wire contract unchanged. All five business profiles seed identical content today (docs/business-os/18 §15) — per-profile field_defs are future, additive work | Implemented (28.07.2026) |
 | `assets` | assets | SF: Customers & Assets | same as customers | assets service | none | Recommended |
 | `asset_identifiers` | assets | SF: Customers & Assets | same + search | assets service | none | Recommended |
 | `order_statuses` | service_orders | SF: Service Operations | all ServiceFlow packages; frontend via generated transition matrix | seed only (per-company rename comes in Етап 3) | global seed table — no company_id; stays inside the vertical | Recommended |
@@ -64,7 +66,7 @@ brevity.
 | `company_modules`/`active_modules` (activation — ADR-BOS-004) | Core: Identity | all modules (read, via `is_module_active` contract) | **Vendor Control Plane only** once built (ADR-BOS-010); today CLI/seed only | **Implemented** as `companies.settings.active_modules` (JSONB), not a separate table — the "Deferred until module #2" note below is stale, module #2 (professional-services) shipped it 18.07.2026. Mutation path still needs the Vendor Control Plane — see [18](18_VENDOR_TENANT_ADMINISTRATION.md) §1.3 |
 | `license_state` (docs/08 §platform) | parked with local edition | — | — | Deferred (docs/14) |
 | ~~`platform_admins`, `platform_audit_log`~~ (Core, ADR-BOS-009) | Core: Vendor Control Plane | — | — | **Built 27.07.2026** (migration 0012, [18](18_VENDOR_TENANT_ADMINISTRATION.md) §9 phase 1) — moved to §1 above, together with `platform_admin_sessions`, which §6.2 did not enumerate but ADR-BOS-009's "distinct session kind" requires |
-| Company-scoped `asset_types` (RepairFlow — schema change to an existing global table, ADR-BOS-011) | ServiceFlow: Customers & Assets (RepairFlow) | same as `customers`/`assets` today | assets service only | **Proposed, not implemented** — largest of the four proposed changes (existing FK from `assets.asset_type_code` needs to become company-aware); see [18](18_VENDOR_TENANT_ADMINISTRATION.md) §6.4 |
+| ~~Company-scoped `asset_types`~~ (RepairFlow, ADR-BOS-011) | ServiceFlow: Customers & Assets (RepairFlow) | — | — | **Built 28.07.2026** (migration 0015, [18](18_VENDOR_TENANT_ADMINISTRATION.md) §15) — moved to §1 above, the largest of the four proposed §6 changes to actually land |
 
 ## 3. Ambiguous concepts — analyzed, not unified
 

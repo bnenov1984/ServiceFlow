@@ -1,14 +1,19 @@
-"""Assets per docs/01: generic Asset + seed-defined AssetType (no form builder, S2).
+"""Assets per docs/01: generic Asset + per-company AssetType (no form builder, S2).
 
-AssetType is system reference data — global, seeded by migration, no tenant scope.
-Asset and AssetIdentifier are tenant tables under RLS.
+AssetType is company-scoped RepairFlow business-profile data (ADR-BOS-011
+§Decision 5, docs/business-os/18 §6.4/§15) — every company owns its own copy,
+seeded once at provisioning (`serviceflow.assets.service.seed_default_types`,
+triggered by the `company_provisioned` domain event). A later edit to one
+company's copy never touches another's; there is no shared template to fork
+from at all, unlike PS workflow templates which still have one.
+Asset and AssetIdentifier are tenant tables under RLS; AssetType now is too.
 """
 
 import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import ForeignKey, text
+from sqlalchemy import ForeignKey, Index, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,10 +21,25 @@ from business_os.shared_kernel.db import Base, TimestampMixin
 from business_os.shared_kernel.ids import new_id
 
 
-class AssetType(Base):
-    __tablename__ = "asset_types"
+class AssetType(Base, TimestampMixin):
+    """`business_profile` tags which RepairFlow profile this copy was seeded
+    under (ADR-BOS-011's five-slug vocabulary — validated by the caller,
+    `platform_admin.service.VALID_BUSINESS_PROFILES`, not here, same
+    division of labor as `identity.service.set_business_profile`). Content
+    is identical across every profile today (docs/business-os/18 §15,
+    PO decision 28.07.2026) — the column exists so a future profile-specific
+    seed set needs only a branch in `seed_default_types`, never another
+    schema change."""
 
-    code: Mapped[str] = mapped_column(primary_key=True)
+    __tablename__ = "asset_types"
+    __table_args__ = (
+        Index("uq_asset_types_company_id_code", "company_id", "code", unique=True),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=new_id)
+    company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("companies.id"))
+    code: Mapped[str]
+    business_profile: Mapped[str]
     name_bg: Mapped[str]
     icon: Mapped[str] = mapped_column(default="", server_default="")
     sort: Mapped[int] = mapped_column(default=0, server_default=text("0"))
@@ -35,7 +55,7 @@ class Asset(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=new_id)
     company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("companies.id"))
     customer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("customers.id"), index=True)
-    asset_type_code: Mapped[str] = mapped_column(ForeignKey("asset_types.code"))
+    asset_type_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("asset_types.id"))
     label: Mapped[str]  # display: brand + model or explicit label
     field_values: Mapped[dict[str, Any]] = mapped_column(
         JSONB, default=dict, server_default=text("'{}'")

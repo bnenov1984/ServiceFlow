@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from business_os.identity import security
 from business_os.identity.models import AuditLog, AuthSession, Company, User
+from business_os.shared_kernel.events import DomainEvent, publish
 
 logger = logging.getLogger(__name__)
 
@@ -482,7 +483,14 @@ def update_employee(
 
 def seed_company(db: Session, company_name: str, owner_name: str, owner_email: str,
                  owner_password: str, owner_pin: str | None = None) -> Company:
-    """Idempotent dev/staging seed: company + Owner (self-serve registration is Етап 3)."""
+    """Idempotent dev/staging seed: company + Owner (self-serve registration is Етап 3).
+
+    Publishes `company_provisioned` exactly like `ProvisionCompany` does —
+    this is the only other code path that creates a company, and every
+    company, seeded or vendor-provisioned, needs its own RepairFlow asset
+    types (docs/business-os/18 §15). No `business_profile` is assigned by
+    this dev/CLI path, so the event carries the same default
+    `DEFAULT_BUSINESS_PROFILE` the identity-side reader falls back to."""
     existing = db.scalar(select(User).where(User.email.ilike(owner_email)))
     if existing is not None:
         company = db.get(Company, existing.company_id)
@@ -501,5 +509,9 @@ def seed_company(db: Session, company_name: str, owner_name: str, owner_email: s
         is_owner=True,
     ))
     _audit(db, company.id, None, "company_seeded", {"name": company_name})
+    publish(db, DomainEvent(
+        type="company_provisioned", company_id=company.id, actor_user_id=None,
+        data={"business_profile": DEFAULT_BUSINESS_PROFILE},
+    ))
     db.commit()
     return company

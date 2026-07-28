@@ -717,3 +717,47 @@ def test_identity_auth_mechanics_are_never_gated_by_subscription_state() -> None
         assert require_subscription_ok not in callables, (
             f"auth route {path} must never require_subscription_ok"
         )
+
+
+# --- RepairFlow Business Profiles (docs/business-os/18 §15, 28.07.2026) —
+# the domain-event mechanism must be the *only* way identity/platform_admin
+# reach serviceflow.assets' asset-type seeding; a direct import would violate
+# the same boundary vendor-plane-not-tenant-code/core-not-modules already
+# enforce for every other Core-to-vertical edge. -----------------------------
+
+
+def test_import_linter_catches_identity_importing_serviceflow_assets() -> None:
+    """Proves detection capability for the exact temptation this slice's
+    design avoided: identity.service could have imported
+    serviceflow.assets.service directly instead of publishing
+    `company_provisioned` — this must still fail if anyone reintroduces it."""
+    graph = _real_graph()
+    graph.add_import(  # type: ignore[attr-defined]
+        importer="business_os.identity.service",
+        imported="serviceflow.assets.service",
+        line_number=1, line_contents="from serviceflow.assets import service",
+    )
+    report = _importlinter_report(("core-not-modules",), graph=graph)
+    assert report.contains_failures  # type: ignore[attr-defined]
+
+
+def test_import_linter_catches_platform_admin_importing_serviceflow_assets() -> None:
+    graph = _real_graph()
+    graph.add_import(  # type: ignore[attr-defined]
+        importer="business_os.platform_admin.service",
+        imported="serviceflow.assets.service",
+        line_number=1, line_contents="from serviceflow.assets import service",
+    )
+    report = _importlinter_report(("core-not-modules",), graph=graph)
+    assert report.contains_failures  # type: ignore[attr-defined]
+
+
+def test_asset_type_seeding_subscriber_is_registered() -> None:
+    """The `company_provisioned` subscriber registers as a side effect of
+    `serviceflow.assets.service` being imported (transitively, via
+    `serviceflow.assets.router`, which `serviceflow/main.py` imports) — this
+    proves it actually happened, rather than trusting the import chain."""
+    from business_os.shared_kernel import events
+    from serviceflow.assets.service import _seed_types_on_company_provisioned
+
+    assert _seed_types_on_company_provisioned in events._subscribers  # noqa: SLF001

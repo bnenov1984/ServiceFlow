@@ -24,6 +24,7 @@ from business_os.identity import contracts as identity_contracts
 from business_os.platform_admin import audit
 from business_os.platform_admin.models import PlatformAdmin, PlatformAdminSession
 from business_os.shared_kernel import correlation, passwords
+from business_os.shared_kernel.events import DomainEvent, publish
 
 # Shorter than the tenant session's 12h (identity.service.SESSION_TTL): a vendor
 # credential spans every customer company, so an unattended browser is worth more
@@ -271,6 +272,13 @@ def provision_company(
     not at all. Provisioning is successful only if the business data and the
     audit record commit together — the audit row is part of the operation,
     not appended after it.
+
+    Publishing `company_provisioned` (after the profile is assigned, so the
+    event carries the profile the company was actually given) is how
+    `serviceflow.assets` seeds this company's own RepairFlow asset types
+    without platform_admin ever importing a ServiceFlow module — forbidden
+    by `vendor-plane-not-tenant-code` — see that subscriber's own docstring
+    (docs/business-os/18 §15).
     """
     if business_profile not in VALID_BUSINESS_PROFILES:
         raise ProvisioningError("errors.provisioning.invalid_business_profile", status=400)
@@ -283,6 +291,10 @@ def provision_company(
         raise ProvisioningError(e.message_key, status=e.status) from e
 
     identity_contracts.set_business_profile(db, provisioned.company_id, business_profile)
+    publish(db, DomainEvent(
+        type="company_provisioned", company_id=provisioned.company_id,
+        actor_user_id=None, data={"business_profile": business_profile},
+    ))
     for module_key in modules:
         identity_contracts.grant_module(db, provisioned.company_id, module_key)
     trial_ends_at = identity_contracts.set_subscription_trial(
