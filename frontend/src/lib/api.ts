@@ -2,6 +2,14 @@
  * Thin fetch wrapper (docs/15 §5.1): credentials included, CSRF header on
  * mutations, docs/09 §1 error envelope parsed into ApiError with a message_key
  * the catalog renders. The CSRF token is set by AuthProvider after /auth/me.
+ *
+ * Two independent CSRF slots, not one: the tenant app and the Vendor Console
+ * (business-os/18, ADR-BOS-009) are structurally separate sessions that can
+ * both be alive in the same tab (client-side routing between them never
+ * reloads the page). Sharing one `csrfToken` variable would mean whichever
+ * logged in most recently silently overwrites the other's token, breaking
+ * that other session's next mutation — so the vendor plane gets its own slot,
+ * selected by path prefix.
  */
 
 export interface FieldError {
@@ -22,9 +30,14 @@ export class ApiError extends Error {
 }
 
 let csrfToken: string | null = null;
+let vendorCsrfToken: string | null = null;
 
 export function setCsrfToken(token: string | null): void {
   csrfToken = token;
+}
+
+export function setVendorCsrfToken(token: string | null): void {
+  vendorCsrfToken = token;
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -32,7 +45,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   const init: RequestInit = { method, credentials: "include", headers };
 
   if (method !== "GET") {
-    if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
+    const token = path.startsWith("/platform-admin") ? vendorCsrfToken : csrfToken;
+    if (token) headers["X-CSRF-Token"] = token;
     if (body instanceof FormData) {
       init.body = body; // browser sets multipart boundary itself
     } else if (body !== undefined) {

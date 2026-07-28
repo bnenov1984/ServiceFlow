@@ -28,4 +28,8 @@ export const queryKeys = {
   psAssignmentStages: (id: string) => ["ps", "assignments", id, "stages"] as const,
   psNextActions: ["ps", "next-actions"] as const,
   psWorkflowTemplates: ["ps", "workflow-templates"] as const,
+  psDeadlineHistory: (id: string) => ["ps", "assignments", id, "deadline-history"] as const,
+  vendorMe: ["vendor", "me"] as const,
+  vendorCompanies: ["vendor", "companies"] as const,
+  vendorCompany: (id: string) => ["vendor", "company", id] as const,
 };

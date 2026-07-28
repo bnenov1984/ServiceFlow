@@ -21,6 +21,156 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/platform-admin/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Vendor Login */
+        post: operations["vendor_login_api_v1_platform_admin_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform-admin/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Vendor Me
+         * @description The protected walking-skeleton read. Not audited: a GET of your own
+         *     identity is not a state change, and auditing every read would bury the
+         *     mutations the log exists for (ADR-BOS-009 audits *mutations*).
+         */
+        get: operations["vendor_me_api_v1_platform_admin_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform-admin/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Vendor Logout */
+        post: operations["vendor_logout_api_v1_platform_admin_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform-admin/companies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Companies */
+        get: operations["list_companies_api_v1_platform_admin_companies_get"];
+        put?: never;
+        /**
+         * Provision Company
+         * @description The only route that creates a company. See
+         *     `service.provision_company`'s docstring for the atomicity guarantee this
+         *     wraps unchanged.
+         */
+        post: operations["provision_company_api_v1_platform_admin_companies_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform-admin/companies/{company_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Company */
+        get: operations["get_company_api_v1_platform_admin_companies__company_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform-admin/companies/{company_id}/modules/{module_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Grant Entitlement
+         * @description Grant one module entitlement. Idempotent: calling this again on an
+         *     already-active module is a harmless no-op (`changed=False` in the
+         *     response), not an error.
+         */
+        put: operations["grant_entitlement_api_v1_platform_admin_companies__company_id__modules__module_key__put"];
+        post?: never;
+        /**
+         * Revoke Entitlement
+         * @description Revoke one module entitlement. Idempotent, symmetric to
+         *     `grant_entitlement`. Never touches subscription state (ADR-BOS-010
+         *     §Decision 3) — a company can lose one module while remaining fully paid
+         *     up on everything else.
+         */
+        delete: operations["revoke_entitlement_api_v1_platform_admin_companies__company_id__modules__module_key__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform-admin/companies/{company_id}/subscription/transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transition Subscription
+         * @description Transition a company's subscription lifecycle state (trial / active /
+         *     grace_period / suspended / cancelled) — always with a mandatory reason.
+         *     One endpoint, not one per state ("suspend", "reactivate", ...): the
+         *     operation is the same reasoned-change shape regardless of direction, and
+         *     the console's suspend/reactivate buttons are just this call with a
+         *     different `new_state`.
+         */
+        post: operations["transition_subscription_api_v1_platform_admin_companies__company_id__subscription_transitions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -726,11 +876,40 @@ export interface paths {
         /** List Users */
         get: operations["list_users_api_v1_users_get"];
         put?: never;
-        post?: never;
+        /**
+         * Create Employee
+         * @description Owner-only (docs/02 §12); bounded by the vendor-set seat limit
+         *     (`errors.employees.seat_limit_reached` when there is no room, unless
+         *     `seat_limit` is null — unlimited).
+         */
+        post: operations["create_employee_api_v1_users_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Employee
+         * @description Activate/deactivate and/or change role in one call. Reactivating
+         *     counts against the seat limit like creation does; the last active Owner
+         *     can never be deactivated or demoted (`errors.employees.
+         *     last_owner_protected`).
+         */
+        patch: operations["update_employee_api_v1_users__user_id__patch"];
         trace?: never;
     };
     "/api/v1/dashboard": {
@@ -802,6 +981,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ps/workflow-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Templates */
+        get: operations["list_templates_api_v1_ps_workflow_templates_get"];
+        put?: never;
+        /** Create Template */
+        post: operations["create_template_api_v1_ps_workflow_templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ps/workflow-templates/{template_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Template */
+        get: operations["get_template_api_v1_ps_workflow_templates__template_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ps/assignments": {
         parameters: {
             query?: never;
@@ -837,6 +1051,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ps/assignments/{assignment_id}/stages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Assignment Stages */
+        get: operations["list_assignment_stages_api_v1_ps_assignments__assignment_id__stages_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ps/assignments/{assignment_id}/stage": {
         parameters: {
             query?: never;
@@ -848,6 +1079,64 @@ export interface paths {
         put?: never;
         /** Change Stage */
         post: operations["change_stage_api_v1_ps_assignments__assignment_id__stage_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ps/assignments/{assignment_id}/deadline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Change Deadline */
+        post: operations["change_deadline_api_v1_ps_assignments__assignment_id__deadline_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ps/assignments/{assignment_id}/deadline-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Deadline Changes */
+        get: operations["list_deadline_changes_api_v1_ps_assignments__assignment_id__deadline_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ps/assignments/evaluate-risk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Evaluate Risk
+         * @description Manual trigger for the per-tenant deadline/staleness recompute
+         *     (PS-13 §7's "morning job", not yet wired to any scheduler - see
+         *     service.evaluate_company_risk's own docstring). Idempotent: calling
+         *     this repeatedly with nothing changed underneath returns changed=0
+         *     every time.
+         */
+        post: operations["evaluate_risk_api_v1_ps_assignments_evaluate_risk_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1013,6 +1302,8 @@ export interface components {
             official_deadline_on?: string | null;
             /** Internal Target On */
             internal_target_on?: string | null;
+            /** Workflow Template Id */
+            workflow_template_id?: string | null;
         };
         /** AssignmentOut */
         AssignmentOut: {
@@ -1028,14 +1319,17 @@ export interface components {
             client_id: string;
             /** Title */
             title: string;
-            /** Stage */
-            stage: string;
             /** Lifecycle State */
             lifecycle_state: string;
+            current_stage: components["schemas"]["StageOut"] | null;
             /** Official Deadline On */
             official_deadline_on: string | null;
             /** Internal Target On */
             internal_target_on: string | null;
+            /** Current Deadline Risk */
+            current_deadline_risk: string;
+            /** Current Stale */
+            current_stale: boolean;
         };
         /** AttachmentOut */
         AttachmentOut: {
@@ -1098,6 +1392,72 @@ export interface components {
             name: string;
             /** Kind */
             kind: string;
+        };
+        /** CompanyDetail */
+        CompanyDetail: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Business Profile */
+            business_profile: string;
+            /** Active Modules */
+            active_modules: string[];
+            /** Subscription State */
+            subscription_state: string;
+            /** Trial Ends At */
+            trial_ends_at: string | null;
+            /** Seat Limit */
+            seat_limit: number | null;
+            /** Seat Usage */
+            seat_usage: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Subscription State Changed At
+             * Format: date-time
+             */
+            subscription_state_changed_at: string;
+        };
+        /**
+         * CompanySummary
+         * @description Administrative metadata only (ADR-BOS-009 §Vendor data visibility) —
+         *     never tenant operational data. `seat_usage` closes a gap flagged in the
+         *     Company Provisioning slice: ADR-BOS-009 lists it as vendor-visible
+         *     metadata alongside `seat_limit`, deferred only until Tenant Employee
+         *     Management (docs/business-os/18 §9 phase 7) gave it something to count.
+         */
+        CompanySummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Business Profile */
+            business_profile: string;
+            /** Active Modules */
+            active_modules: string[];
+            /** Subscription State */
+            subscription_state: string;
+            /** Trial Ends At */
+            trial_ends_at: string | null;
+            /** Seat Limit */
+            seat_limit: number | null;
+            /** Seat Usage */
+            seat_usage: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** ContactRecordIn */
         ContactRecordIn: {
@@ -1307,6 +1667,33 @@ export interface components {
             /** Call Tasks */
             call_tasks: number;
         };
+        /** DeadlineChangeIn */
+        DeadlineChangeIn: {
+            /**
+             * Official Deadline On
+             * Format: date
+             */
+            official_deadline_on: string;
+            /** Reason */
+            reason: string;
+        };
+        /** DeadlineChangeOut */
+        DeadlineChangeOut: {
+            /** Old Value */
+            old_value: string | null;
+            /**
+             * New Value
+             * Format: date
+             */
+            new_value: string;
+            /** Reason */
+            reason: string;
+            /**
+             * Changed At
+             * Format: date-time
+             */
+            changed_at: string;
+        };
         /** DiagnosisIn */
         DiagnosisIn: {
             /**
@@ -1356,6 +1743,56 @@ export interface components {
             approval: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** EmployeeIn */
+        EmployeeIn: {
+            /** Name */
+            name: string;
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /** Password */
+            password: string;
+            /**
+             * Is Owner
+             * @default false
+             */
+            is_owner: boolean;
+            /** Pin */
+            pin?: string | null;
+        };
+        /** EmployeePatch */
+        EmployeePatch: {
+            /** Is Active */
+            is_active?: boolean | null;
+            /** Is Owner */
+            is_owner?: boolean | null;
+        };
+        /**
+         * EntitlementResponse
+         * @description Mirrors `service.EntitlementResult` field-for-field. `active_modules`
+         *     is the company's full set *after* this call — a vendor UI can render it
+         *     directly without a second GET.
+         */
+        EntitlementResponse: {
+            /**
+             * Company Id
+             * Format: uuid
+             */
+            company_id: string;
+            /** Module Key */
+            module_key: string;
+            /** Active Modules */
+            active_modules: string[];
+            /** Changed */
+            changed: boolean;
+            /**
+             * Audit Id
+             * Format: uuid
+             */
+            audit_id: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1551,6 +1988,10 @@ export interface components {
             csrf_token: string;
             /** Active Modules */
             active_modules: string[];
+            /** Seat Limit */
+            seat_limit: number | null;
+            /** Seat Usage */
+            seat_usage: number;
         };
         /** NextActionCreate */
         NextActionCreate: {
@@ -1936,6 +2377,81 @@ export interface components {
             /** Pin */
             pin: string;
         };
+        /**
+         * PlatformAdminMe
+         * @description Deliberately narrow: who you are and the CSRF token you need. No
+         *     `company_id` field exists here because a Vendor Administrator has no
+         *     company — this response shape is where that stops being a comment and
+         *     becomes a contract.
+         */
+        PlatformAdminMe: {
+            /**
+             * Platform Admin Id
+             * Format: uuid
+             */
+            platform_admin_id: string;
+            /** Name */
+            name: string;
+            /** Email */
+            email: string;
+            /** Csrf Token */
+            csrf_token: string;
+        };
+        /** ProvisionCompanyRequest */
+        ProvisionCompanyRequest: {
+            /** Company Name */
+            company_name: string;
+            /** Owner Name */
+            owner_name: string;
+            /**
+             * Owner Email
+             * Format: email
+             */
+            owner_email: string;
+            /** Owner Password */
+            owner_password: string;
+            /**
+             * Business Profile
+             * @default generic_repair
+             */
+            business_profile: string;
+            /** Modules */
+            modules?: string[];
+        };
+        /**
+         * ProvisionCompanyResponse
+         * @description Mirrors `service.ProvisionResult` field-for-field — the HTTP shape of
+         *     the provisioning contract, not a place to add response-only fields of
+         *     its own.
+         */
+        ProvisionCompanyResponse: {
+            /**
+             * Company Id
+             * Format: uuid
+             */
+            company_id: string;
+            /**
+             * Owner Id
+             * Format: uuid
+             */
+            owner_id: string;
+            /** Subscription State */
+            subscription_state: string;
+            /**
+             * Trial Ends At
+             * Format: date-time
+             */
+            trial_ends_at: string;
+            /** Business Profile */
+            business_profile: string;
+            /** Activated Modules */
+            activated_modules: string[];
+            /**
+             * Audit Id
+             * Format: uuid
+             */
+            audit_id: string;
+        };
         /** ReadyWidget */
         ReadyWidget: {
             /** Count */
@@ -1954,8 +2470,25 @@ export interface components {
         };
         /** StageChange */
         StageChange: {
-            /** To */
-            to: string;
+            /**
+             * To Stage Id
+             * Format: uuid
+             */
+            to_stage_id: string;
+        };
+        /** StageOut */
+        StageOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Category */
+            category: string;
+            /** Sort */
+            sort: number;
         };
         /** StatusChange */
         StatusChange: {
@@ -1969,6 +2502,35 @@ export interface components {
             } | null;
             /** Warranty Days */
             warranty_days?: number | null;
+        };
+        /** SubscriptionTransitionRequest */
+        SubscriptionTransitionRequest: {
+            /** New State */
+            new_state: string;
+            /** Reason */
+            reason: string;
+        };
+        /**
+         * SubscriptionTransitionResponse
+         * @description Mirrors `service.SubscriptionTransitionResult` field-for-field.
+         */
+        SubscriptionTransitionResponse: {
+            /**
+             * Company Id
+             * Format: uuid
+             */
+            company_id: string;
+            /** Old State */
+            old_state: string;
+            /** New State */
+            new_state: string;
+            /** Reason */
+            reason: string;
+            /**
+             * Audit Id
+             * Format: uuid
+             */
+            audit_id: string;
         };
         /** TaskIn */
         TaskIn: {
@@ -2061,6 +2623,8 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+            /** Email */
+            email: string;
             /** Is Owner */
             is_owner: boolean;
             /** Is Active */
@@ -2079,10 +2643,62 @@ export interface components {
             /** Context */
             ctx?: Record<string, never>;
         };
+        /** VendorLoginRequest */
+        VendorLoginRequest: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /** Password */
+            password: string;
+        };
         /** WarrantyReturnRequest */
         WarrantyReturnRequest: {
             /** Complaint */
             complaint: string;
+        };
+        /** WorkflowTemplateCreate */
+        WorkflowTemplateCreate: {
+            /** Name */
+            name: string;
+            /** Stages */
+            stages: components["schemas"]["WorkflowTemplateStageIn"][];
+        };
+        /** WorkflowTemplateOut */
+        WorkflowTemplateOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Is Active */
+            is_active: boolean;
+            /** Stages */
+            stages: components["schemas"]["WorkflowTemplateStageOut"][];
+        };
+        /** WorkflowTemplateStageIn */
+        WorkflowTemplateStageIn: {
+            /** Name */
+            name: string;
+            /** Category */
+            category: string;
+        };
+        /** WorkflowTemplateStageOut */
+        WorkflowTemplateStageOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Category */
+            category: string;
+            /** Sort */
+            sort: number;
         };
     };
     responses: never;
@@ -2109,6 +2725,264 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthReport"];
+                };
+            };
+        };
+    };
+    vendor_login_api_v1_platform_admin_auth_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VendorLoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformAdminMe"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vendor_me_api_v1_platform_admin_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformAdminMe"];
+                };
+            };
+        };
+    };
+    vendor_logout_api_v1_platform_admin_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+        };
+    };
+    list_companies_api_v1_platform_admin_companies_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanySummary"][];
+                };
+            };
+        };
+    };
+    provision_company_api_v1_platform_admin_companies_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProvisionCompanyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProvisionCompanyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_company_api_v1_platform_admin_companies__company_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                company_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    grant_entitlement_api_v1_platform_admin_companies__company_id__modules__module_key__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                company_id: string;
+                module_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntitlementResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_entitlement_api_v1_platform_admin_companies__company_id__modules__module_key__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                company_id: string;
+                module_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntitlementResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transition_subscription_api_v1_platform_admin_companies__company_id__subscription_transitions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                company_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubscriptionTransitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionTransitionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -3934,6 +4808,74 @@ export interface operations {
             };
         };
     };
+    create_employee_api_v1_users_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmployeeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_employee_api_v1_users__user_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmployeePatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     dashboard_api_v1_dashboard_get: {
         parameters: {
             query?: never;
@@ -4069,6 +5011,90 @@ export interface operations {
             };
         };
     };
+    list_templates_api_v1_ps_workflow_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowTemplateOut"][];
+                };
+            };
+        };
+    };
+    create_template_api_v1_ps_workflow_templates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowTemplateCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowTemplateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_template_api_v1_ps_workflow_templates__template_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowTemplateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_assignments_api_v1_ps_assignments_get: {
         parameters: {
             query?: never;
@@ -4153,6 +5179,37 @@ export interface operations {
             };
         };
     };
+    list_assignment_stages_api_v1_ps_assignments__assignment_id__stages_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assignment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StageOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     change_stage_api_v1_ps_assignments__assignment_id__stage_post: {
         parameters: {
             query?: never;
@@ -4184,6 +5241,94 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_deadline_api_v1_ps_assignments__assignment_id__deadline_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assignment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeadlineChangeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignmentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_deadline_changes_api_v1_ps_assignments__assignment_id__deadline_history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assignment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeadlineChangeOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    evaluate_risk_api_v1_ps_assignments_evaluate_risk_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: number;
+                    };
                 };
             };
         };

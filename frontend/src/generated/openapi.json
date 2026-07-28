@@ -26,6 +26,364 @@
         }
       }
     },
+    "/api/v1/platform-admin/auth/login": {
+      "post": {
+        "tags": [
+          "platform-admin"
+        ],
+        "summary": "Vendor Login",
+        "operationId": "vendor_login_api_v1_platform_admin_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VendorLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformAdminMe"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform-admin/me": {
+      "get": {
+        "tags": [
+          "platform-admin"
+        ],
+        "summary": "Vendor Me",
+        "description": "The protected walking-skeleton read. Not audited: a GET of your own\nidentity is not a state change, and auditing every read would bury the\nmutations the log exists for (ADR-BOS-009 audits *mutations*).",
+        "operationId": "vendor_me_api_v1_platform_admin_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformAdminMe"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform-admin/auth/logout": {
+      "post": {
+        "tags": [
+          "platform-admin"
+        ],
+        "summary": "Vendor Logout",
+        "operationId": "vendor_logout_api_v1_platform_admin_auth_logout_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "type": "object",
+                  "title": "Response Vendor Logout Api V1 Platform Admin Auth Logout Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform-admin/companies": {
+      "get": {
+        "tags": [
+          "platform-admin"
+        ],
+        "summary": "List Companies",
+        "operationId": "list_companies_api_v1_platform_admin_companies_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CompanySummary"
+                  },
+                  "type": "array",
+                  "title": "Response List Companies Api V1 Platform Admin Companies Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "platform-admin"
+        ],
+        "summary": "Provision Company",
+        "description": "The only route that creates a company. See\n`service.provision_company`'s docstring for the atomicity guarantee this\nwraps unchanged.",
+        "operationId": "provision_company_api_v1_platform_admin_companies_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProvisionCompanyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProvisionCompanyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform-admin/companies/{company_id}": {
+      "get": {
+        "tags": [
+          "platform-admin"
+        ],
+        "summary": "Get Company",
+        "operationId": "get_company_api_v1_platform_admin_companies__company_id__get",
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Company Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform-admin/companies/{company_id}/modules/{module_key}": {
+      "put": {
+        "tags": [
+          "platform-admin"
+        ],
+        "summary": "Grant Entitlement",
+        "description": "Grant one module entitlement. Idempotent: calling this again on an\nalready-active module is a harmless no-op (`changed=False` in the\nresponse), not an error.",
+        "operationId": "grant_entitlement_api_v1_platform_admin_companies__company_id__modules__module_key__put",
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Company Id"
+            }
+          },
+          {
+            "name": "module_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 50,
+              "title": "Module Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntitlementResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "platform-admin"
+        ],
+        "summary": "Revoke Entitlement",
+        "description": "Revoke one module entitlement. Idempotent, symmetric to\n`grant_entitlement`. Never touches subscription state (ADR-BOS-010\n§Decision 3) — a company can lose one module while remaining fully paid\nup on everything else.",
+        "operationId": "revoke_entitlement_api_v1_platform_admin_companies__company_id__modules__module_key__delete",
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Company Id"
+            }
+          },
+          {
+            "name": "module_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 50,
+              "title": "Module Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntitlementResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform-admin/companies/{company_id}/subscription/transitions": {
+      "post": {
+        "tags": [
+          "platform-admin"
+        ],
+        "summary": "Transition Subscription",
+        "description": "Transition a company's subscription lifecycle state (trial / active /\ngrace_period / suspended / cancelled) — always with a mandatory reason.\nOne endpoint, not one per state (\"suspend\", \"reactivate\", ...): the\noperation is the same reasoned-change shape regardless of direction, and\nthe console's suspend/reactivate buttons are just this call with a\ndifferent `new_state`.",
+        "operationId": "transition_subscription_api_v1_platform_admin_companies__company_id__subscription_transitions_post",
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Company Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscriptionTransitionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionTransitionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/login": {
       "post": {
         "tags": [
@@ -2785,6 +3143,100 @@
             }
           }
         }
+      },
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Create Employee",
+        "description": "Owner-only (docs/02 §12); bounded by the vendor-set seat limit\n(`errors.employees.seat_limit_reached` when there is no room, unless\n`seat_limit` is null — unlimited).",
+        "operationId": "create_employee_api_v1_users_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmployeeIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{user_id}": {
+      "patch": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Update Employee",
+        "description": "Activate/deactivate and/or change role in one call. Reactivating\ncounts against the seat limit like creation does; the last active Owner\ncan never be deactivated or demoted (`errors.employees.\nlast_owner_protected`).",
+        "operationId": "update_employee_api_v1_users__user_id__patch",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmployeePatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/dashboard": {
@@ -2957,6 +3409,113 @@
         }
       }
     },
+    "/api/v1/ps/workflow-templates": {
+      "get": {
+        "tags": [
+          "ps-catalog"
+        ],
+        "summary": "List Templates",
+        "operationId": "list_templates_api_v1_ps_workflow_templates_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowTemplateOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Templates Api V1 Ps Workflow Templates Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "ps-catalog"
+        ],
+        "summary": "Create Template",
+        "operationId": "create_template_api_v1_ps_workflow_templates_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowTemplateCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowTemplateOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ps/workflow-templates/{template_id}": {
+      "get": {
+        "tags": [
+          "ps-catalog"
+        ],
+        "summary": "Get Template",
+        "operationId": "get_template_api_v1_ps_workflow_templates__template_id__get",
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowTemplateOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ps/assignments": {
       "get": {
         "tags": [
@@ -3064,6 +3623,53 @@
         }
       }
     },
+    "/api/v1/ps/assignments/{assignment_id}/stages": {
+      "get": {
+        "tags": [
+          "ps-assignments"
+        ],
+        "summary": "List Assignment Stages",
+        "operationId": "list_assignment_stages_api_v1_ps_assignments__assignment_id__stages_get",
+        "parameters": [
+          {
+            "name": "assignment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Assignment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StageOut"
+                  },
+                  "title": "Response List Assignment Stages Api V1 Ps Assignments  Assignment Id  Stages Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ps/assignments/{assignment_id}/stage": {
       "post": {
         "tags": [
@@ -3110,6 +3716,132 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ps/assignments/{assignment_id}/deadline": {
+      "post": {
+        "tags": [
+          "ps-assignments"
+        ],
+        "summary": "Change Deadline",
+        "operationId": "change_deadline_api_v1_ps_assignments__assignment_id__deadline_post",
+        "parameters": [
+          {
+            "name": "assignment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Assignment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeadlineChangeIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssignmentOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ps/assignments/{assignment_id}/deadline-history": {
+      "get": {
+        "tags": [
+          "ps-assignments"
+        ],
+        "summary": "List Deadline Changes",
+        "operationId": "list_deadline_changes_api_v1_ps_assignments__assignment_id__deadline_history_get",
+        "parameters": [
+          {
+            "name": "assignment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Assignment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DeadlineChangeOut"
+                  },
+                  "title": "Response List Deadline Changes Api V1 Ps Assignments  Assignment Id  Deadline History Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ps/assignments/evaluate-risk": {
+      "post": {
+        "tags": [
+          "ps-assignments"
+        ],
+        "summary": "Evaluate Risk",
+        "description": "Manual trigger for the per-tenant deadline/staleness recompute\n(PS-13 §7's \"morning job\", not yet wired to any scheduler - see\nservice.evaluate_company_risk's own docstring). Idempotent: calling\nthis repeatedly with nothing changed underneath returns changed=0\nevery time.",
+        "operationId": "evaluate_risk_api_v1_ps_assignments_evaluate_risk_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "type": "object",
+                  "title": "Response Evaluate Risk Api V1 Ps Assignments Evaluate Risk Post"
                 }
               }
             }
@@ -3508,6 +4240,18 @@
               }
             ],
             "title": "Internal Target On"
+          },
+          "workflow_template_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Template Id"
           }
         },
         "type": "object",
@@ -3533,13 +4277,19 @@
             "type": "string",
             "title": "Title"
           },
-          "stage": {
-            "type": "string",
-            "title": "Stage"
-          },
           "lifecycle_state": {
             "type": "string",
             "title": "Lifecycle State"
+          },
+          "current_stage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StageOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "official_deadline_on": {
             "anyOf": [
@@ -3564,6 +4314,14 @@
               }
             ],
             "title": "Internal Target On"
+          },
+          "current_deadline_risk": {
+            "type": "string",
+            "title": "Current Deadline Risk"
+          },
+          "current_stale": {
+            "type": "boolean",
+            "title": "Current Stale"
           }
         },
         "type": "object",
@@ -3571,10 +4329,12 @@
           "id",
           "client_id",
           "title",
-          "stage",
           "lifecycle_state",
+          "current_stage",
           "official_deadline_on",
-          "internal_target_on"
+          "internal_target_on",
+          "current_deadline_risk",
+          "current_stale"
         ],
         "title": "AssignmentOut"
       },
@@ -3696,6 +4456,159 @@
           "kind"
         ],
         "title": "ClientOut"
+      },
+      "CompanyDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "business_profile": {
+            "type": "string",
+            "title": "Business Profile"
+          },
+          "active_modules": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Active Modules"
+          },
+          "subscription_state": {
+            "type": "string",
+            "title": "Subscription State"
+          },
+          "trial_ends_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trial Ends At"
+          },
+          "seat_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seat Limit"
+          },
+          "seat_usage": {
+            "type": "integer",
+            "title": "Seat Usage"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "subscription_state_changed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Subscription State Changed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "business_profile",
+          "active_modules",
+          "subscription_state",
+          "trial_ends_at",
+          "seat_limit",
+          "seat_usage",
+          "created_at",
+          "subscription_state_changed_at"
+        ],
+        "title": "CompanyDetail"
+      },
+      "CompanySummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "business_profile": {
+            "type": "string",
+            "title": "Business Profile"
+          },
+          "active_modules": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Active Modules"
+          },
+          "subscription_state": {
+            "type": "string",
+            "title": "Subscription State"
+          },
+          "trial_ends_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trial Ends At"
+          },
+          "seat_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seat Limit"
+          },
+          "seat_usage": {
+            "type": "integer",
+            "title": "Seat Usage"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "business_profile",
+          "active_modules",
+          "subscription_state",
+          "trial_ends_at",
+          "seat_limit",
+          "seat_usage",
+          "created_at"
+        ],
+        "title": "CompanySummary",
+        "description": "Administrative metadata only (ADR-BOS-009 §Vendor data visibility) —\nnever tenant operational data. `seat_usage` closes a gap flagged in the\nCompany Provisioning slice: ADR-BOS-009 lists it as vendor-visible\nmetadata alongside `seat_limit`, deferred only until Tenant Employee\nManagement (docs/business-os/18 §9 phase 7) gave it something to count."
       },
       "ContactRecordIn": {
         "properties": {
@@ -4303,6 +5216,65 @@
         ],
         "title": "DashboardOut"
       },
+      "DeadlineChangeIn": {
+        "properties": {
+          "official_deadline_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Official Deadline On"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "official_deadline_on",
+          "reason"
+        ],
+        "title": "DeadlineChangeIn"
+      },
+      "DeadlineChangeOut": {
+        "properties": {
+          "old_value": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Old Value"
+          },
+          "new_value": {
+            "type": "string",
+            "format": "date",
+            "title": "New Value"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "changed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Changed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "old_value",
+          "new_value",
+          "reason",
+          "changed_at"
+        ],
+        "title": "DeadlineChangeOut"
+      },
       "DiagnosisIn": {
         "properties": {
           "observed": {
@@ -4447,6 +5419,119 @@
           "approval"
         ],
         "title": "DiagnosisOut"
+      },
+      "EmployeeIn": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 12,
+            "title": "Password"
+          },
+          "is_owner": {
+            "type": "boolean",
+            "title": "Is Owner",
+            "default": false
+          },
+          "pin": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20,
+                "minLength": 4
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pin"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "email",
+          "password"
+        ],
+        "title": "EmployeeIn"
+      },
+      "EmployeePatch": {
+        "properties": {
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          },
+          "is_owner": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Owner"
+          }
+        },
+        "type": "object",
+        "title": "EmployeePatch"
+      },
+      "EntitlementResponse": {
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Company Id"
+          },
+          "module_key": {
+            "type": "string",
+            "title": "Module Key"
+          },
+          "active_modules": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Active Modules"
+          },
+          "changed": {
+            "type": "boolean",
+            "title": "Changed"
+          },
+          "audit_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Audit Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "company_id",
+          "module_key",
+          "active_modules",
+          "changed",
+          "audit_id"
+        ],
+        "title": "EntitlementResponse",
+        "description": "Mirrors `service.EntitlementResult` field-for-field. `active_modules`\nis the company's full set *after* this call — a vendor UI can render it\ndirectly without a second GET."
       },
       "HTTPValidationError": {
         "properties": {
@@ -4961,6 +6046,21 @@
             },
             "type": "array",
             "title": "Active Modules"
+          },
+          "seat_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seat Limit"
+          },
+          "seat_usage": {
+            "type": "integer",
+            "title": "Seat Usage"
           }
         },
         "type": "object",
@@ -4972,7 +6072,9 @@
           "language",
           "company_id",
           "csrf_token",
-          "active_modules"
+          "active_modules",
+          "seat_limit",
+          "seat_usage"
         ],
         "title": "MeResponse"
       },
@@ -6026,6 +7128,134 @@
         ],
         "title": "PinSwitchRequest"
       },
+      "PlatformAdminMe": {
+        "properties": {
+          "platform_admin_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Platform Admin Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "csrf_token": {
+            "type": "string",
+            "title": "Csrf Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "platform_admin_id",
+          "name",
+          "email",
+          "csrf_token"
+        ],
+        "title": "PlatformAdminMe",
+        "description": "Deliberately narrow: who you are and the CSRF token you need. No\n`company_id` field exists here because a Vendor Administrator has no\ncompany — this response shape is where that stops being a comment and\nbecomes a contract."
+      },
+      "ProvisionCompanyRequest": {
+        "properties": {
+          "company_name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Company Name"
+          },
+          "owner_name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Owner Name"
+          },
+          "owner_email": {
+            "type": "string",
+            "format": "email",
+            "title": "Owner Email"
+          },
+          "owner_password": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 12,
+            "title": "Owner Password"
+          },
+          "business_profile": {
+            "type": "string",
+            "title": "Business Profile",
+            "default": "generic_repair"
+          },
+          "modules": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Modules"
+          }
+        },
+        "type": "object",
+        "required": [
+          "company_name",
+          "owner_name",
+          "owner_email",
+          "owner_password"
+        ],
+        "title": "ProvisionCompanyRequest"
+      },
+      "ProvisionCompanyResponse": {
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Company Id"
+          },
+          "owner_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Owner Id"
+          },
+          "subscription_state": {
+            "type": "string",
+            "title": "Subscription State"
+          },
+          "trial_ends_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Trial Ends At"
+          },
+          "business_profile": {
+            "type": "string",
+            "title": "Business Profile"
+          },
+          "activated_modules": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Activated Modules"
+          },
+          "audit_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Audit Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "company_id",
+          "owner_id",
+          "subscription_state",
+          "trial_ends_at",
+          "business_profile",
+          "activated_modules",
+          "audit_id"
+        ],
+        "title": "ProvisionCompanyResponse",
+        "description": "Mirrors `service.ProvisionResult` field-for-field — the HTTP shape of\nthe provisioning contract, not a place to add response-only fields of\nits own."
+      },
       "ReadyWidget": {
         "properties": {
           "count": {
@@ -6078,16 +7308,46 @@
       },
       "StageChange": {
         "properties": {
-          "to": {
+          "to_stage_id": {
             "type": "string",
-            "title": "To"
+            "format": "uuid",
+            "title": "To Stage Id"
           }
         },
         "type": "object",
         "required": [
-          "to"
+          "to_stage_id"
         ],
         "title": "StageChange"
+      },
+      "StageOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "sort": {
+            "type": "integer",
+            "title": "Sort"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "category",
+          "sort"
+        ],
+        "title": "StageOut"
       },
       "StatusChange": {
         "properties": {
@@ -6138,6 +7398,62 @@
           "to"
         ],
         "title": "StatusChange"
+      },
+      "SubscriptionTransitionRequest": {
+        "properties": {
+          "new_state": {
+            "type": "string",
+            "title": "New State"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "new_state",
+          "reason"
+        ],
+        "title": "SubscriptionTransitionRequest"
+      },
+      "SubscriptionTransitionResponse": {
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Company Id"
+          },
+          "old_state": {
+            "type": "string",
+            "title": "Old State"
+          },
+          "new_state": {
+            "type": "string",
+            "title": "New State"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "audit_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Audit Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "company_id",
+          "old_state",
+          "new_state",
+          "reason",
+          "audit_id"
+        ],
+        "title": "SubscriptionTransitionResponse",
+        "description": "Mirrors `service.SubscriptionTransitionResult` field-for-field."
       },
       "TaskIn": {
         "properties": {
@@ -6410,6 +7726,10 @@
             "type": "string",
             "title": "Name"
           },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
           "is_owner": {
             "type": "boolean",
             "title": "Is Owner"
@@ -6423,6 +7743,7 @@
         "required": [
           "id",
           "name",
+          "email",
           "is_owner",
           "is_active"
         ],
@@ -6468,6 +7789,27 @@
         ],
         "title": "ValidationError"
       },
+      "VendorLoginRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "VendorLoginRequest"
+      },
       "WarrantyReturnRequest": {
         "properties": {
           "complaint": {
@@ -6482,6 +7824,110 @@
           "complaint"
         ],
         "title": "WarrantyReturnRequest"
+      },
+      "WorkflowTemplateCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowTemplateStageIn"
+            },
+            "type": "array",
+            "title": "Stages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "stages"
+        ],
+        "title": "WorkflowTemplateCreate"
+      },
+      "WorkflowTemplateOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowTemplateStageOut"
+            },
+            "type": "array",
+            "title": "Stages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "is_active",
+          "stages"
+        ],
+        "title": "WorkflowTemplateOut"
+      },
+      "WorkflowTemplateStageIn": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "category"
+        ],
+        "title": "WorkflowTemplateStageIn"
+      },
+      "WorkflowTemplateStageOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "sort": {
+            "type": "integer",
+            "title": "Sort"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "category",
+          "sort"
+        ],
+        "title": "WorkflowTemplateStageOut"
       }
     }
   }
