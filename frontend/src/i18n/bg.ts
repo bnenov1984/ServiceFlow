@@ -470,6 +470,17 @@ export const bg = {
   "vendor.seat_limit_unlimited": "неограничено",
   "vendor.field_created_at": "Създадена на",
   "vendor.field_subscription_changed_at": "Промяна на статуса на",
+  "vendor.subscription_transition_action": "Промени статус",
+  "vendor.subscription_transition_title": "Промяна на статус на абонамента",
+  "vendor.field_new_state": "Нов статус",
+  "vendor.field_transition_reason": "Причина",
+  "vendor.subscription_state_trial": "Пробен период",
+  "vendor.subscription_state_active": "Активен",
+  "vendor.subscription_state_grace_period": "Гратисен период",
+  "vendor.subscription_state_suspended": "Спрян",
+  "vendor.subscription_state_cancelled": "Прекратен",
+  "errors.subscription.invalid_state": "Невалиден статус на абонамента.",
+  "errors.subscription.reason_required": "Причината е задължителна.",
 
   "errors.provisioning.company_not_found": "Няма такава компания.",
 } as const;

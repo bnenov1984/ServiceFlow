@@ -2,17 +2,26 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { Dialog } from "../components/Dialog";
 import { ErrorState, Skeleton } from "../components/States";
 import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
-import type { CompanyDetail, EntitlementResult } from "./types";
+import type { CompanyDetail, EntitlementResult, SubscriptionTransitionResult } from "./types";
 
 // The only module with any real enforcement anywhere in the app today
 // (professional_services.deps.require_ps_active) — no module-metadata
 // endpoint exists, so this is the same "smallest canonical mapping" literal
 // already used in VendorNewCompanyPage.tsx, not a new shared constant.
 const PROFESSIONAL_SERVICES = "professional-services";
+
+const SUBSCRIPTION_STATES: { code: string; labelKey: Parameters<typeof t>[0] }[] = [
+  { code: "trial", labelKey: "vendor.subscription_state_trial" },
+  { code: "active", labelKey: "vendor.subscription_state_active" },
+  { code: "grace_period", labelKey: "vendor.subscription_state_grace_period" },
+  { code: "suspended", labelKey: "vendor.subscription_state_suspended" },
+  { code: "cancelled", labelKey: "vendor.subscription_state_cancelled" },
+];
 
 function errorText(error: unknown): string {
   return error instanceof ApiError ? t(error.messageKey, error.params) : t("errors.internal");
@@ -40,6 +49,12 @@ export function VendorCompanyDetailPage() {
   const [entitlementError, setEntitlementError] = useState<string | null>(null);
   const [confirmRevokeOpen, setConfirmRevokeOpen] = useState(false);
 
+  const [transitionOpen, setTransitionOpen] = useState(false);
+  const [newState, setNewState] = useState("trial");
+  const [reason, setReason] = useState("");
+  const [transitionSubmitting, setTransitionSubmitting] = useState(false);
+  const [transitionError, setTransitionError] = useState<string | null>(null);
+
   const isNotFound = company.isError && company.error instanceof ApiError
     && company.error.status === 404;
 
@@ -64,6 +79,33 @@ export function VendorCompanyDetailPage() {
       setEntitlementError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
     } finally {
       setEntitlementSubmitting(false);
+    }
+  };
+
+  const openTransitionDialog = () => {
+    setNewState(company.data?.subscription_state ?? "trial");
+    setReason("");
+    setTransitionError(null);
+    setTransitionOpen(true);
+  };
+
+  const submitTransition = async () => {
+    if (transitionSubmitting || !id || reason.trim().length === 0) return;
+    setTransitionSubmitting(true);
+    setTransitionError(null);
+    try {
+      await api.post<SubscriptionTransitionResult>(
+        `/platform-admin/companies/${id}/subscription/transitions`,
+        { new_state: newState, reason: reason.trim() },
+      );
+      await queryClient.invalidateQueries({ queryKey: queryKeys.vendorCompany(id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.vendorCompanies });
+      setTransitionOpen(false);
+      setReason("");
+    } catch (err) {
+      setTransitionError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
+    } finally {
+      setTransitionSubmitting(false);
     }
   };
 
@@ -135,6 +177,16 @@ export function VendorCompanyDetailPage() {
             )}
           </div>
 
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={openTransitionDialog}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 min-h-touch"
+            >
+              {t("vendor.subscription_transition_action")}
+            </button>
+          </div>
+
           <ConfirmDialog
             open={confirmRevokeOpen}
             title={t("vendor.revoke_module_title")}
@@ -143,6 +195,62 @@ export function VendorCompanyDetailPage() {
             onConfirm={() => void toggleEntitlement("revoke")}
             submitting={entitlementSubmitting}
           />
+
+          <Dialog
+            open={transitionOpen}
+            onClose={() => setTransitionOpen(false)}
+            title={t("vendor.subscription_transition_title")}
+          >
+            <div className="flex flex-col gap-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="new-state">
+                  {t("vendor.field_new_state")}
+                </label>
+                <select
+                  id="new-state"
+                  value={newState}
+                  onChange={(e) => setNewState(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
+                >
+                  {SUBSCRIPTION_STATES.map((s) => (
+                    <option key={s.code} value={s.code}>{t(s.labelKey)}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="transition-reason">
+                  {t("vendor.field_transition_reason")}
+                </label>
+                <textarea
+                  id="transition-reason"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  rows={3}
+                />
+              </div>
+              {transitionError && (
+                <p role="alert" className="text-sm text-red-700">{transitionError}</p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={transitionSubmitting || reason.trim().length === 0}
+                  onClick={() => void submitTransition()}
+                  className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-50 min-h-touch"
+                >
+                  {transitionSubmitting ? t("common.loading") : t("order.confirm")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTransitionOpen(false)}
+                  className="rounded-lg border border-slate-300 px-4 py-2 hover:bg-slate-50 min-h-touch"
+                >
+                  {t("common.cancel")}
+                </button>
+              </div>
+            </div>
+          </Dialog>
         </>
       ) : null}
     </section>

@@ -47,3 +47,11 @@ export interface EntitlementResult {
   changed: boolean;
   audit_id: string;
 }
+
+export interface SubscriptionTransitionResult {
+  company_id: string;
+  old_state: string;
+  new_state: string;
+  reason: string;
+  audit_id: string;
+}
