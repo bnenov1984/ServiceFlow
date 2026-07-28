@@ -47,6 +47,7 @@ export function EmployeesPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const [confirmDeactivateId, setConfirmDeactivateId] = useState<string | null>(null);
+  const [confirmDemoteId, setConfirmDemoteId] = useState<string | null>(null);
   const [patchSubmittingId, setPatchSubmittingId] = useState<string | null>(null);
   const [patchError, setPatchError] = useState<string | null>(null);
 
@@ -111,6 +112,21 @@ export function EmployeesPage() {
     try {
       await api.patch(`/users/${id}`, { is_active: isActive });
       setConfirmDeactivateId(null);
+      await afterMutation();
+    } catch (err) {
+      setPatchError(errorText(err));
+    } finally {
+      setPatchSubmittingId(null);
+    }
+  };
+
+  const setRole = async (id: string, nextIsOwner: boolean) => {
+    if (patchSubmittingId) return;
+    setPatchSubmittingId(id);
+    setPatchError(null);
+    try {
+      await api.patch(`/users/${id}`, { is_owner: nextIsOwner });
+      setConfirmDemoteId(null);
       await afterMutation();
     } catch (err) {
       setPatchError(errorText(err));
@@ -244,6 +260,25 @@ export function EmployeesPage() {
                 <span className={emp.is_active ? "text-green-700" : "text-slate-400"}>
                   {emp.is_active ? t("employees.status_active") : t("employees.status_inactive")}
                 </span>
+                {emp.is_owner ? (
+                  <button
+                    type="button"
+                    disabled={patchSubmittingId === emp.id}
+                    onClick={() => setConfirmDemoteId(emp.id)}
+                    className="rounded-lg border border-slate-300 px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 min-h-touch"
+                  >
+                    {t("employees.demote_action")}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={patchSubmittingId === emp.id}
+                    onClick={() => void setRole(emp.id, true)}
+                    className="rounded-lg border border-slate-300 px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 min-h-touch"
+                  >
+                    {t("employees.promote_action")}
+                  </button>
+                )}
                 {emp.is_active ? (
                   <button
                     type="button"
@@ -282,6 +317,17 @@ export function EmployeesPage() {
           if (confirmDeactivateId) void setActive(confirmDeactivateId, false);
         }}
         submitting={patchSubmittingId === confirmDeactivateId && confirmDeactivateId !== null}
+      />
+
+      <ConfirmDialog
+        open={confirmDemoteId !== null}
+        title={t("employees.demote_confirm_title")}
+        message={t("employees.demote_confirm_message")}
+        onClose={() => setConfirmDemoteId(null)}
+        onConfirm={() => {
+          if (confirmDemoteId) void setRole(confirmDemoteId, false);
+        }}
+        submitting={patchSubmittingId === confirmDemoteId && confirmDemoteId !== null}
       />
     </section>
   );

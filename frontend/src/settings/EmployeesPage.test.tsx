@@ -57,6 +57,15 @@ async function fillAddForm(user: ReturnType<typeof userEvent.setup>, overrides: 
   await user.type(screen.getByLabelText("Парола"), overrides.password ?? "парола-123456");
 }
 
+// Two ConfirmDialogs (deactivate, demote) coexist in the DOM at all times
+// (jsdom keeps a closed <dialog>'s content mounted) — scope to the one whose
+// title text matches, rather than a bare "Потвърди"/"Отказ" query.
+function dialogByTitle(title: string): HTMLElement {
+  const found = [...document.querySelectorAll("dialog")].find((d) => d.textContent?.includes(title));
+  if (!found) throw new Error(`dialog titled "${title}" not found in the DOM`);
+  return found as HTMLElement;
+}
+
 describe("EmployeesPage", () => {
   beforeEach(() => {
     mockGet.mockReset();
@@ -174,7 +183,7 @@ describe("EmployeesPage", () => {
 
     await screen.findByText("Иван");
     await user.click(screen.getAllByRole("button", { name: "Деактивирай" })[0]);
-    await user.click(screen.getByRole("button", { name: "Отказ" }));
+    await user.click(within(dialogByTitle("Деактивиране на служител")).getByRole("button", { name: "Отказ" }));
 
     expect(mockPatch).not.toHaveBeenCalled();
   });
@@ -188,7 +197,7 @@ describe("EmployeesPage", () => {
     const ivanRow = (await screen.findByText("Иван")).closest("li");
     if (!ivanRow) throw new Error("Ivan's row not found");
     await user.click(within(ivanRow).getByRole("button", { name: "Деактивирай" }));
-    await user.click(screen.getByRole("button", { name: "Потвърди" }));
+    await user.click(within(dialogByTitle("Деактивиране на служител")).getByRole("button", { name: "Потвърди" }));
 
     await waitFor(() => expect(mockPatch).toHaveBeenCalledWith("/users/u2", { is_active: false }));
   });
@@ -214,7 +223,7 @@ describe("EmployeesPage", () => {
     await screen.findByText("Иван");
     const deactivateButtons = screen.getAllByRole("button", { name: "Деактивирай" });
     await user.click(deactivateButtons[0]);
-    await user.click(screen.getByRole("button", { name: "Потвърди" }));
+    await user.click(within(dialogByTitle("Деактивиране на служител")).getByRole("button", { name: "Потвърди" }));
 
     expect(await screen.findByText("Компанията трябва да има поне един активен собственик.")).toBeInTheDocument();
   });
@@ -249,6 +258,91 @@ describe("EmployeesPage", () => {
     await user.click(reactivateButton);
 
     resolvePatch({ ...EMPLOYEES[2], is_active: true });
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledTimes(1));
+  });
+
+  it("promotes a worker to owner directly, unconfirmed, calling PATCH with is_owner: true", async () => {
+    mockGet.mockResolvedValue(EMPLOYEES);
+    mockPatch.mockResolvedValue({ ...EMPLOYEES[1], is_owner: true });
+    renderPage();
+    const user = userEvent.setup();
+
+    const ivanRow = (await screen.findByText("Иван")).closest("li");
+    if (!ivanRow) throw new Error("Ivan's row not found");
+    await user.click(within(ivanRow).getByRole("button", { name: "Направи собственик" }));
+
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith("/users/u2", { is_owner: true }));
+  });
+
+  it("opens a confirm dialog before demoting an owner, without calling the API yet", async () => {
+    mockGet.mockResolvedValue(EMPLOYEES);
+    renderPage();
+    const user = userEvent.setup();
+
+    const mariaRow = (await screen.findByText("Мария")).closest("li");
+    if (!mariaRow) throw new Error("Maria's row not found");
+    await user.click(within(mariaRow).getByRole("button", { name: "Направи служител" }));
+
+    expect(screen.getByText("Сигурни ли сте, че искате този служител да спре да бъде собственик?"))
+      .toBeInTheDocument();
+    expect(mockPatch).not.toHaveBeenCalled();
+  });
+
+  it("makes no API call when the demote confirmation is cancelled", async () => {
+    mockGet.mockResolvedValue(EMPLOYEES);
+    renderPage();
+    const user = userEvent.setup();
+
+    const mariaRow = (await screen.findByText("Мария")).closest("li");
+    if (!mariaRow) throw new Error("Maria's row not found");
+    await user.click(within(mariaRow).getByRole("button", { name: "Направи служител" }));
+    await user.click(within(dialogByTitle("Промяна на роля")).getByRole("button", { name: "Отказ" }));
+
+    expect(mockPatch).not.toHaveBeenCalled();
+  });
+
+  it("demotes on confirmation, calling PATCH with is_owner: false on the right id", async () => {
+    mockGet.mockResolvedValue(EMPLOYEES);
+    mockPatch.mockResolvedValue({ ...EMPLOYEES[0], is_owner: false });
+    renderPage();
+    const user = userEvent.setup();
+
+    const mariaRow = (await screen.findByText("Мария")).closest("li");
+    if (!mariaRow) throw new Error("Maria's row not found");
+    await user.click(within(mariaRow).getByRole("button", { name: "Направи служител" }));
+    await user.click(within(dialogByTitle("Промяна на роля")).getByRole("button", { name: "Потвърди" }));
+
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith("/users/u1", { is_owner: false }));
+  });
+
+  it("shows a distinct message when demoting the last active owner", async () => {
+    mockGet.mockResolvedValue(EMPLOYEES);
+    mockPatch.mockRejectedValue(new ApiError(409, "employee_error", "errors.employees.last_owner_protected"));
+    renderPage();
+    const user = userEvent.setup();
+
+    const mariaRow = (await screen.findByText("Мария")).closest("li");
+    if (!mariaRow) throw new Error("Maria's row not found");
+    await user.click(within(mariaRow).getByRole("button", { name: "Направи служител" }));
+    await user.click(within(dialogByTitle("Промяна на роля")).getByRole("button", { name: "Потвърди" }));
+
+    expect(await screen.findByText("Компанията трябва да има поне един активен собственик.")).toBeInTheDocument();
+  });
+
+  it("prevents a duplicate promote request from a rapid double-click", async () => {
+    mockGet.mockResolvedValue(EMPLOYEES);
+    let resolvePatch: (v: unknown) => void = () => {};
+    mockPatch.mockReturnValue(new Promise((resolve) => { resolvePatch = resolve; }));
+    renderPage();
+    const user = userEvent.setup();
+
+    const ivanRow = (await screen.findByText("Иван")).closest("li");
+    if (!ivanRow) throw new Error("Ivan's row not found");
+    const promoteButton = within(ivanRow).getByRole("button", { name: "Направи собственик" });
+    await user.click(promoteButton);
+    await user.click(promoteButton);
+
+    resolvePatch({ ...EMPLOYEES[1], is_owner: true });
     await waitFor(() => expect(mockPatch).toHaveBeenCalledTimes(1));
   });
 });
