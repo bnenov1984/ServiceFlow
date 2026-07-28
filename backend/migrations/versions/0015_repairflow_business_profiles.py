@@ -128,10 +128,26 @@ def upgrade() -> None:
         "updated_at", sa.DateTime(), nullable=False, server_default=sa.func.now(),
     ))
 
-    # 2. Every existing company gets its own copy of today's four global
+    # 2. Drop the code-based FK and the old bare-`code` primary key *before*
+    #    backfilling — not after, as this migration originally had it. The
+    #    old PK enforces uniqueness on `code` alone; leaving it active during
+    #    the backfill below means inserting a per-company copy of e.g.
+    #    'phone' collides with the still-present original global 'phone' row
+    #    (`UniqueViolation` on `pk_asset_types`) on any database that already
+    #    has a company — which every real local/dev database does, just not
+    #    a freshly-created empty test database, which is why this went
+    #    unnoticed. The FK has to go first: Postgres refuses to drop a
+    #    primary key a live foreign key still references. The
+    #    `asset_type_code` *column* itself is untouched here — step 4 below
+    #    still needs it to match existing assets to their company's copy.
+    op.drop_constraint("fk_assets_asset_type_code", "assets", type_="foreignkey")
+    op.drop_constraint("pk_asset_types", "asset_types", type_="primary")
+
+    # 3. Every existing company gets its own copy of today's four global
     #    types, tagged with whatever business profile it already has
     #    assigned (companies provisioned before this migration existed have
-    #    none — default generic_repair, ADR-BOS-011 §Decision 2).
+    #    none — default generic_repair, ADR-BOS-011 §Decision 2). Safe now:
+    #    no uniqueness constraint on `code` remains to collide with.
     op.execute("""
         INSERT INTO asset_types (id, company_id, code, name_bg, icon, sort,
                                  field_defs, business_profile, created_at, updated_at)
@@ -143,9 +159,10 @@ def upgrade() -> None:
         WHERE t.company_id IS NULL
     """)
 
-    # 3. Point every existing asset at its own company's new copy (matched
+    # 4. Point every existing asset at its own company's new copy (matched
     #    by code, which is identical across every company's copy right now)
-    #    before the old global rows those assets currently FK to are dropped.
+    #    before the old global rows those assets currently reference are
+    #    dropped.
     op.add_column("assets", sa.Column("asset_type_id", UUID(as_uuid=True), nullable=True))
     op.execute("""
         UPDATE assets a
@@ -154,20 +171,18 @@ def upgrade() -> None:
         WHERE nt.company_id = a.company_id AND nt.code = a.asset_type_code
     """)
 
-    # 4. assets: drop the code-based FK (it references asset_types' *old*
-    #    primary key on `code` — must go before that key is dropped in step
-    #    6, or Postgres refuses with "other objects depend on it") and the
-    #    now-redundant column.
-    op.drop_constraint("fk_assets_asset_type_code", "assets", type_="foreignkey")
+    # 5. assets: the now-redundant code column can go — nothing reads it
+    #    after step 4, and its FK is already gone (step 2).
     op.drop_column("assets", "asset_type_code")
 
-    # 5. Drop the original global rows — nothing references them once step 3
-    #    has run and step 4 removed the last FK pointing at them.
+    # 6. Drop the original global rows — nothing references them once step 4
+    #    has run and step 5 removed the last column pointing at them.
     op.execute("DELETE FROM asset_types WHERE company_id IS NULL")
 
-    # 6. Tighten asset_types now that every remaining row has a company, and
-    #    give assets its new id-based FK.
-    op.drop_constraint("pk_asset_types", "asset_types", type_="primary")
+    # 7. Tighten asset_types now that every remaining row has a company, and
+    #    give assets its new id-based FK. (The old primary key is already
+    #    gone — dropped early in step 2 — so there is no
+    #    `drop_constraint("pk_asset_types", ...)` here anymore.)
     op.alter_column("asset_types", "id", nullable=False)
     op.alter_column("asset_types", "company_id", nullable=False)
     op.alter_column("asset_types", "business_profile", nullable=False)
