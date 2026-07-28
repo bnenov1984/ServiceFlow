@@ -59,6 +59,9 @@ export function VendorCompanyDetailPage() {
                 : t("vendor.no_active_modules")}
             />
             <Field label={t("vendor.field_subscription_state")} value={company.data.subscription_state} />
+            {company.data.trial_ends_at && (
+              <Field label={t("vendor.field_trial_ends_at")} value={company.data.trial_ends_at} />
+            )}
             <Field
               label={t("vendor.field_seat_usage")}
               value={`${company.data.seat_usage}/${company.data.seat_limit ?? t("vendor.seat_limit_unlimited")}`}

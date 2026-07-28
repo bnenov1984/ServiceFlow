@@ -448,6 +448,7 @@ export const bg = {
   "vendor.field_active_modules": "Активирани приложения",
   "vendor.no_active_modules": "Няма активирани приложения",
   "vendor.field_subscription_state": "Статус на абонамента",
+  "vendor.field_trial_ends_at": "Пробният период приключва на",
   "vendor.field_seat_usage": "Места (използвани/лимит)",
   "vendor.seat_limit_unlimited": "неограничено",
   "vendor.field_created_at": "Създадена на",

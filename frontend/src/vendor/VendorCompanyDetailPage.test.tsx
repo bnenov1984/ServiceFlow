@@ -61,5 +61,19 @@ describe("VendorCompanyDetailPage", () => {
     expect(screen.getByText("professional-services")).toBeInTheDocument();
     expect(screen.getByText("active")).toBeInTheDocument();
     expect(screen.getByText("3/неограничено")).toBeInTheDocument();
+    expect(screen.queryByText("Пробният период приключва на")).not.toBeInTheDocument();
+  });
+
+  it("shows the trial end date when present", async () => {
+    mockGet.mockResolvedValue({
+      id: "c1", name: "Сервиз Б", business_profile: "generic_repair",
+      active_modules: [], subscription_state: "trial",
+      trial_ends_at: "2026-08-11T14:43:05.383874Z", seat_limit: null, seat_usage: 1,
+      created_at: "2026-07-01T00:00:00Z", subscription_state_changed_at: "2026-07-01T00:00:00Z",
+    });
+    renderPage();
+
+    expect(await screen.findByText("Пробният период приключва на")).toBeInTheDocument();
+    expect(screen.getByText("2026-08-11T14:43:05.383874Z")).toBeInTheDocument();
   });
 });
