@@ -327,6 +327,77 @@ def test_vendor_request_reads_no_tenant_table(client: TestClient) -> None:
         assert not hits, f"vendor request touched tenant table {tenant_table}: {hits}"
 
 
+TENANT_TABLES = ("customers", "assets", "service_orders", "invoices", "payments",
+                 "ps_clients", "ps_assignments", "attachments", "contact_records",
+                 "timeline_events")
+
+# `users`/`sessions` deliberately excluded from this sweep: they are
+# identity-bootstrap tables (docs/business-os/18 §1.1), not tenant
+# *operational* data — ADR-BOS-009 §Vendor data visibility's "not visible" set
+# is customers/assets/orders/engagements/documents/invoices/notes, and both
+# are legitimately touched by sanctioned vendor actions this same sweep
+# exercises: provisioning writes `users` once to create the first Owner
+# (ADR-BOS-009 Q2, tested in test_company_provisioning.py), and the company
+# list/detail routes read it to report `seat_usage`, an explicitly
+# vendor-visible *aggregate* (§7 screen 8; individual rows are what stays
+# forbidden, not the count).
+
+
+def test_every_vendor_route_touches_no_tenant_table(client: TestClient) -> None:
+    """Extends `test_vendor_request_reads_no_tenant_table` (previously the
+    `/me` probe alone, docs/business-os/18 §9 phase 8) across the *entire*
+    mounted vendor route graph: login, every read, provisioning, entitlement
+    grant/revoke, and a subscription transition — each invoked for real, each
+    checked against every named tenant table, so a future vendor route that
+    starts reading one fails here regardless of which route it is."""
+    from sqlalchemy import event
+    from sqlalchemy.engine import Engine
+
+    _reset_rate_limiter()
+    _seed_admin()
+
+    def _probe(method: str, url: str, *, headers: dict[str, str] | None = None,
+              json: dict[str, object] | None = None) -> object:
+        statements: list[str] = []
+
+        def _capture(conn, cursor, statement, parameters, context, executemany):  # noqa: ANN001, ANN202
+            statements.append(statement.lower())
+
+        event.listen(Engine, "before_cursor_execute", _capture)
+        try:
+            resp = client.request(method, url, headers=headers, json=json)
+        finally:
+            event.remove(Engine, "before_cursor_execute", _capture)
+
+        assert resp.status_code < 500, f"{method} {url} errored: {resp.text}"
+        for tenant_table in TENANT_TABLES:
+            hits = [s for s in statements if f" {tenant_table}" in s]
+            assert not hits, f"{method} {url} touched tenant table {tenant_table}: {hits}"
+        return resp.json() if resp.content else None
+
+    me = _probe("POST", f"{VENDOR}/auth/login",
+               json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
+    assert isinstance(me, dict)
+    csrf = {"X-CSRF-Token": str(me["csrf_token"])}
+
+    provisioned = _probe("POST", f"{VENDOR}/companies", headers=csrf, json={
+        "company_name": "Обходен Сървейл ЕООД", "owner_name": "Нов Собственик",
+        "owner_email": "new-owner@route-sweep.bg", "owner_password": "нова-парола-1234",
+    })
+    assert isinstance(provisioned, dict)
+    company_id = provisioned["company_id"]
+
+    _probe("GET", f"{VENDOR}/me")
+    _probe("GET", f"{VENDOR}/companies")
+    _probe("GET", f"{VENDOR}/companies/{company_id}")
+    _probe("PUT", f"{VENDOR}/companies/{company_id}/modules/professional-services", headers=csrf)
+    _probe("DELETE", f"{VENDOR}/companies/{company_id}/modules/professional-services",
+          headers=csrf)
+    _probe("POST", f"{VENDOR}/companies/{company_id}/subscription/transitions", headers=csrf,
+          json={"new_state": "active", "reason": "route sweep"})
+    _probe("POST", f"{VENDOR}/auth/logout", headers=csrf)
+
+
 # --- Platform audit log -------------------------------------------------
 
 

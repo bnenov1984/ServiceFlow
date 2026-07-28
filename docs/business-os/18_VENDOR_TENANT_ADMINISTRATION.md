@@ -24,7 +24,11 @@ added 28.07.2026 (RepairFlow Business Profiles — phase 6 done: `asset_types`
 company-scoped, migration 0015, seeded via a new `company_provisioned`
 domain event rather than a direct Core-to-vertical import; no per-profile
 content, no controlled profile-change workflow — both explicit PO
-decisions) · Source: PO directive accepting the frozen product model
+decisions), §16 added 28.07.2026 (Security/Audit Hardening — phase 8 done:
+route-graph/dependency-graph completeness tests for audit coverage and
+cross-plane isolation, replacing per-feature spot checks; docs/11 §1/§7a
+threat model extended for the now-built Vendor Control Plane) · Source: PO
+directive accepting the frozen product model
 (Business OS + sibling apps + RepairFlow business profiles); read-only audit
 of the repository as it stands after the PropertyFlow dashboard slice
 (`frontend/src/ps/`, uncommitted at audit time — see §8).
@@ -535,9 +539,12 @@ precedent):
    create/reactivate, last-active-Owner protection, tenant `audit_log`
    entries for every mutation.
    *Commit:* `feat(business-os): add tenant employee management`.
-8. **Security/audit hardening** — the §8 test suite in full, the Étап-3
-   threat-model rewrite docs/11 already schedules, extended for the new
-   plane.
+8. **Security/audit hardening — Done (28.07.2026), see §16.** Verified the
+   §8 test list is already satisfied incrementally by phases 1–7's own test
+   files (checked against the list itself, not assumed); the genuinely new
+   work was two route-graph completeness tests (audit coverage, full-route
+   isolation) plus the docs/11 §1/§7a threat-model extension for the
+   now-built Vendor Control Plane.
    *Commit:* `test(business-os): vendor/tenant isolation + audit suite`.
 9. **Optional, later**: ADR-018's automated billing, superseding phase 4's
    manual transitions one trigger at a time (webhook replaces vendor click,
@@ -1119,4 +1126,91 @@ only) were backfilled in the migration itself with their own copy of the
 four current types, tagged with whatever business profile they already had
 assigned, or `generic_repair` for companies predating that field entirely
 (`identity.service.seed_company`'s own path).
+
+## 16. Security/Audit Hardening (phase 8, 28.07.2026)
+
+### 16.1 Most of §8's list was already closed, incrementally
+
+Re-read against §8's own list line by line before writing anything new: every
+phase (2–7) already shipped its own tests for the vendor mutation it added —
+atomicity, idempotency, negative cross-plane tests, RLS/isolation checks,
+audit-row assertions — matching the "ratchet discipline" docs/business-os/08
+established rather than deferring test debt to a final pass. Three §8 items
+are not yet applicable rather than missing: the profile-differentiation and
+controlled-migration tests (§8's bullets on rejecting an out-of-profile
+field, and on the profile-change workflow) have no code to test yet — all
+five business profiles seed identical content and no profile-change
+endpoint exists (both explicit PO decisions, §15.1) — so those tests wait for
+that workflow, not for this phase.
+
+### 16.2 What was genuinely new: route-graph completeness, not per-endpoint checks
+
+The PO's own framing for this phase: prefer route-graph/dependency-graph
+tests, the same shape `test_every_csrf_route_outside_identity_also_requires_
+subscription_ok` (§13.3) used for the subscription retrofit, over manual
+checks written once per endpoint. Two gaps of exactly that shape were found
+and closed, both in `tests/test_architecture.py` and
+`tests/test_vendor_security.py` (no DB schema change, no production code
+change — test-only, matching the commit shape below):
+
+- **`test_every_vendor_mutation_route_writes_an_audit_record`** /
+  **`test_no_vendor_read_route_writes_an_audit_record`**
+  (`test_architecture.py`): walks the real assembled route graph
+  (`_vendor_routes()`/`_dependant_callables()`, the same helpers §13.3's
+  sweep uses) and, for every CSRF-guarded route plus login, verifies by
+  inspecting the real endpoint and `platform_admin.service` function objects
+  (`co_names`, not source text) that it calls a function which itself calls
+  `audit.record` — and the reverse for every read route. Previously, audit
+  completeness rested on one hand-written assertion per feature (phases 2–4's
+  own test files); a new mutation route that forgot to audit would not have
+  failed any existing test. It now does, without anyone having to remember
+  to add a new assertion for it.
+- **`test_every_vendor_route_touches_no_tenant_table`**
+  (`test_vendor_security.py`): extends the pre-existing `test_vendor_request_
+  reads_no_tenant_table`, which only ever drove the `/me` endpoint, into a
+  full sweep — login, both reads, provisioning, grant, revoke, and a
+  subscription transition, each invoked for real and checked against every
+  tenant operational table. Building it surfaced one true finding about the
+  *test*, not the product: the first draft flagged `POST /companies` for
+  writing `users`, which is exactly what provisioning is supposed to do (it
+  creates the company's first Owner, ADR-BOS-009 Q2) and what `GET
+  /companies`'s `seat_usage` is supposed to read (an explicitly vendor-visible
+  *aggregate*, §14.4) — `users`/`sessions` are identity-bootstrap tables, not
+  the tenant *operational* data (customers, assets, orders, invoices, ...)
+  ADR-BOS-009 actually restricts, and the sweep was corrected to check the
+  right set rather than loosening it around the finding.
+
+### 16.3 Why the import-linter contracts made this cheaper than it looks
+
+Both new tests lean on structural guarantees phase 1 already built rather
+than re-proving them: `vendor-plane-not-tenant-code` means a query against
+any tenant table cannot be *written* inside `platform_admin` at all, so the
+route-graph sweep is a confirmation of an already-enforced invariant, not the
+only thing standing between a vendor route and a tenant table. The two new
+tests are valuable precisely because they check the *live* route graph
+FastAPI actually assembles and the *live* function objects it will call,
+catching a class of mistake (forgetting to audit, forgetting the boundary)
+that a correct import graph alone would not.
+
+### 16.4 docs/11 threat model — extended, not rewritten
+
+docs/11_SECURITY_MODEL.md's own header has flagged §1 and §7 stale since the
+web-first pivot, with the full rewrite scheduled for Étап 3. This phase does
+not do that rewrite — the rest of the public-facing SaaS surface (credential
+stuffing, billing webhooks, etc.) is still unbuilt and stays out of scope.
+What phase 8 extends is only the slice that is now real: two rows added to
+§1's threat table (vendor credential compromise, cross-tenant access via the
+Vendor Control Plane) and a new §7a documenting the Vendor Control Plane's
+actual, built threat surface — explicitly disambiguated from §7's "vendor
+cloud," which is the parked local edition's license/update infrastructure,
+an unrelated concept that happens to share the word "vendor."
+
+### 16.5 Verification
+
+`uv run ruff check .` / `uv run mypy` / `uv run lint-imports` (9 contracts
+kept) clean; full suite (against a dedicated `serviceflow_test` database, not
+the shared dev one, created fresh for this verification rather than reusing
+a developer's local `serviceflow` database) **344 passed**, no skips, no
+xfails — the three new tests (two audit-completeness, one full-route
+isolation sweep) among them.
 

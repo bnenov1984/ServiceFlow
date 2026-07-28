@@ -13,7 +13,14 @@ separation target **and the metadata-first vendor visibility rule**
 cloud" (license API/update feed) describes the **parked local edition**, not
 the SaaS Vendor Control Plane above — the two are different concepts sharing
 the word "vendor," disambiguated so the Étап-3 rewrite doesn't merge them by
-accident. · Date: 10.07.2026 · Basis: ADR-008/016/017/018, blueprint Part 6
+accident. **§1 and §7a amended 28.07.2026** (docs/business-os/18 §9 phase 8,
+security/audit hardening): the Vendor Control Plane itself is no longer
+prospective — its own threat surface is added to §1's table and detailed in
+the new §7a, both scoped strictly to what phase 8 verified is actually built.
+The wider Étап-3 rewrite of §1's likelihood table and §7 for the rest of the
+public-facing SaaS surface (credential stuffing, billing webhooks, etc.)
+remains outstanding, unchanged by this addition. · Date: 10.07.2026 · Basis:
+ADR-008/016/017/018, blueprint Part 6
 
 ## 1. Threat model (what we actually defend against)
 
@@ -27,6 +34,8 @@ accident. · Date: 10.07.2026 · Basis: ADR-008/016/017/018, blueprint Part 6
 | Ransomware on shop PC | Medium | Offline USB backup practice (05 §3); product survives via bare-metal restore |
 | License tampering (clock rollback, token copy) | Low-Med | Signed tokens, monotonic checks (ADR-009); accepted as not-an-arms-race |
 | Targeted network attack on a repair shop | Low | Standard hardening only — this is not a bank; effort goes where likelihood is |
+| Vendor administrator credential compromise (28.07.2026, §7a) | Med | argon2id hashing, rate-limited login with lockout, DB-backed session distinct from any tenant session, CSRF on every mutation, every login/login_failed/logout audited |
+| Cross-tenant access via the Vendor Control Plane (28.07.2026, §7a) | Low | Structural, not just tested: `platform_admin` cannot import any tenant module at the source level (import-linter); a vendor session never binds a `TenantContext` or the RLS GUC, so RLS returns zero rows even under a hypothetical coding mistake |
 
 ## 2. Authentication & authorization
 
@@ -124,6 +133,48 @@ behind admin auth + audit log (A4) · support packages retained 90 days then pur
 no shop business data by design. A compromise of the update feed is the worst
 realistic scenario → release signing keys kept offline; updater verifies signatures
 against a pinned public key baked into the installed app (04 §2 preconditions).
+
+## 7a. Vendor Control Plane threat surface (SaaS, built — 28.07.2026)
+
+Not the same "vendor" as §7 above (see the status line's disambiguation). This
+section covers the Vendor Control Plane docs/business-os/18 phases 1–7
+actually built, verified in phase 8's hardening pass — not the rest of the
+Étап-3 SaaS surface, which stays outstanding.
+
+- **Vendor credential compromise**: same discipline as tenant auth (ADR-008)
+  — argon2id, rate-limited login with lockout, DB-backed session, CSRF on
+  every mutation. A vendor session is structurally a different kind from a
+  tenant session (its own table, its own cookie, no `company_id` anywhere on
+  it — `test_platform_admin_has_no_company_id`) and cannot be forged from a
+  tenant token or vice versa (`test_a_vendor_session_token_is_not_a_tenant_
+  session_token`, `test_tenant_user_cannot_authenticate_as_vendor_admin`).
+- **Cross-tenant access via a Vendor Control Plane bug**: prevented at the
+  source level, not only by runtime testing — `backend/.importlinter`'s
+  `vendor-plane-not-tenant-code` contract forbids `business_os.platform_admin`
+  from importing any tenant module (every `serviceflow.*` vertical,
+  `professional_services`, and `business_os.identity.deps`) at all, so a
+  query against a tenant table cannot even be written inside the vendor
+  plane's own code. Backed by two runtime proofs over the *entire* mounted
+  route graph, not one hand-picked endpoint: `test_vendor_request_never_sets_
+  the_tenant_rls_guc` (no vendor request ever binds the RLS GUC, so even a
+  hypothetical slip returns zero rows) and `test_every_vendor_route_touches_
+  no_tenant_table` (every vendor route — login, reads, provisioning,
+  entitlement grant/revoke, subscription transition — invoked for real and
+  checked against every tenant operational table).
+- **Unaudited vendor mutation**: `platform_audit_log` is the only write path
+  (`platform_admin.audit.record`, unreachable from tenant code by the same
+  import-linter contract, append-only at the database level via trigger
+  regardless of role). Completeness — every state-changing vendor route
+  actually writes a row — is proved structurally over the route graph
+  (`test_every_vendor_mutation_route_writes_an_audit_record`), the same
+  discipline `test_every_csrf_route_outside_identity_also_requires_
+  subscription_ok` established for the subscription retrofit, not by trusting
+  that each new route remembers to add its own audit call.
+- **Vendor support impersonation**: not implemented, explicitly out of scope
+  for V1 (ADR-BOS-009) — flagged here, not solved here.
+- **Stronger auth for sensitive vendor actions** (suspend, entitlement
+  revoke): open question, same as docs/business-os/18 §1.8 — not blocking V1,
+  should be resolved before real paying customers depend on it.
 
 ## 8. What we deliberately do not build (and why)
 

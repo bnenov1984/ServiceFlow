@@ -761,3 +761,92 @@ def test_asset_type_seeding_subscriber_is_registered() -> None:
     from serviceflow.assets.service import _seed_types_on_company_provisioned
 
     assert _seed_types_on_company_provisioned in events._subscribers  # noqa: SLF001
+
+
+# --- Audit completeness by route graph (docs/business-os/18 §9 phase 8,
+# security/audit hardening, 28.07.2026) --------------------------------------
+#
+# Every per-phase test file already proves its own vendor mutation writes an
+# audit row (test_vendor_security.py, test_company_provisioning.py, etc.) —
+# but each of those is one assertion per feature, written by hand. This pair
+# closes the same class of gap `test_every_csrf_route_outside_identity_also_
+# requires_subscription_ok` closed for the subscription retrofit: a
+# completeness proof over the assembled route graph, so a future vendor
+# mutation route that forgets to audit fails here without anyone having to
+# remember to add a new assertion for it.
+
+
+def _platform_admin_service_functions() -> dict[str, object]:
+    import inspect
+
+    from business_os.platform_admin import service
+
+    return {
+        name: obj for name, obj in vars(service).items()
+        if inspect.isfunction(obj) and obj.__module__ == service.__name__
+    }
+
+
+def _service_fn_calls_audit_record(fn: object) -> bool:
+    return "record" in fn.__code__.co_names  # type: ignore[attr-defined]
+
+
+def _vendor_route_service_calls(
+    endpoint: object, service_fns: dict[str, object],
+) -> set[str]:
+    return {n for n in service_fns if n in endpoint.__code__.co_names}  # type: ignore[attr-defined]
+
+
+def test_every_vendor_mutation_route_writes_an_audit_record() -> None:
+    """Every state-changing vendor route — every CSRF-guarded route, plus
+    login (which necessarily precedes CSRF) — must call a
+    `platform_admin.service` function that itself calls `audit.record`.
+    Checked against the real endpoint functions FastAPI will invoke and the
+    real service module, not by re-asserting it once per feature."""
+    from business_os.platform_admin.deps import require_platform_csrf
+
+    service_fns = _platform_admin_service_functions()
+    checked = 0
+    for path, route in _vendor_routes():
+        is_csrf_guarded = require_platform_csrf in _dependant_callables(
+            route.dependant)  # type: ignore[attr-defined]
+        is_login = path.endswith("/auth/login")
+        if not (is_csrf_guarded or is_login):
+            continue  # a read route — covered by the negative test below
+        checked += 1
+        called = _vendor_route_service_calls(route.endpoint, service_fns)  # type: ignore[attr-defined]
+        assert called, (
+            f"vendor mutation route {path} calls no platform_admin.service "
+            "function directly — audit completeness cannot be verified for it"
+        )
+        assert any(_service_fn_calls_audit_record(service_fns[n]) for n in called), (
+            f"vendor mutation route {path} calls {sorted(called)}, none of which "
+            "appears to write a platform_audit_log row — a new vendor mutation "
+            "must be audited (ADR-BOS-009 §Decision)"
+        )
+    assert checked >= 6, f"only {checked} mutation routes found — the sweep is too narrow"
+
+
+def test_no_vendor_read_route_writes_an_audit_record() -> None:
+    """The other half: a route that is neither CSRF-guarded nor login (today:
+    `/me`, `GET /companies`, `GET /companies/{id}`) must never call a service
+    function that writes an audit row — ADR-BOS-009 audits *mutations*, and
+    auditing every read would bury the records the log exists for."""
+    from business_os.platform_admin.deps import require_platform_csrf
+
+    service_fns = _platform_admin_service_functions()
+    checked = 0
+    for path, route in _vendor_routes():
+        is_csrf_guarded = require_platform_csrf in _dependant_callables(
+            route.dependant)  # type: ignore[attr-defined]
+        is_login = path.endswith("/auth/login")
+        if is_csrf_guarded or is_login:
+            continue
+        checked += 1
+        called = _vendor_route_service_calls(route.endpoint, service_fns)  # type: ignore[attr-defined]
+        audited = {n for n in called if _service_fn_calls_audit_record(service_fns[n])}
+        assert not audited, (
+            f"read route {path} calls {sorted(audited)}, which writes a "
+            "platform_audit_log row — reads must never be audited"
+        )
+    assert checked >= 2, f"only {checked} read routes found — the sweep is too narrow"
