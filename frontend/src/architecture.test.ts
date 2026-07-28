@@ -31,7 +31,7 @@ import { describe, expect, it } from "vitest";
 // the real folder listing.
 const LEAF_DIRS = ["lib", "components", "i18n", "generated"];
 const FEATURE_FOLDERS = [
-  "auth", "customers", "dashboard", "intake", "order", "orders", "ps", "shell", "vendor",
+  "auth", "customers", "dashboard", "intake", "order", "orders", "ps", "settings", "shell", "vendor",
 ];
 
 const ALL_SOURCE_FILES = import.meta.glob("./**/*.{ts,tsx}", {

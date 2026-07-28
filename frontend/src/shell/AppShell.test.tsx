@@ -21,11 +21,12 @@ vi.mock("../auth/AuthContext", () => ({
 // Mirrors App.tsx's real nesting (AppShell as the layout route, real routes
 // as its Outlet children) so navigation - via the app switcher or the
 // RepairFlow toolbar's own button - is exercised for real, not simulated.
-function renderShell(initialPath: string, activeModules: string[]) {
+function renderShell(initialPath: string, activeModules: string[], isOwner = true) {
   mockUseAuth.mockReturnValue({
     me: {
-      user_id: "u1", name: "Мария", email: "m@m.bg", is_owner: true, language: "bg",
+      user_id: "u1", name: "Мария", email: "m@m.bg", is_owner: isOwner, language: "bg",
       company_id: "c1", csrf_token: "t", active_modules: activeModules,
+      seat_limit: null, seat_usage: 1,
     },
     isLoading: false,
     refresh: vi.fn(),
@@ -155,5 +156,21 @@ describe("Business OS shell: global header vs RepairFlow toolbar (26.07.2026)", 
     expect(within(desktopNav).getByText("Табло")).toBeInTheDocument();
     expect(within(desktopNav).getByText("Поръчки")).toBeInTheDocument();
     expect(within(desktopNav).getByText("Клиенти")).toBeInTheDocument();
+  });
+});
+
+describe("Business OS shell: Настройки nav item (Tenant Employee Management, 29.07.2026)", () => {
+  it("is a real link to /settings/employees for an Owner", () => {
+    renderShell("/", [], true);
+    const desktopNav = screen.getByRole("navigation", { name: "RepairFlow navigation" });
+    const link = within(desktopNav).getByRole("link", { name: "Настройки" });
+    expect(link).toHaveAttribute("href", "/settings/employees");
+  });
+
+  it("stays a grayed, non-clickable placeholder for a Worker", () => {
+    renderShell("/", [], false);
+    const desktopNav = screen.getByRole("navigation", { name: "RepairFlow navigation" });
+    expect(within(desktopNav).queryByRole("link", { name: "Настройки" })).not.toBeInTheDocument();
+    expect(within(desktopNav).getByText("Настройки")).toHaveAttribute("aria-disabled");
   });
 });

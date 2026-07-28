@@ -267,7 +267,13 @@ export function AppShell() {
             </NavLink>
           )}
           <GrayedNavItem label={t("nav.invoices")} />
-          <GrayedNavItem label={t("nav.settings")} />
+          {me?.is_owner ? (
+            <NavLink to="/settings/employees" className={({ isActive }) => navClass(isActive)}>
+              {t("nav.settings")}
+            </NavLink>
+          ) : (
+            <GrayedNavItem label={t("nav.settings")} />
+          )}
           <button
             type="button"
             onClick={() => void logout().then(() => navigate("/login"))}

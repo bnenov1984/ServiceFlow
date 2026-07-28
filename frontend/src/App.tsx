@@ -13,6 +13,7 @@ import { IntakePage } from "./intake/IntakePage";
 import { OrderPage } from "./order/OrderPage";
 import { OrdersPage } from "./orders/OrdersPage";
 import { PsPage } from "./ps/PsPage";
+import { EmployeesPage } from "./settings/EmployeesPage";
 import { AppShell } from "./shell/AppShell";
 import { RequireVendorAuth } from "./vendor/RequireVendorAuth";
 import { VendorAuthProvider } from "./vendor/VendorAuthContext";
@@ -58,6 +59,7 @@ export function App() {
         <Route path="customers" element={<CustomersPage />} />
         <Route path="customers/:id" element={<CustomerProfilePage />} />
         <Route path="ps" element={<PsPage />} />
+        <Route path="settings/employees" element={<EmployeesPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
 

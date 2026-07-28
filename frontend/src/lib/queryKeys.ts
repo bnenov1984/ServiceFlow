@@ -32,4 +32,5 @@ export const queryKeys = {
   vendorMe: ["vendor", "me"] as const,
   vendorCompanies: ["vendor", "companies"] as const,
   vendorCompany: (id: string) => ["vendor", "company", id] as const,
+  employees: (includeInactive: boolean) => ["employees", includeInactive] as const,
 };

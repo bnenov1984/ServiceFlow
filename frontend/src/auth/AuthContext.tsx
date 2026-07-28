@@ -18,6 +18,8 @@ export interface Me {
   company_id: string;
   csrf_token: string;
   active_modules: string[];
+  seat_limit: number | null;
+  seat_usage: number;
 }
 
 interface AuthState {
