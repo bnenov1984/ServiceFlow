@@ -14,7 +14,9 @@ import { OrderPage } from "./order/OrderPage";
 import { OrdersPage } from "./orders/OrdersPage";
 import { PsPage } from "./ps/PsPage";
 import { EmployeesPage } from "./settings/EmployeesPage";
+import { AppChooserPage, NoActiveAppsPage } from "./shell/AppChooser";
 import { AppShell } from "./shell/AppShell";
+import { getLastApp } from "./shell/lastApp";
 import { RequireVendorAuth } from "./vendor/RequireVendorAuth";
 import { VendorAuthProvider } from "./vendor/VendorAuthContext";
 import { VendorCompaniesPage } from "./vendor/VendorCompaniesPage";
@@ -41,10 +43,45 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+/** "/" is RepairFlow's own dashboard route — never the default just because
+ * it's first in the list (PO decision, 01.08.2026: no application is active
+ * by default, and RepairFlow is not privileged over PropertyFlow). The
+ * landing page is derived entirely from the authenticated company's
+ * active_modules:
+ * - RepairFlow only -> this route's own <DashboardPage />
+ * - PropertyFlow only -> redirect to "/ps"
+ * - both -> the remembered last-used app (lastApp.ts), or the chooser if
+ *   there's no preference yet - never silently RepairFlow
+ * - neither -> a neutral "no applications enabled" state, not an error
+ * `AppShell`'s own `currentApp` fallback is a second line of defense for
+ * deep links that land past this point (e.g. "/settings/employees" for a
+ * company with zero active apps). */
+function IndexRoute() {
+  const { me } = useAuth();
+  if (!me) return null; // unreachable: RequireAuth already gates on `me`
+
+  const hasRepairFlow = me.active_modules.includes("repairflow");
+  const hasPropertyFlow = me.active_modules.includes("professional-services");
+
+  if (hasRepairFlow && hasPropertyFlow) {
+    const last = getLastApp();
+    if (last === "propertyflow") return <Navigate to="/ps" replace />;
+    if (last === "repairflow") return <DashboardPage />;
+    return <Navigate to="/choose-app" replace />;
+  }
+  if (hasPropertyFlow) return <Navigate to="/ps" replace />;
+  if (hasRepairFlow) return <DashboardPage />;
+  return <Navigate to="/no-apps" replace />;
+}
+
 export function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      {/* Standalone, outside AppShell - neither state has a single "current
+          app" to build per-app nav/toolbar chrome around. */}
+      <Route path="/choose-app" element={<RequireAuth><AppChooserPage /></RequireAuth>} />
+      <Route path="/no-apps" element={<RequireAuth><NoActiveAppsPage /></RequireAuth>} />
       <Route
         element={
           <RequireAuth>
@@ -52,7 +89,7 @@ export function App() {
           </RequireAuth>
         }
       >
-        <Route index element={<DashboardPage />} />
+        <Route index element={<IndexRoute />} />
         <Route path="orders" element={<OrdersPage />} />
         <Route path="orders/new" element={<IntakePage />} />
         <Route path="orders/:id" element={<OrderPage />} />

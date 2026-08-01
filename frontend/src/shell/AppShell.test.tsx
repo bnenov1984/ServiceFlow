@@ -48,18 +48,18 @@ function renderShell(initialPath: string, activeModules: string[], isOwner = tru
   );
 }
 
-const SEARCH_PLACEHOLDER = "Търсене: клиент, телефон, №, IMEI…";
+const SEARCH_PLACEHOLDER = "Търсене: клиент, апарат, модел, сериен №…";
 const NEW_ORDER_LABEL = "+ Нова поръчка";
 
 describe("Business OS shell: branding and per-app navigation (25.07.2026 rebrand)", () => {
   it("shows Business OS as the platform brand, never ServiceFlow", () => {
-    renderShell("/", []);
+    renderShell("/", ["repairflow"]);
     expect(screen.getByText("Business OS")).toBeInTheDocument();
     expect(screen.queryByText("ServiceFlow")).not.toBeInTheDocument();
   });
 
   it("hides the app switcher when only RepairFlow is active (nothing to switch to)", () => {
-    renderShell("/", []);
+    renderShell("/", ["repairflow"]);
     expect(screen.queryByRole("button", { name: /RepairFlow/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /PropertyFlow/ })).not.toBeInTheDocument();
     const desktopNav = screen.getByRole("navigation", { name: "RepairFlow navigation" });
@@ -67,7 +67,7 @@ describe("Business OS shell: branding and per-app navigation (25.07.2026 rebrand
   });
 
   it("shows the app switcher once PropertyFlow is active, defaulting to RepairFlow's own menu", () => {
-    renderShell("/", ["professional-services"]);
+    renderShell("/", ["repairflow", "professional-services"]);
     expect(screen.getByRole("button", { name: /RepairFlow/ })).toBeInTheDocument();
     const desktopNav = screen.getByRole("navigation", { name: "RepairFlow navigation" });
     expect(within(desktopNav).getByText("Поръчки")).toBeInTheDocument();
@@ -75,7 +75,7 @@ describe("Business OS shell: branding and per-app navigation (25.07.2026 rebrand
   });
 
   it("shows PropertyFlow's own menu, not RepairFlow's, on a PropertyFlow route", () => {
-    renderShell("/ps", ["professional-services"]);
+    renderShell("/ps", ["repairflow", "professional-services"]);
     const desktopNav = screen.getByRole("navigation", { name: "PropertyFlow navigation" });
     expect(within(desktopNav).queryByText("Поръчки")).not.toBeInTheDocument();
     expect(within(desktopNav).queryByText("Клиенти")).not.toBeInTheDocument();
@@ -83,27 +83,42 @@ describe("Business OS shell: branding and per-app navigation (25.07.2026 rebrand
   });
 
   it("never renders the retired Bulgarian 'Професионални услуги' label", () => {
-    renderShell("/ps", ["professional-services"]);
+    renderShell("/ps", ["repairflow", "professional-services"]);
     expect(screen.queryByText("Професионални услуги")).not.toBeInTheDocument();
+  });
+
+  it("shows only PropertyFlow's nav and switcher entry for a company with no RepairFlow entitlement", () => {
+    renderShell("/ps", ["professional-services"]);
+    expect(screen.queryByRole("button", { name: /RepairFlow/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "RepairFlow navigation" })).not.toBeInTheDocument();
+    const desktopNav = screen.getByRole("navigation", { name: "PropertyFlow navigation" });
+    expect(within(desktopNav).getByText("PropertyFlow")).toBeInTheDocument();
+  });
+
+  it("falls back to PropertyFlow as the current app on \"/\" when RepairFlow isn't entitled", () => {
+    renderShell("/", ["professional-services"]);
+    const desktopNav = screen.getByRole("navigation", { name: "PropertyFlow navigation" });
+    expect(within(desktopNav).getByText("PropertyFlow")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(SEARCH_PLACEHOLDER)).not.toBeInTheDocument();
   });
 });
 
 describe("Business OS shell: global header vs RepairFlow toolbar (26.07.2026)", () => {
   it("1+2: the global header contains neither the RepairFlow search nor \"Нова поръчка\"", () => {
-    renderShell("/", []);
+    renderShell("/", ["repairflow"]);
     const header = screen.getByRole("banner");
     expect(within(header).queryByPlaceholderText(SEARCH_PLACEHOLDER)).not.toBeInTheDocument();
     expect(within(header).queryByText(NEW_ORDER_LABEL)).not.toBeInTheDocument();
   });
 
   it("3: the RepairFlow route shows the RepairFlow search and \"Нова поръчка\"", () => {
-    renderShell("/", []);
+    renderShell("/", ["repairflow"]);
     expect(screen.getByPlaceholderText(SEARCH_PLACEHOLDER)).toBeInTheDocument();
     expect(screen.getByText(NEW_ORDER_LABEL)).toBeInTheDocument();
   });
 
   it("4: the PropertyFlow route shows neither the RepairFlow search, \"Нова поръчка\", nor any worker/technician context", () => {
-    renderShell("/ps", ["professional-services"]);
+    renderShell("/ps", ["repairflow", "professional-services"]);
     expect(screen.queryByPlaceholderText(SEARCH_PLACEHOLDER)).not.toBeInTheDocument();
     expect(screen.queryByText(NEW_ORDER_LABEL)).not.toBeInTheDocument();
     // No such concept exists in the shell at all (verified by audit) - the
@@ -113,7 +128,7 @@ describe("Business OS shell: global header vs RepairFlow toolbar (26.07.2026)", 
 
   it("5+6: switching RepairFlow -> PropertyFlow -> RepairFlow removes then restores the toolbar", async () => {
     const user = userEvent.setup();
-    renderShell("/", ["professional-services"]);
+    renderShell("/", ["repairflow", "professional-services"]);
     expect(screen.getByPlaceholderText(SEARCH_PLACEHOLDER)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /RepairFlow/ }));
@@ -130,27 +145,27 @@ describe("Business OS shell: global header vs RepairFlow toolbar (26.07.2026)", 
   });
 
   it("7: a direct load of the PropertyFlow route never renders RepairFlow controls (no CSS-only hiding)", () => {
-    renderShell("/ps", ["professional-services"]);
+    renderShell("/ps", ["repairflow", "professional-services"]);
     expect(screen.getByText("PROPERTYFLOW_PAGE")).toBeInTheDocument();
     expect(screen.queryByPlaceholderText(SEARCH_PLACEHOLDER)).not.toBeInTheDocument();
     expect(screen.queryByText(NEW_ORDER_LABEL)).not.toBeInTheDocument();
   });
 
   it("8: the account menu stays available globally regardless of the current app", () => {
-    renderShell("/ps", ["professional-services"]);
+    renderShell("/ps", ["repairflow", "professional-services"]);
     expect(screen.getByTitle("Смяна на потребител")).toBeInTheDocument();
     expect(screen.getByText("Мария")).toBeInTheDocument();
   });
 
   it("9: clicking \"Нова поръчка\" still navigates to the existing create-order route", async () => {
     const user = userEvent.setup();
-    renderShell("/", []);
+    renderShell("/", ["repairflow"]);
     await user.click(screen.getByText(NEW_ORDER_LABEL));
     expect(await screen.findByText("NEW_ORDER_PAGE")).toBeInTheDocument();
   });
 
   it("10: the app switcher and sidebar navigation are unaffected by the toolbar split", () => {
-    renderShell("/", ["professional-services"]);
+    renderShell("/", ["repairflow", "professional-services"]);
     expect(screen.getByRole("button", { name: /RepairFlow/ })).toBeInTheDocument();
     const desktopNav = screen.getByRole("navigation", { name: "RepairFlow navigation" });
     expect(within(desktopNav).getByText("Табло")).toBeInTheDocument();
@@ -161,14 +176,14 @@ describe("Business OS shell: global header vs RepairFlow toolbar (26.07.2026)", 
 
 describe("Business OS shell: Настройки nav item (Tenant Employee Management, 29.07.2026)", () => {
   it("is a real link to /settings/employees for an Owner", () => {
-    renderShell("/", [], true);
+    renderShell("/", ["repairflow"], true);
     const desktopNav = screen.getByRole("navigation", { name: "RepairFlow navigation" });
     const link = within(desktopNav).getByRole("link", { name: "Настройки" });
     expect(link).toHaveAttribute("href", "/settings/employees");
   });
 
   it("stays a grayed, non-clickable placeholder for a Worker", () => {
-    renderShell("/", [], false);
+    renderShell("/", ["repairflow"], false);
     const desktopNav = screen.getByRole("navigation", { name: "RepairFlow navigation" });
     expect(within(desktopNav).queryByRole("link", { name: "Настройки" })).not.toBeInTheDocument();
     expect(within(desktopNav).getByText("Настройки")).toHaveAttribute("aria-disabled");

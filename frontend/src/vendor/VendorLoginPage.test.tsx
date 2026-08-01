@@ -1,8 +1,10 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "../lib/api";
+import { queryKeys } from "../lib/queryKeys";
 import { VendorLoginPage } from "./VendorLoginPage";
 
 const mockPost = vi.fn();
@@ -11,26 +13,26 @@ vi.mock("../lib/api", async () => {
   return { ...actual, api: { ...actual.api, post: (...args: unknown[]) => mockPost(...args) } };
 });
 
-const mockRefresh = vi.fn();
-vi.mock("./VendorAuthContext", () => ({
-  useVendorAuth: () => ({ refresh: mockRefresh, me: null, isLoading: false, logout: vi.fn() }),
-}));
-
-function renderLoginAt(path: string) {
-  return render(
-    <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route path="/vendor/login" element={<VendorLoginPage />} />
-        <Route path="/vendor/companies" element={<div>COMPANIES_PAGE</div>} />
-      </Routes>
-    </MemoryRouter>,
+function renderLoginAt(path: string, queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
+  const utils = render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path="/vendor/login" element={<VendorLoginPage />} />
+          <Route path="/vendor/companies" element={<div>COMPANIES_PAGE</div>} />
+          <Route path="/vendor/companies/:id" element={<div>COMPANIES_PAGE</div>} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
+  return { ...utils, queryClient };
 }
 
 describe("VendorLoginPage", () => {
-  it("posts credentials to the vendor login endpoint and navigates to ?next= on success", async () => {
-    mockPost.mockResolvedValue({ platform_admin_id: "p1", name: "V", email: "v@v.bg", csrf_token: "t" });
-    renderLoginAt("/vendor/login?next=%2Fvendor%2Fcompanies%2Fabc");
+  it("posts credentials to the vendor login endpoint, seeds the me cache, and navigates to ?next= on success", async () => {
+    const meResponse = { platform_admin_id: "p1", name: "V", email: "v@v.bg", csrf_token: "t" };
+    mockPost.mockResolvedValue(meResponse);
+    const { queryClient } = renderLoginAt("/vendor/login?next=%2Fvendor%2Fcompanies%2Fabc");
     const user = userEvent.setup();
 
     await user.type(screen.getByLabelText(/имейл/i), "v@v.bg");
@@ -41,7 +43,26 @@ describe("VendorLoginPage", () => {
       email: "v@v.bg",
       password: "секретна-парола",
     });
-    expect(mockRefresh).toHaveBeenCalled();
+    await screen.findByText("COMPANIES_PAGE");
+    expect(queryClient.getQueryData(queryKeys.vendorMe)).toEqual(meResponse);
+  });
+
+  it("clears stale [\"vendor\", ...] cache on login, without touching a tenant session alive in the same tab", async () => {
+    const meResponse = { platform_admin_id: "p2", name: "V2", email: "v2@v.bg", csrf_token: "t2" };
+    mockPost.mockResolvedValue(meResponse);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData(queryKeys.vendorCompanies, [{ id: "stale-from-previous-admin" }]);
+    queryClient.setQueryData(["me"], { user_id: "tenant-user" });
+    renderLoginAt("/vendor/login", queryClient);
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText(/имейл/i), "v2@v.bg");
+    await user.type(screen.getByLabelText(/парола/i), "секретна-парола-2");
+    await user.click(screen.getByRole("button", { name: "Вход" }));
+
+    await screen.findByText("COMPANIES_PAGE");
+    expect(queryClient.getQueryData(queryKeys.vendorCompanies)).toBeUndefined();
+    expect(queryClient.getQueryData(["me"])).toEqual({ user_id: "tenant-user" });
   });
 
   it("shows the shared invalid-credentials message on a failed login", async () => {

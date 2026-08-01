@@ -49,7 +49,17 @@ export function VendorAuthProvider({ children }: { children: ReactNode }) {
       // Scoped, not queryClient.clear(): a tenant session can be alive in the
       // same tab (client-side routing between /vendor/* and the tenant app
       // never reloads the page) — vendor logout must not wipe its cache.
-      queryClient.removeQueries({ queryKey: ["vendor"] });
+      // vendorMe itself is reset in place, not removed: this hook's own
+      // useQuery observer stays subscribed to the *same* query object for
+      // the component's whole lifetime, and removing it outright orphans
+      // that subscription for whatever a subsequent login recreates - see
+      // auth/AuthContext.tsx's identical fix for the confirmed regression.
+      // (setQueryData(key, undefined) is a documented no-op in TanStack
+      // Query - resetQueries is the supported way to clear in place.)
+      queryClient.resetQueries({ queryKey: queryKeys.vendorMe });
+      queryClient.removeQueries({
+        predicate: (q) => q.queryKey[0] === "vendor" && q.queryKey[1] !== "me",
+      });
     }
   };
 

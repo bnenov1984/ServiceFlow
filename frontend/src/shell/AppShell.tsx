@@ -39,15 +39,17 @@ interface AppDef {
   id: string;
   nameKey: MessageKey;
   path: string;
-  /** null = always active (RepairFlow has no activation gate); otherwise the
-   * companies.settings.active_modules key that must be present. */
+  /** The companies.settings.active_modules key that must be present. Every
+   * app is a real, backend-gated entitlement (PO decision, 01.08.2026) —
+   * `null` was RepairFlow's old "always active" special case and no longer
+   * exists. */
   moduleKey: string | null;
 }
 
 // The only place the shell knows about individual apps. Adding a third
 // (ConstructionFlow, ...) later is one more entry here, per BOS-06 activation.
 const APPS: AppDef[] = [
-  { id: "repairflow", nameKey: "app.repairflow", path: "/", moduleKey: null },
+  { id: "repairflow", nameKey: "app.repairflow", path: "/", moduleKey: "repairflow" },
   { id: "propertyflow", nameKey: "app.propertyflow", path: "/ps", moduleKey: "professional-services" },
 ];
 
@@ -77,11 +79,13 @@ function GrayedNavItem({ label }: { label: string }) {
  * only active apps (RepairFlow always; PropertyFlow when its module is
  * activated) - never a disabled/greyed entry for an inactive app, per the
  * same "don't show what isn't there" rule the sidebar already followed. */
-function AppSwitcher({ apps, current }: { apps: AppDef[]; current: AppDef }) {
+function AppSwitcher({ apps, current }: { apps: AppDef[]; current: AppDef | undefined }) {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
 
-  if (apps.length <= 1) return null;
+  // apps.length > 1 (both active) is the only case current is guaranteed
+  // defined in - see AppShell's own currentApp comment.
+  if (apps.length <= 1 || !current) return null;
 
   return (
     <div className="relative">
@@ -130,7 +134,7 @@ function AppSwitcher({ apps, current }: { apps: AppDef[]; current: AppDef }) {
  * RepairFlow (or any other app)-specific - see RepairFlowToolbar for that. */
 function GlobalHeader({
   activeApps, currentApp, onSwitchUser,
-}: { activeApps: AppDef[]; currentApp: AppDef; onSwitchUser: () => void }) {
+}: { activeApps: AppDef[]; currentApp: AppDef | undefined; onSwitchUser: () => void }) {
   const { me } = useAuth();
 
   return (
@@ -152,8 +156,10 @@ function GlobalHeader({
   );
 }
 
-/** RepairFlow's own contextual toolbar: client/phone/№/IMEI search and the
- * "Нова поръчка" primary action. Rendered only for currentApp.id ===
+/** RepairFlow's own contextual toolbar: client/device/model/serial search
+ * (device-type-agnostic wording, PO decision 01.08.2026 — RepairFlow covers
+ * more than phones) and the "Нова поръчка" primary action. Rendered only for
+ * currentApp.id ===
  * "repairflow" (see AppShell below) - reuses the existing SearchBox
  * component and navigate("/orders/new") call as-is, just relocated. */
 function RepairFlowToolbar() {
@@ -203,11 +209,19 @@ export function AppShell() {
   const activeApps = APPS.filter(
     (a) => a.moduleKey === null || me?.active_modules.includes(a.moduleKey),
   );
-  const currentApp =
-    APPS.find((a) => a.path !== "/" && location.pathname.startsWith(a.path)) ?? APPS[0];
+  // Falls back to the first *entitled* app, never APPS[0]/RepairFlow
+  // unconditionally — a company with zero active apps (reachable on a
+  // Core-only route like "/settings/employees") has no current app at all,
+  // and none of RepairFlow's own chrome (toolbar, nav, mobile bar) may
+  // render for it (App.tsx's IndexRoute is the first line of defense for
+  // "/" itself; this is the shell's own second line, e.g. for a direct
+  // deep link).
+  const currentApp: AppDef | undefined =
+    APPS.find((a) => a.path !== "/" && location.pathname.startsWith(a.path))
+    ?? activeApps[0];
 
   useEffect(() => {
-    document.title = `${t(currentApp.nameKey)} · ${t("app.name")}`;
+    document.title = currentApp ? `${t(currentApp.nameKey)} · ${t("app.name")}` : t("app.name");
   }, [currentApp]);
 
   const { data: health, isError: healthError } = useQuery({
@@ -230,7 +244,7 @@ export function AppShell() {
         currentApp={currentApp}
         onSwitchUser={() => setPinOpen(true)}
       />
-      {currentApp.id === "repairflow" && <RepairFlowToolbar />}
+      {currentApp?.id === "repairflow" && <RepairFlowToolbar />}
 
       {healthProblem && (
         <div role="alert" className="bg-red-600 px-4 py-2 text-sm font-medium text-white">
@@ -240,15 +254,17 @@ export function AppShell() {
 
       <div className="flex flex-1">
         <nav
-          aria-label={`${t(currentApp.nameKey)} navigation`}
+          aria-label={currentApp ? `${t(currentApp.nameKey)} navigation` : t("app.name")}
           className="hidden w-52 shrink-0 flex-col gap-1 border-r border-slate-200 bg-white p-3 md:flex"
         >
           {/* Own menu per app (not a submenu of another app, product decision
               25.07.2026): only the current app's nav items render here. */}
-          <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
-            {t(currentApp.nameKey)}
-          </p>
-          {currentApp.id === "repairflow" && (
+          {currentApp && (
+            <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+              {t(currentApp.nameKey)}
+            </p>
+          )}
+          {currentApp?.id === "repairflow" && (
             <>
               <NavLink to="/" end className={({ isActive }) => navClass(isActive)}>
                 {t("nav.dashboard")}
@@ -261,7 +277,7 @@ export function AppShell() {
               </NavLink>
             </>
           )}
-          {currentApp.id === "propertyflow" && (
+          {currentApp?.id === "propertyflow" && (
             <NavLink to="/ps" end className={({ isActive }) => navClass(isActive)}>
               {t("nav.dashboard")}
             </NavLink>
@@ -276,7 +292,7 @@ export function AppShell() {
           )}
           <button
             type="button"
-            onClick={() => void logout().then(() => navigate("/login"))}
+            onClick={() => void logout().catch(() => {}).finally(() => navigate("/login"))}
             className="mt-auto rounded-lg px-3 py-2 text-left text-sm text-slate-500 hover:bg-slate-100 min-h-touch"
           >
             {t("shell.logout")}
@@ -292,28 +308,32 @@ export function AppShell() {
       </div>
 
       {/* Mobile bottom bar (docs/15 §8): active sections + new-order shortcut.
-          RepairFlow-only for now (matches its pre-rebrand scope) - not part
-          of this rebrand's scope, tracked as a follow-up. */}
-      <nav aria-label="RepairFlow mobile navigation" className="sticky bottom-0 flex border-t border-slate-200 bg-white md:hidden">
-        {[
-          { to: "/", label: t("nav.dashboard") },
-          { to: "/orders", label: t("nav.orders") },
-          { to: "/customers", label: t("nav.customers") },
-        ].map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.to === "/"}
-            className={({ isActive }) =>
-              `flex flex-1 items-center justify-center py-3 text-sm font-medium min-h-touch ${
-                isActive ? "text-blue-700" : "text-slate-500"
-              }`
-            }
-          >
-            {item.label}
-          </NavLink>
-        ))}
-      </nav>
+          RepairFlow-only for now (matches its pre-rebrand scope; PropertyFlow
+          has no mobile nav of its own yet, same scope boundary its desktop
+          toolbar already respects) - gated the same as every other RepairFlow
+          control so it never renders for a company without that entitlement. */}
+      {currentApp?.id === "repairflow" && (
+        <nav aria-label="RepairFlow mobile navigation" className="sticky bottom-0 flex border-t border-slate-200 bg-white md:hidden">
+          {[
+            { to: "/", label: t("nav.dashboard") },
+            { to: "/orders", label: t("nav.orders") },
+            { to: "/customers", label: t("nav.customers") },
+          ].map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.to === "/"}
+              className={({ isActive }) =>
+                `flex flex-1 items-center justify-center py-3 text-sm font-medium min-h-touch ${
+                  isActive ? "text-blue-700" : "text-slate-500"
+                }`
+              }
+            >
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
+      )}
 
       <PinSwitchDialog open={pinOpen} onClose={() => setPinOpen(false)} />
 
@@ -404,7 +424,7 @@ function LockedPanel({ onUnlocked }: { onUnlocked: () => void }) {
       )}
       <button
         type="button"
-        onClick={() => void logout().then(() => navigate("/login"))}
+        onClick={() => void logout().catch(() => {}).finally(() => navigate("/login"))}
         className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium hover:bg-slate-50 min-h-touch"
       >
         {t("shell.logout")}

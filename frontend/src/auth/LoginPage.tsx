@@ -1,15 +1,31 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { t } from "../i18n/bg";
-import { ApiError, api } from "../lib/api";
-import { useAuth, type Me } from "./AuthContext";
+import { ApiError, api, setCsrfToken } from "../lib/api";
+import { queryKeys } from "../lib/queryKeys";
+import { waitForQueryNotifications } from "../lib/queryNotify";
+import { clearLastApp } from "../shell/lastApp";
+import type { Me } from "./AuthContext";
+
+/** A `?next=` deep link captured while logged in as a *different* company
+ * (e.g. RequireAuth redirecting from "/ps") is meaningless for whichever
+ * company just authenticated - "/ps" is PropertyFlow-only, everything else
+ * other than "/settings/*" (a Core feature, gated by neither module) is
+ * RepairFlow's. Falls back to "/", whose own IndexRoute (App.tsx) already
+ * picks the right home page from the fresh active_modules. */
+function isSafeNext(next: string, activeModules: string[]): boolean {
+  if (next.startsWith("/ps")) return activeModules.includes("professional-services");
+  if (next === "/" || next.startsWith("/settings")) return true;
+  return activeModules.includes("repairflow");
+}
 
 export function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const { refresh } = useAuth();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -18,13 +34,51 @@ export function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await api.post<Me>("/auth/login", {
+      const me = await api.post<Me>("/auth/login", {
         email,
         password,
         device_label: navigator.platform ?? "",
       });
-      await refresh();
-      const next = new URLSearchParams(location.search).get("next") ?? "/";
+      // Set the CSRF token directly rather than relying solely on
+      // AuthContext's `useEffect(() => setCsrfToken(data?.csrf_token), [data])`
+      // to pick it up from the query cache - see the setQueryData ordering
+      // note just below for why that hand-off is race-prone. Setting it here
+      // is synchronous and race-free.
+      setCsrfToken(me.csrf_token);
+      // Seed "me" BEFORE touching anything else, and never tear it down:
+      // queryClient.clear()/removeQueries(everything) destroys the "me"
+      // query's own internal state while AuthProvider's useQuery still has
+      // an active, mounted observer on it - that observer transiently sees
+      // stale-then-correct data across two renders. A component that reacts
+      // to `me` by navigating (App.tsx's IndexRoute) can act on the stale
+      // first render and redirect the vendor to the wrong app before the
+      // correct render ever happens, and nothing then navigates it back
+      // (confirmed: logging out of a both-apps company and into a
+      // RepairFlow-only one intermittently got stuck on the app chooser).
+      // Setting "me" first, and only ever removing every *other* query,
+      // closes that window entirely.
+      queryClient.setQueryData(queryKeys.me, me);
+      // Logging in over an already-authenticated session (no explicit
+      // logout first - e.g. switching companies mid-manual-test) must not
+      // leave the previous company's cached data (dashboard, customers,
+      // orders, ...) visible: none of those query keys are company-scoped
+      // (lib/queryKeys.ts), so without a clear they'd keep showing stale
+      // cross-company data until each query's own staleTime expires.
+      // logout() already clears the cache for this reason - login must too.
+      queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== "me" });
+      // The remembered "last used app" (shell/lastApp.ts) is the same kind
+      // of cross-company leak risk if left in place - a RepairFlow+
+      // PropertyFlow company's stale choice must never decide where a
+      // different, just-logged-in company lands.
+      clearLastApp();
+      // See lib/queryNotify.ts: without this, RequireAuth (App.tsx) can
+      // evaluate the "/" route against the *previous* `me` (often none)
+      // and bounce back to /login right after a successful login -
+      // confirmed via a regression test that logs out of a both-apps
+      // company and into a different one.
+      await waitForQueryNotifications();
+      const requestedNext = new URLSearchParams(location.search).get("next") ?? "/";
+      const next = isSafeNext(requestedNext, me.active_modules) ? requestedNext : "/";
       navigate(next, { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));

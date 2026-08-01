@@ -20,13 +20,17 @@ export const bg = {
   "nav.settings": "Настройки",
   "nav.coming_soon": "Очаквайте скоро",
   "shell.new_order": "+ Нова поръчка",
-  "shell.search_placeholder": "Търсене: клиент, телефон, №, IMEI…",
+  "shell.search_placeholder": "Търсене: клиент, апарат, модел, сериен №…",
   "shell.logout": "Изход",
   "shell.switch_user": "Смяна на потребител",
   "shell.locked_title": "Екранът е заключен",
   "shell.locked_hint": "Изберете потребител и въведете PIN, за да продължите.",
   "shell.building": "Този екран се изгражда.",
   "shell.you_suffix": "{name} (вие)",
+  "shell.chooser_title": "Изберете приложение",
+  "shell.chooser_hint": "Тази фирма има достъп до повече от едно приложение. Изберете с кое искате да продължите.",
+  "shell.no_active_apps_title": "Няма активирани приложения",
+  "shell.no_active_apps_hint": "Свържете се с доставчика си, за да активира RepairFlow или PropertyFlow за тази фирма.",
 
   // --- health (docs/10 §1: one banner, plain sentence + next step) ---
   "health.checking": "Проверка на връзката…",

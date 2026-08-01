@@ -1,8 +1,9 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { t } from "../i18n/bg";
-import { ApiError, api } from "../lib/api";
-import { useVendorAuth } from "./VendorAuthContext";
+import { ApiError, api, setVendorCsrfToken } from "../lib/api";
+import { queryKeys } from "../lib/queryKeys";
 import type { VendorMe } from "./types";
 
 export function VendorLoginPage() {
@@ -10,7 +11,7 @@ export function VendorLoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const { refresh } = useVendorAuth();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -19,8 +20,27 @@ export function VendorLoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await api.post<VendorMe>("/platform-admin/auth/login", { email, password });
-      await refresh();
+      const me = await api.post<VendorMe>("/platform-admin/auth/login", { email, password });
+      // Set the CSRF token directly rather than relying solely on
+      // VendorAuthContext's `useEffect` to pick it up from the query cache
+      // - see auth/LoginPage.tsx's identical fix for why that hand-off is
+      // race-prone around removeQueries()/setQueryData().
+      setVendorCsrfToken(me.csrf_token);
+      // Seed vendorMe BEFORE removing anything else, and never remove it
+      // itself in the same pass - see auth/LoginPage.tsx's identical fix
+      // for the stale-then-correct render window this closes (destroying
+      // an actively-observed query's state, even briefly, is visible to
+      // its mounted observer).
+      queryClient.setQueryData(queryKeys.vendorMe, me);
+      // Logging in over an already-authenticated vendor session (switching
+      // admins mid-tab without an explicit logout) must not leave stale
+      // ["vendor", ...] cache visible - same fix as auth/LoginPage.tsx's
+      // tenant-side login, and scoped rather than a full clear() for the
+      // same reason VendorAuthContext.logout() already gives: a tenant
+      // session can be alive in the same tab and must not be wiped.
+      queryClient.removeQueries({
+        predicate: (q) => q.queryKey[0] === "vendor" && q.queryKey[1] !== "me",
+      });
       const next = new URLSearchParams(location.search).get("next") ?? "/vendor/companies";
       navigate(next, { replace: true });
     } catch (err) {

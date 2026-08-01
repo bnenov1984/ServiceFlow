@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, type ReactNode } from "react";
 import { ApiError, api, setCsrfToken } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
+import { clearLastApp } from "../shell/lastApp";
 
 export interface Me {
   user_id: string;
@@ -55,7 +56,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await api.post("/auth/logout");
     } finally {
       setCsrfToken(null);
-      queryClient.clear();
+      // Reset "me" in place (data -> undefined) rather than removing the
+      // query entirely: this hook's own useQuery observer stays subscribed
+      // to the *same* query object throughout the component's lifetime
+      // (AuthProvider never unmounts). queryClient.clear()/removeQueries
+      // (everything, or "me" itself) destroys that object outright, and
+      // when a subsequent login recreates a "me" query from scratch
+      // (queryClient.setQueryData in LoginPage.tsx), this observer picked
+      // it up unreliably - confirmed via a regression test that logs out
+      // and immediately logs into a different company, which
+      // intermittently kept reading the *previous* company's stale data.
+      // (setQueryData(key, undefined) is a documented no-op in TanStack
+      // Query - resetQueries is the supported way to clear in place.)
+      queryClient.resetQueries({ queryKey: queryKeys.me });
+      queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== "me" });
+      clearLastApp();
     }
   };
 
