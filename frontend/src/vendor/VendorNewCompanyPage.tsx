@@ -1,9 +1,18 @@
 /** Company Provisioning UI (business-os/18 §7 screen 3, ADR-BOS-009): the
  * first Vendor Console mutation, built directly on the existing
- * `POST /platform-admin/companies` contract — no new backend fields, no
- * seat-limit/subscription-state controls (not part of that contract; see
- * this slice's plan for why), no module metadata beyond the one module that
- * has any real enforcement anywhere in the app today. */
+ * `POST /platform-admin/companies` contract — no seat-limit/subscription-state
+ * controls (not part of that contract). Module selection (RepairFlow /
+ * PropertyFlow) is mandatory since the 01.08.2026 PO decision: no application
+ * is active by default, and both are real, backend-gated entitlements
+ * (`require_repairflow_active`/`require_ps_active`).
+ *
+ * Two separate business-description fields (PO decision, 01.08.2026):
+ * `business_profile` stays a fixed, small vocabulary — it controls which
+ * default RepairFlow asset types get seeded (docs/business-os/18 §15), so it
+ * stays a `<select>`, never free text. `business_type_label` is the vendor's
+ * own free-text description of what the company actually does (e.g. "Сервиз
+ * за велосипеди и тротинетки") — purely descriptive metadata, required, and
+ * never consulted by any validator/asset-schema/workflow decision. */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
@@ -21,6 +30,16 @@ const BUSINESS_PROFILES: { code: string; labelKey: Parameters<typeof t>[0] }[] =
   { code: "appliance_repair", labelKey: "vendor.business_profile_appliance_repair" },
 ];
 
+// PO decision (01.08.2026): no application is active by default — the
+// vendor must explicitly check at least one. RepairFlow is now a real,
+// backend-gated entitlement (require_repairflow_active), the same shape
+// PropertyFlow's require_ps_active already had — both are equal, ordinary
+// checkbox options here, either or both may be selected.
+const MODULE_OPTIONS: { code: string; labelKey: Parameters<typeof t>[0] }[] = [
+  { code: "repairflow", labelKey: "app.repairflow" },
+  { code: "professional-services", labelKey: "app.propertyflow" },
+];
+
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD_LENGTH = 12;
 
@@ -35,7 +54,8 @@ export function VendorNewCompanyPage() {
   const [ownerEmail, setOwnerEmail] = useState("");
   const [ownerPassword, setOwnerPassword] = useState("");
   const [businessProfile, setBusinessProfile] = useState("generic_repair");
-  const [professionalServicesEnabled, setProfessionalServicesEnabled] = useState(false);
+  const [businessTypeLabel, setBusinessTypeLabel] = useState("");
+  const [selectedModules, setSelectedModules] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -48,7 +68,19 @@ export function VendorNewCompanyPage() {
     if (ownerName.trim().length === 0) errors.owner_name = t("errors.validation");
     if (!EMAIL_RE.test(ownerEmail)) errors.owner_email = t("errors.validation");
     if (ownerPassword.length < MIN_PASSWORD_LENGTH) errors.owner_password = t("errors.validation");
+    if (businessTypeLabel.trim().length === 0) {
+      errors.business_type_label = t("errors.provisioning.business_type_label_required");
+    }
+    if (selectedModules.size === 0) errors.modules = t("errors.provisioning.no_modules_selected");
     return errors;
+  };
+
+  const toggleModule = (code: string, checked: boolean) => {
+    setSelectedModules((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(code); else next.delete(code);
+      return next;
+    });
   };
 
   const onSubmit = async (e: FormEvent) => {
@@ -71,7 +103,8 @@ export function VendorNewCompanyPage() {
         owner_email: ownerEmail,
         owner_password: ownerPassword,
         business_profile: businessProfile,
-        modules: professionalServicesEnabled ? ["professional-services"] : [],
+        business_type_label: businessTypeLabel.trim(),
+        modules: [...selectedModules],
       };
       const result = await api.post<ProvisionCompanyResult>("/platform-admin/companies", body);
       await queryClient.invalidateQueries({ queryKey: queryKeys.vendorCompanies });
@@ -185,14 +218,44 @@ export function VendorNewCompanyPage() {
           </select>
         </div>
 
-        <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+        <div>
+          <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="business-type-label">
+            {t("vendor.field_business_type_label")}
+          </label>
           <input
-            type="checkbox"
-            checked={professionalServicesEnabled}
-            onChange={(e) => setProfessionalServicesEnabled(e.target.checked)}
+            id="business-type-label"
+            value={businessTypeLabel}
+            onChange={(e) => setBusinessTypeLabel(e.target.value)}
+            placeholder={t("vendor.field_business_type_label_placeholder")}
+            className={`w-full rounded-lg border px-3 py-2 min-h-touch ${
+              fieldErrors.business_type_label ? "border-red-600" : "border-slate-300"
+            }`}
           />
-          {t("app.propertyflow")}
-        </label>
+          {fieldErrors.business_type_label && (
+            <p role="alert" className="mt-0.5 text-xs text-red-700">{fieldErrors.business_type_label}</p>
+          )}
+        </div>
+
+        <div>
+          <span className="mb-1 block text-sm font-medium text-slate-700">
+            {t("vendor.field_modules")}
+          </span>
+          <div className="flex flex-col gap-2">
+            {MODULE_OPTIONS.map((m) => (
+              <label key={m.code} className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={selectedModules.has(m.code)}
+                  onChange={(e) => toggleModule(m.code, e.target.checked)}
+                />
+                {t(m.labelKey)}
+              </label>
+            ))}
+          </div>
+          {fieldErrors.modules && (
+            <p role="alert" className="mt-0.5 text-xs text-red-700">{fieldErrors.modules}</p>
+          )}
+        </div>
 
         {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
 

@@ -50,6 +50,7 @@ describe("VendorCompaniesPage", () => {
     mockGet.mockResolvedValue([
       {
         id: "c1", name: "Сервиз А", business_profile: "generic_repair",
+        business_type_label: "Общ ремонт на техника",
         active_modules: [], subscription_state: "trial", trial_ends_at: null,
         seat_limit: 5, seat_usage: 2, created_at: "2026-07-01T00:00:00Z",
       },

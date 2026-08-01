@@ -54,6 +54,7 @@ function renderPage(id = "c1", queryClient = new QueryClient({ defaultOptions: {
 
 const BASE_COMPANY = {
   id: "c1", name: "Сервиз А", business_profile: "generic_repair",
+  business_type_label: "Общ ремонт на техника",
   subscription_state: "trial", trial_ends_at: null, seat_limit: null,
   seat_usage: 1, created_at: "2026-07-01T00:00:00Z",
   subscription_state_changed_at: "2026-07-01T00:00:00Z",
@@ -91,6 +92,7 @@ describe("VendorCompanyDetailPage", () => {
   it("renders the full field set for a normal detail response", async () => {
     mockGet.mockResolvedValue({
       id: "c1", name: "Сервиз А", business_profile: "generic_repair",
+      business_type_label: "Общ ремонт на техника",
       active_modules: ["professional-services"], subscription_state: "active",
       trial_ends_at: null, seat_limit: null, seat_usage: 3,
       created_at: "2026-07-01T00:00:00Z", subscription_state_changed_at: "2026-07-15T00:00:00Z",
@@ -99,7 +101,8 @@ describe("VendorCompanyDetailPage", () => {
 
     expect(await screen.findByText("Сервиз А")).toBeInTheDocument();
     expect(screen.getByText("generic_repair")).toBeInTheDocument();
-    expect(screen.getByText("professional-services")).toBeInTheDocument();
+    expect(screen.getByText("Общ ремонт на техника")).toBeInTheDocument();
+    expect(screen.getByText("PropertyFlow")).toBeInTheDocument();
     expect(screen.getByText("active")).toBeInTheDocument();
     expect(screen.getByText("3/неограничено")).toBeInTheDocument();
     expect(screen.queryByText("Пробният период приключва на")).not.toBeInTheDocument();
@@ -108,6 +111,7 @@ describe("VendorCompanyDetailPage", () => {
   it("shows the trial end date when present", async () => {
     mockGet.mockResolvedValue({
       id: "c1", name: "Сервиз Б", business_profile: "generic_repair",
+      business_type_label: "Общ ремонт на техника",
       active_modules: [], subscription_state: "trial",
       trial_ends_at: "2026-08-11T14:43:05.383874Z", seat_limit: null, seat_usage: 1,
       created_at: "2026-07-01T00:00:00Z", subscription_state_changed_at: "2026-07-01T00:00:00Z",
@@ -129,7 +133,7 @@ describe("VendorCompanyDetailPage", () => {
 
     await user.click(await screen.findByRole("button", { name: "Активирай PropertyFlow" }));
 
-    expect(await screen.findByText("professional-services")).toBeInTheDocument();
+    expect(await screen.findByText("PropertyFlow")).toBeInTheDocument();
     expect(mockPut).toHaveBeenCalledWith("/platform-admin/companies/c1/modules/professional-services");
     expect(mockGet).toHaveBeenCalledTimes(1);
   });

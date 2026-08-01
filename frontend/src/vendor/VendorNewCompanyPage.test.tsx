@@ -44,12 +44,16 @@ async function fillRequiredFields(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText("Име на собственика"), "Иван Иванов");
   await user.type(screen.getByLabelText("Имейл"), "owner@dev-seed.bg");
   await user.type(screen.getByLabelText("Парола"), "дълга-парола-1234");
+  await user.type(
+    screen.getByLabelText("Описание на дейността"), "Сервиз за велосипеди и тротинетки",
+  );
 }
 
 const SUCCESS_RESULT = {
   company_id: "c1", owner_id: "o1", subscription_state: "trial",
   trial_ends_at: "2026-08-11T00:00:00Z", business_profile: "generic_repair",
-  activated_modules: [], audit_id: "a1",
+  business_type_label: "Сервиз за велосипеди и тротинетки",
+  activated_modules: ["repairflow"], audit_id: "a1",
 };
 
 describe("VendorNewCompanyPage", () => {
@@ -81,9 +85,22 @@ describe("VendorNewCompanyPage", () => {
     expect(screen.getByLabelText("Имейл")).toBeInTheDocument();
     expect(screen.getByLabelText("Парола")).toBeInTheDocument();
     expect(screen.getByLabelText("Бизнес профил")).toBeInTheDocument();
+    expect(screen.getByLabelText("Описание на дейността")).toBeInTheDocument();
+    expect(screen.getByLabelText("RepairFlow")).toBeInTheDocument();
     expect(screen.getByLabelText("PropertyFlow")).toBeInTheDocument();
     // Not part of the ProvisionCompanyRequest contract — must never appear.
     expect(screen.queryByLabelText(/места|лимит|валута|часова зона|локал/i)).not.toBeInTheDocument();
+  });
+
+  it("renders both module checkboxes unchecked by default — no application active by default", () => {
+    renderPage();
+    expect(screen.getByLabelText("RepairFlow")).not.toBeChecked();
+    expect(screen.getByLabelText("PropertyFlow")).not.toBeChecked();
+  });
+
+  it("defaults the business profile field to \"Общ ремонт\", a fixed vocabulary select", () => {
+    renderPage();
+    expect(screen.getByLabelText("Бизнес профил")).toHaveValue("generic_repair");
   });
 
   it("maps every human-readable business-profile label to its canonical code", async () => {
@@ -91,12 +108,43 @@ describe("VendorNewCompanyPage", () => {
     renderPage();
     const user = userEvent.setup();
     await fillRequiredFields(user);
+    await user.click(screen.getByLabelText("RepairFlow"));
 
     await user.selectOptions(screen.getByLabelText("Бизнес профил"), "Авторемонт");
     await user.click(screen.getByRole("button", { name: "Създай компания" }));
 
     await waitFor(() => expect(mockPost).toHaveBeenCalled());
     expect(mockPost.mock.calls[0][1]).toMatchObject({ business_profile: "automotive_repair" });
+  });
+
+  it("blocks submission when the business type label is empty, with the exact required message", async () => {
+    renderPage();
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Име на компанията"), "Нов Сервиз ЕООД");
+    await user.type(screen.getByLabelText("Име на собственика"), "Иван Иванов");
+    await user.type(screen.getByLabelText("Имейл"), "owner@dev-seed.bg");
+    await user.type(screen.getByLabelText("Парола"), "дълга-парола-1234");
+    await user.click(screen.getByLabelText("RepairFlow"));
+    await user.click(screen.getByRole("button", { name: "Създай компания" }));
+
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(await screen.findByText("Въведете описание на дейността.")).toBeInTheDocument();
+  });
+
+  it("sends the free-text business type label verbatim, trimmed", async () => {
+    mockPost.mockResolvedValue(SUCCESS_RESULT);
+    renderPage();
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Име на компанията"), "Нов Сервиз ЕООД");
+    await user.type(screen.getByLabelText("Име на собственика"), "Иван Иванов");
+    await user.type(screen.getByLabelText("Имейл"), "owner@dev-seed.bg");
+    await user.type(screen.getByLabelText("Парола"), "дълга-парола-1234");
+    await user.type(screen.getByLabelText("Описание на дейността"), "  Ремонт на велосипеди  ");
+    await user.click(screen.getByLabelText("RepairFlow"));
+    await user.click(screen.getByRole("button", { name: "Създай компания" }));
+
+    await waitFor(() => expect(mockPost).toHaveBeenCalled());
+    expect(mockPost.mock.calls[0][1]).toMatchObject({ business_type_label: "Ремонт на велосипеди" });
   });
 
   it("blocks submission when required fields are empty", async () => {
@@ -108,12 +156,22 @@ describe("VendorNewCompanyPage", () => {
     expect(await screen.findAllByRole("alert")).not.toHaveLength(0);
   });
 
-  it("sends the exact expected payload on successful submission", async () => {
+  it("blocks submission with the exact PO-specified message when no application is selected", async () => {
+    renderPage();
+    const user = userEvent.setup();
+    await fillRequiredFields(user);
+    await user.click(screen.getByRole("button", { name: "Създай компания" }));
+
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(await screen.findByText("Изберете поне едно приложение.")).toBeInTheDocument();
+  });
+
+  it("sends modules: [\"repairflow\"] when only RepairFlow is checked", async () => {
     mockPost.mockResolvedValue(SUCCESS_RESULT);
     renderPage();
     const user = userEvent.setup();
     await fillRequiredFields(user);
-    await user.click(screen.getByLabelText("PropertyFlow"));
+    await user.click(screen.getByLabelText("RepairFlow"));
     await user.click(screen.getByRole("button", { name: "Създай компания" }));
 
     await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
@@ -123,8 +181,37 @@ describe("VendorNewCompanyPage", () => {
       owner_email: "owner@dev-seed.bg",
       owner_password: "дълга-парола-1234",
       business_profile: "generic_repair",
-      modules: ["professional-services"],
+      business_type_label: "Сервиз за велосипеди и тротинетки",
+      modules: ["repairflow"],
     });
+  });
+
+  it("sends modules: [\"professional-services\"] when only PropertyFlow is checked", async () => {
+    mockPost.mockResolvedValue({ ...SUCCESS_RESULT, activated_modules: ["professional-services"] });
+    renderPage();
+    const user = userEvent.setup();
+    await fillRequiredFields(user);
+    await user.click(screen.getByLabelText("PropertyFlow"));
+    await user.click(screen.getByRole("button", { name: "Създай компания" }));
+
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+    expect(mockPost.mock.calls[0][1]).toMatchObject({ modules: ["professional-services"] });
+  });
+
+  it("sends both module codes when both checkboxes are checked", async () => {
+    mockPost.mockResolvedValue({
+      ...SUCCESS_RESULT, activated_modules: ["repairflow", "professional-services"],
+    });
+    renderPage();
+    const user = userEvent.setup();
+    await fillRequiredFields(user);
+    await user.click(screen.getByLabelText("RepairFlow"));
+    await user.click(screen.getByLabelText("PropertyFlow"));
+    await user.click(screen.getByRole("button", { name: "Създай компания" }));
+
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+    const modules: string[] = mockPost.mock.calls[0][1].modules;
+    expect(new Set(modules)).toEqual(new Set(["repairflow", "professional-services"]));
   });
 
   it("targets the vendor-prefixed endpoint (proving the vendor CSRF branch applies)", async () => {
@@ -132,6 +219,7 @@ describe("VendorNewCompanyPage", () => {
     renderPage();
     const user = userEvent.setup();
     await fillRequiredFields(user);
+    await user.click(screen.getByLabelText("RepairFlow"));
     await user.click(screen.getByRole("button", { name: "Създай компания" }));
 
     await waitFor(() => expect(mockPost).toHaveBeenCalled());
@@ -144,6 +232,7 @@ describe("VendorNewCompanyPage", () => {
     renderPage();
     const user = userEvent.setup();
     await fillRequiredFields(user);
+    await user.click(screen.getByLabelText("RepairFlow"));
 
     const button = screen.getByRole("button", { name: "Създай компания" });
     await user.click(button);
@@ -161,6 +250,7 @@ describe("VendorNewCompanyPage", () => {
     renderPage(queryClient);
     const user = userEvent.setup();
     await fillRequiredFields(user);
+    await user.click(screen.getByLabelText("RepairFlow"));
     await user.click(screen.getByRole("button", { name: "Създай компания" }));
 
     await waitFor(() =>
@@ -173,6 +263,7 @@ describe("VendorNewCompanyPage", () => {
     renderPage();
     const user = userEvent.setup();
     await fillRequiredFields(user);
+    await user.click(screen.getByLabelText("RepairFlow"));
     await user.click(screen.getByRole("button", { name: "Създай компания" }));
 
     expect(await screen.findByText("COMPANY_DETAIL_PAGE:c1")).toBeInTheDocument();
@@ -185,6 +276,7 @@ describe("VendorNewCompanyPage", () => {
     renderPage();
     const user = userEvent.setup();
     await fillRequiredFields(user);
+    await user.click(screen.getByLabelText("RepairFlow"));
     await user.click(screen.getByRole("button", { name: "Създай компания" }));
 
     expect(await screen.findByText("Имейлът на собственика вече се използва.")).toBeInTheDocument();
@@ -202,6 +294,7 @@ describe("VendorNewCompanyPage", () => {
     renderPage();
     const user = userEvent.setup();
     await fillRequiredFields(user);
+    await user.click(screen.getByLabelText("RepairFlow"));
     await user.click(screen.getByRole("button", { name: "Създай компания" }));
 
     await waitFor(() => {
@@ -215,6 +308,7 @@ describe("VendorNewCompanyPage", () => {
     renderPage();
     const user = userEvent.setup();
     await fillRequiredFields(user);
+    await user.click(screen.getByLabelText("RepairFlow"));
     const button = screen.getByRole("button", { name: "Създай компания" });
     await user.click(button);
 

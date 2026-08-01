@@ -9,6 +9,7 @@ export interface CompanySummary {
   id: string;
   name: string;
   business_profile: string;
+  business_type_label: string;
   active_modules: string[];
   subscription_state: string;
   trial_ends_at: string | null;
@@ -27,6 +28,7 @@ export interface ProvisionCompanyRequest {
   owner_email: string;
   owner_password: string;
   business_profile: string;
+  business_type_label: string;
   modules: string[];
 }
 
@@ -36,6 +38,7 @@ export interface ProvisionCompanyResult {
   subscription_state: string;
   trial_ends_at: string;
   business_profile: string;
+  business_type_label: string;
   activated_modules: string[];
   audit_id: string;
 }

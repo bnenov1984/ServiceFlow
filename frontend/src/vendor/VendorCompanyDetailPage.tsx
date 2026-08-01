@@ -11,10 +11,9 @@ import type {
   CompanyDetail, EntitlementResult, SeatLimitResult, SubscriptionTransitionResult,
 } from "./types";
 
-// The only module with any real enforcement anywhere in the app today
-// (professional_services.deps.require_ps_active) — no module-metadata
-// endpoint exists, so this is the same "smallest canonical mapping" literal
-// already used in VendorNewCompanyPage.tsx, not a new shared constant.
+// No module-metadata endpoint exists, so this is the same "smallest
+// canonical mapping" literal already used in VendorNewCompanyPage.tsx, not
+// a new shared constant.
 const PROFESSIONAL_SERVICES = "professional-services";
 
 const SUBSCRIPTION_STATES: { code: string; labelKey: Parameters<typeof t>[0] }[] = [
@@ -27,6 +26,12 @@ const SUBSCRIPTION_STATES: { code: string; labelKey: Parameters<typeof t>[0] }[]
 
 function errorText(error: unknown): string {
   return error instanceof ApiError ? t(error.messageKey, error.params) : t("errors.internal");
+}
+
+function moduleDisplayName(key: string): string {
+  if (key === "repairflow") return t("app.repairflow");
+  if (key === PROFESSIONAL_SERVICES) return t("app.propertyflow");
+  return key;
 }
 
 function Field({ label, value }: { label: string; value: string }) {
@@ -171,9 +176,13 @@ export function VendorCompanyDetailPage() {
           <dl className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-white p-6 sm:grid-cols-2">
             <Field label={t("vendor.field_business_profile")} value={company.data.business_profile} />
             <Field
+              label={t("vendor.field_business_type_label")}
+              value={company.data.business_type_label}
+            />
+            <Field
               label={t("vendor.field_active_modules")}
               value={company.data.active_modules.length > 0
-                ? company.data.active_modules.join(", ")
+                ? company.data.active_modules.map(moduleDisplayName).join(", ")
                 : t("vendor.no_active_modules")}
             />
             <Field label={t("vendor.field_subscription_state")} value={company.data.subscription_state} />
