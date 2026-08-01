@@ -138,6 +138,19 @@ def get_business_profile(db: Session, company_id: uuid.UUID) -> str:
     return _service.get_business_profile(db, company_id)
 
 
+def set_business_type_label(db: Session, company_id: uuid.UUID, label: str) -> None:
+    """The vendor's free-text description of the company's actual business
+    (e.g. "Сервиз за велосипеди и тротинетки") — descriptive metadata only,
+    never a behaviour switch (that's `business_profile`'s job). Non-committing
+    — composed inside `ProvisionCompany`."""
+    _service.set_business_type_label(db, company_id, label)
+
+
+def get_business_type_label(db: Session, company_id: uuid.UUID) -> str:
+    """`""` if never assigned."""
+    return _service.get_business_type_label(db, company_id)
+
+
 def set_subscription_trial(db: Session, company_id: uuid.UUID, trial_days: int) -> datetime:
     """Baseline subscription state for a freshly provisioned company
     (ADR-BOS-012). Non-committing — composed inside `ProvisionCompany`.
@@ -182,6 +195,7 @@ class CompanyAdminMetadata:
     id: uuid.UUID
     name: str
     business_profile: str
+    business_type_label: str
     active_modules: list[str]
     subscription_state: str
     subscription_state_changed_at: datetime
@@ -218,6 +232,7 @@ def _to_admin_metadata(db: Session, company: Any) -> CompanyAdminMetadata:
         id=company.id,
         name=company.name,
         business_profile=repairflow.get("business_profile", _service.DEFAULT_BUSINESS_PROFILE),
+        business_type_label=repairflow.get("business_type_label", ""),
         active_modules=list(company.settings.get("active_modules", [])),
         subscription_state=company.subscription_state,
         subscription_state_changed_at=company.subscription_state_changed_at,

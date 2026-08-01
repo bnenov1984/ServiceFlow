@@ -321,7 +321,7 @@ def test_transition_never_touches_active_modules(client: TestClient) -> None:
 
     for db in _db():
         company = db.get(Company, company_id)  # type: ignore[attr-defined]
-        assert company.settings.get("active_modules") == [MODULE_KEY]
+        assert set(company.settings.get("active_modules")) == {"repairflow", MODULE_KEY}
 
 
 # --- Platform-wide retrofit (docs/business-os/18 §13.3 follow-up,

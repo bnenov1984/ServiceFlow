@@ -273,6 +273,34 @@ def get_business_profile(db: Session, company_id: uuid.UUID) -> str:
     return result
 
 
+def set_business_type_label(db: Session, company_id: uuid.UUID, label: str) -> None:
+    """Writes the vendor-entered free-text business description into
+    `companies.settings.repairflow.business_type_label` — same
+    settings-JSONB-key pattern as `set_business_profile`, deliberately
+    stored alongside it rather than on a dedicated column (no tenant route
+    ever reads or writes `company.settings`, so this key is exactly as
+    vendor-only as `business_profile` already is). Purely descriptive
+    metadata: unlike `business_profile`, nothing anywhere may branch on this
+    string's value (no validator, asset schema or workflow selection) — it
+    exists only to be displayed back to the vendor. Non-committing —
+    composed inside `ProvisionCompany`'s single transaction."""
+    company = get_company(db, company_id)
+    assert company is not None
+    repairflow = {**company.settings.get("repairflow", {}), "business_type_label": label}
+    company.settings = {**company.settings, "repairflow": repairflow}
+
+
+def get_business_type_label(db: Session, company_id: uuid.UUID) -> str:
+    """`""` if never assigned (e.g. a `seed_company`-created dev tenant,
+    which — like `business_profile` — never sets this)."""
+    company = get_company(db, company_id)
+    if company is None:
+        return ""
+    repairflow: dict[str, Any] = company.settings.get("repairflow", {})
+    result: str = repairflow.get("business_type_label", "")
+    return result
+
+
 def set_subscription_trial(db: Session, company_id: uuid.UUID, trial_days: int) -> datetime:
     """Baseline subscription state for a freshly provisioned company
     (ADR-BOS-012: every vendor-created company starts in `trial`, full
@@ -508,7 +536,15 @@ def seed_company(db: Session, company_name: str, owner_name: str, owner_email: s
     company, seeded or vendor-provisioned, needs its own RepairFlow asset
     types (docs/business-os/18 §15). No `business_profile` is assigned by
     this dev/CLI path, so the event carries the same default
-    `DEFAULT_BUSINESS_PROFILE` the identity-side reader falls back to."""
+    `DEFAULT_BUSINESS_PROFILE` the identity-side reader falls back to.
+
+    Grants `"repairflow"` unconditionally — unlike `ProvisionCompany` (the
+    real vendor-facing path, which since the 01.08.2026 PO decision requires
+    an explicit, non-empty module selection), this is a dev/staging
+    convenience whose entire purpose is a working RepairFlow demo tenant;
+    every existing caller (the CLI seed script, and every backend test's
+    `_seed_tenant()` helper) already assumes RepairFlow just works after
+    this call."""
     existing = db.scalar(select(User).where(User.email.ilike(owner_email)))
     if existing is not None:
         company = db.get(Company, existing.company_id)
@@ -526,6 +562,7 @@ def seed_company(db: Session, company_name: str, owner_name: str, owner_email: s
         pin_hash=security.hash_secret(owner_pin) if owner_pin else None,
         is_owner=True,
     ))
+    _activate_module(db, company.id, "repairflow")
     _audit(db, company.id, None, "company_seeded", {"name": company_name})
     publish(db, DomainEvent(
         type="company_provisioned", company_id=company.id, actor_user_id=None,

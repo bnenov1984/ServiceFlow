@@ -26,13 +26,14 @@ from business_os.identity.deps import (
     TenantDbDep,
     TenantDep,
     require_csrf,
+    require_repairflow_active,
     require_subscription_ok,
 )
 from serviceflow.commercial import service
 from serviceflow.commercial.models import Invoice, InvoiceLine, Payment
 from serviceflow.service_orders import contracts as orders_contracts
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_repairflow_active)])
 
 
 class PaymentIn(BaseModel):

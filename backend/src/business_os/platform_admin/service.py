@@ -212,6 +212,14 @@ def get_admin(db: Session, admin_id: uuid.UUID) -> PlatformAdmin | None:
 # their own create-company/create-owner/assign-modules sequence. No other
 # function in this codebase may partially provision a company.
 
+# business_profile stays a fixed, small vocabulary (ADR-BOS-011 §Decision 2)
+# — it is what `serviceflow.assets`' company_provisioned subscriber reads to
+# pick which default asset types/schemas to seed (docs/business-os/18 §15),
+# so an unconstrained value would silently pick the wrong ones. The vendor's
+# actual free-text description of the company's business belongs in
+# `business_type_label` instead (identity.service.set_business_type_label) —
+# descriptive metadata only, never consulted by any validator, asset schema
+# or workflow (PO decision, 01.08.2026).
 VALID_BUSINESS_PROFILES = frozenset({
     "automotive_repair", "phone_repair", "electronics_repair",
     "appliance_repair", "generic_repair",
@@ -242,6 +250,7 @@ class ProvisionResult:
     subscription_state: str
     trial_ends_at: datetime
     business_profile: str
+    business_type_label: str
     activated_modules: list[str]
     audit_id: uuid.UUID
 
@@ -254,6 +263,7 @@ def provision_company(
     owner_email: str,
     owner_password: str,
     business_profile: str = DEFAULT_BUSINESS_PROFILE,
+    business_type_label: str = "",
     modules: Sequence[str] = (),
 ) -> ProvisionResult:
     """The single atomic command that creates a new customer company: the
@@ -282,6 +292,19 @@ def provision_company(
     """
     if business_profile not in VALID_BUSINESS_PROFILES:
         raise ProvisioningError("errors.provisioning.invalid_business_profile", status=400)
+    business_type_label = business_type_label.strip()
+    if not business_type_label:
+        # Required free text (PO decision, 01.08.2026, see
+        # VALID_BUSINESS_PROFILES' own comment above) — same
+        # stripped-value-required posture as
+        # errors.subscription.reason_required.
+        raise ProvisioningError("errors.provisioning.business_type_label_required", status=400)
+    if not modules:
+        # PO decision, 01.08.2026: no application is active by default — the
+        # vendor must explicitly grant at least one of RepairFlow/PropertyFlow
+        # at provisioning time. Checked before any write so an empty
+        # selection never creates a company nobody can use.
+        raise ProvisioningError("errors.provisioning.no_modules_selected", status=400)
 
     try:
         provisioned = identity_contracts.provision_company(
@@ -291,6 +314,7 @@ def provision_company(
         raise ProvisioningError(e.message_key, status=e.status) from e
 
     identity_contracts.set_business_profile(db, provisioned.company_id, business_profile)
+    identity_contracts.set_business_type_label(db, provisioned.company_id, business_type_label)
     publish(db, DomainEvent(
         type="company_provisioned", company_id=provisioned.company_id,
         actor_user_id=None, data={"business_profile": business_profile},
@@ -307,6 +331,7 @@ def provision_company(
         company_id=provisioned.company_id,
         detail={
             "business_profile": business_profile,
+            "business_type_label": business_type_label,
             "modules": list(modules),
             "subscription_state": "trial",
         },
@@ -319,6 +344,7 @@ def provision_company(
         subscription_state="trial",
         trial_ends_at=trial_ends_at,
         business_profile=business_profile,
+        business_type_label=business_type_label,
         activated_modules=list(modules),
         audit_id=audit_id,
     )

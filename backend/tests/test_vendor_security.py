@@ -383,6 +383,7 @@ def test_every_vendor_route_touches_no_tenant_table(client: TestClient) -> None:
     provisioned = _probe("POST", f"{VENDOR}/companies", headers=csrf, json={
         "company_name": "Обходен Сървейл ЕООД", "owner_name": "Нов Собственик",
         "owner_email": "new-owner@route-sweep.bg", "owner_password": "нова-парола-1234",
+        "business_type_label": "Тестова дейност", "modules": ["repairflow"],
     })
     assert isinstance(provisioned, dict)
     company_id = provisioned["company_id"]

@@ -10,13 +10,14 @@ from business_os.identity.deps import (
     TenantDbDep,
     TenantDep,
     require_csrf,
+    require_repairflow_active,
     require_subscription_ok,
 )
 from serviceflow.service_orders import service as orders_service
 from serviceflow.tasks import service
 from serviceflow.tasks.models import Task
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_repairflow_active)])
 
 
 class TaskIn(BaseModel):

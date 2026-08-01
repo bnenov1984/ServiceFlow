@@ -64,6 +64,7 @@ def _provision(client: TestClient, business_profile: str, owner_email: str) -> u
             "company_name": "Нов Сервиз ЕООД", "owner_name": "Иван Иванов",
             "owner_email": owner_email, "owner_password": "нова-парола-1234",
             "business_profile": business_profile,
+            "business_type_label": "Тестова дейност", "modules": ["repairflow"],
         },
     )
     assert resp.status_code == 200, resp.text

@@ -11,13 +11,14 @@ from business_os.identity.deps import (
     TenantDep,
     require_csrf,
     require_owner,
+    require_repairflow_active,
     require_subscription_ok,
 )
 from serviceflow.customers import service
 from serviceflow.customers.models import Customer
 from serviceflow.service_orders import service as orders_service
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_repairflow_active)])
 
 
 class CustomerIn(BaseModel):

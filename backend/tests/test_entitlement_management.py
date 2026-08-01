@@ -54,10 +54,12 @@ def _seed_admin() -> uuid.UUID:
 
 
 def _seed_tenant() -> uuid.UUID:
-    """A plain seed_company company has NO active modules — unlike
-    serviceflow/seed.py's CLI, which activates professional-services itself.
-    That gap is exactly what makes this file's grant/revoke assertions
-    observable from a cold start."""
+    """A plain seed_company company starts with only `"repairflow"` active
+    (granted unconditionally since the 01.08.2026 PO decision — a dev/staging
+    seed's whole purpose is a working RepairFlow demo tenant) — never
+    `professional-services`. That's what makes this file's grant/revoke
+    assertions for `MODULE_KEY` observable from a known cold start; every
+    assertion below accounts for `"repairflow"` already being present."""
     from business_os.identity.service import seed_company
 
     for db in _db():
@@ -104,7 +106,7 @@ def test_grant_activates_the_module(client: TestClient) -> None:
     body = resp.json()
     assert body["company_id"] == str(company_id)
     assert body["module_key"] == MODULE_KEY
-    assert body["active_modules"] == [MODULE_KEY]
+    assert set(body["active_modules"]) == {"repairflow", MODULE_KEY}
     assert body["changed"] is True
     assert body["audit_id"]
     assert _audit_actions().count("company.module_granted") == 1
@@ -123,7 +125,7 @@ def test_granting_an_already_active_module_is_idempotent(client: TestClient) -> 
     second = client.put(f"{VENDOR}/companies/{company_id}/modules/{MODULE_KEY}", headers=headers)
     assert second.status_code == 200
     assert second.json()["changed"] is False
-    assert second.json()["active_modules"] == [MODULE_KEY]  # not duplicated
+    assert set(second.json()["active_modules"]) == {"repairflow", MODULE_KEY}  # not duplicated
 
     # Idempotent does not mean unaudited — a vendor action attempted is still
     # worth a record, even as a no-op.
@@ -141,7 +143,7 @@ def test_revoke_deactivates_the_module(client: TestClient) -> None:
     resp = client.delete(f"{VENDOR}/companies/{company_id}/modules/{MODULE_KEY}", headers=headers)
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["active_modules"] == []
+    assert body["active_modules"] == ["repairflow"]
     assert body["changed"] is True
     assert _audit_actions().count("company.module_revoked") == 1
 
@@ -156,7 +158,7 @@ def test_revoking_an_already_inactive_module_is_idempotent(client: TestClient) -
     resp = client.delete(f"{VENDOR}/companies/{company_id}/modules/{MODULE_KEY}", headers=headers)
     assert resp.status_code == 200
     assert resp.json()["changed"] is False
-    assert resp.json()["active_modules"] == []
+    assert resp.json()["active_modules"] == ["repairflow"]
     assert _audit_actions().count("company.module_revoked") == 1
 
 
@@ -170,11 +172,11 @@ def test_grant_and_revoke_are_scoped_to_the_named_module_only(client: TestClient
 
     client.put(f"{VENDOR}/companies/{company_id}/modules/{MODULE_KEY}", headers=headers)
     resp = client.put(f"{VENDOR}/companies/{company_id}/modules/another-module", headers=headers)
-    assert set(resp.json()["active_modules"]) == {MODULE_KEY, "another-module"}
+    assert set(resp.json()["active_modules"]) == {"repairflow", MODULE_KEY, "another-module"}
 
     resp = client.delete(f"{VENDOR}/companies/{company_id}/modules/{MODULE_KEY}",
                          headers=headers)
-    assert resp.json()["active_modules"] == ["another-module"]
+    assert set(resp.json()["active_modules"]) == {"repairflow", "another-module"}
 
 
 # --- Existence check -------------------------------------------------------

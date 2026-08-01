@@ -11,6 +11,7 @@ from business_os.identity.deps import (
     TenantDbDep,
     TenantDep,
     require_csrf,
+    require_repairflow_active,
     require_subscription_ok,
 )
 from serviceflow.contacts import service
@@ -18,7 +19,7 @@ from serviceflow.contacts.models import ContactRecord
 from serviceflow.customers import service as customers_service
 from serviceflow.service_orders import service as orders_service
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_repairflow_active)])
 
 
 class ContactRecordIn(BaseModel):

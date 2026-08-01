@@ -7,17 +7,17 @@ over the (small) set of ready orders — честно преброяване н�
 
 from datetime import UTC, date, datetime, timedelta
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
-from business_os.identity.deps import TenantDbDep, TenantDep
+from business_os.identity.deps import TenantDbDep, TenantDep, require_repairflow_active
 from business_os.shared_kernel.db import TenantContext, scoped
 from serviceflow.service_orders import statuses
 from serviceflow.service_orders.models import ServiceOrder
 from serviceflow.tasks.models import Task
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_repairflow_active)])
 
 READY_WARN_BUSINESS_DAYS = 5
 

@@ -139,3 +139,20 @@ def require_subscription_ok(tenant: TenantDep, db: DbDep) -> None:
     assert company is not None
     if company.subscription_state not in _service.MUTATION_ALLOWED_SUBSCRIPTION_STATES:
         raise _error(402, "subscription_not_active", "errors.subscription.mutations_blocked")
+
+
+REPAIRFLOW_MODULE_KEY = "repairflow"
+
+
+def require_repairflow_active(tenant: TenantDep, db: DbDep) -> None:
+    """RepairFlow's own entitlement gate (ADR-BOS-010 §Decision 2), the same
+    shape as `professional_services.deps.require_ps_active` — 404s the whole
+    router, reads included, when the company isn't entitled. Lives here
+    rather than in a dedicated RepairFlow package because RepairFlow has none
+    (docs/business-os/18): it's split across 9 sibling `serviceflow.*`
+    routers, every one of which already imports `TenantDep`/`DbDep` from this
+    module. PO decision, 01.08.2026: no application is active by default —
+    RepairFlow is a real, vendor-granted entitlement like any other module,
+    not an implicit baseline."""
+    if not _service.is_module_active(db, tenant.company_id, REPAIRFLOW_MODULE_KEY):
+        raise _error(404, "module_inactive", "errors.repairflow.module_inactive")

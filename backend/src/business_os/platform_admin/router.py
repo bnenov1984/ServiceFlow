@@ -116,6 +116,7 @@ class CompanySummary(BaseModel):
     id: uuid.UUID
     name: str
     business_profile: str
+    business_type_label: str
     active_modules: list[str]
     subscription_state: str
     trial_ends_at: datetime | None
@@ -131,6 +132,7 @@ class CompanyDetail(CompanySummary):
 def _to_summary(metadata: CompanyAdminMetadata) -> CompanySummary:
     return CompanySummary(
         id=metadata.id, name=metadata.name, business_profile=metadata.business_profile,
+        business_type_label=metadata.business_type_label,
         active_modules=metadata.active_modules, subscription_state=metadata.subscription_state,
         trial_ends_at=metadata.trial_ends_at, seat_limit=metadata.seat_limit,
         seat_usage=metadata.seat_usage, created_at=metadata.created_at,
@@ -165,6 +167,7 @@ class ProvisionCompanyRequest(BaseModel):
     owner_email: EmailStr
     owner_password: str = Field(min_length=12, max_length=200)
     business_profile: str = Field(default=service.DEFAULT_BUSINESS_PROFILE)
+    business_type_label: str = Field(min_length=1, max_length=200)
     modules: list[str] = Field(default_factory=list)
 
 
@@ -178,6 +181,7 @@ class ProvisionCompanyResponse(BaseModel):
     subscription_state: str
     trial_ends_at: datetime
     business_profile: str
+    business_type_label: str
     activated_modules: list[str]
     audit_id: uuid.UUID
 
@@ -193,7 +197,8 @@ def provision_company(
     try:
         result = service.provision_company(
             db, admin.id, body.company_name, body.owner_name, body.owner_email,
-            body.owner_password, business_profile=body.business_profile, modules=body.modules,
+            body.owner_password, business_profile=body.business_profile,
+            business_type_label=body.business_type_label, modules=body.modules,
         )
     except service.ProvisioningError as e:
         raise HTTPException(status_code=e.status, detail={
@@ -202,8 +207,8 @@ def provision_company(
     return ProvisionCompanyResponse(
         company_id=result.company_id, owner_id=result.owner_id,
         subscription_state=result.subscription_state, trial_ends_at=result.trial_ends_at,
-        business_profile=result.business_profile, activated_modules=result.activated_modules,
-        audit_id=result.audit_id,
+        business_profile=result.business_profile, business_type_label=result.business_type_label,
+        activated_modules=result.activated_modules, audit_id=result.audit_id,
     )
 
 

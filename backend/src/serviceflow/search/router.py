@@ -2,13 +2,13 @@
 
 import uuid
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from business_os.identity.deps import TenantDbDep, TenantDep
+from business_os.identity.deps import TenantDbDep, TenantDep, require_repairflow_active
 from serviceflow.search import service
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_repairflow_active)])
 
 
 class CustomerHitOut(BaseModel):

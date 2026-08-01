@@ -32,9 +32,12 @@ def _login(client: TestClient, email: str, password: str = "парола-123") -
 
 
 def test_inactive_by_default(client: TestClient) -> None:
+    """`professional-services` (unlike `"repairflow"`, which `seed_company`
+    grants unconditionally since the 01.08.2026 PO decision) is inactive
+    until something explicitly activates it."""
     _seed("Сервиз А", "a@a.bg")
     me = _login(client, "a@a.bg")
-    assert me["active_modules"] == []
+    assert me["active_modules"] == ["repairflow"]
 
 
 def test_activate_module_is_idempotent_and_scoped(client: TestClient) -> None:
@@ -69,4 +72,4 @@ def test_me_reflects_activation(client: TestClient) -> None:
         activate_module(db, company_id, "professional-services")
 
     me = _login(client, "d@d.bg")
-    assert me["active_modules"] == ["professional-services"]
+    assert set(me["active_modules"]) == {"repairflow", "professional-services"}

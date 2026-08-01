@@ -76,6 +76,8 @@ def _provision_payload(**overrides: object) -> dict[str, object]:
         "owner_name": "Иван Иванов",
         "owner_email": "ivan@new-shop.bg",
         "owner_password": "нова-парола-1234",
+        "business_type_label": "Ремонт на велосипеди и тротинетки",
+        "modules": ["repairflow"],
     }
     payload.update(overrides)
     return payload
@@ -153,10 +155,17 @@ def test_provision_company_defaults_to_generic_repair_profile(client: TestClient
                        json=_provision_payload())
     assert resp.status_code == 200, resp.text
     assert resp.json()["business_profile"] == "generic_repair"
-    assert resp.json()["activated_modules"] == []
+    # modules is never empty since the 01.08.2026 PO decision — the payload
+    # helper's own default ("repairflow") is what's actually asserted here.
+    assert resp.json()["activated_modules"] == ["repairflow"]
 
 
 def test_provision_company_rejects_an_invalid_business_profile(client: TestClient) -> None:
+    """business_profile stays a fixed, small vocabulary (ADR-BOS-011 §Decision
+    2): it drives which default asset types serviceflow.assets seeds, so an
+    unconstrained value would silently pick the wrong ones. The vendor's own
+    free-text description belongs in business_type_label instead (see the
+    tests below), which never influences this."""
     _reset_rate_limiter()
     _seed_admin()
     me = _vendor_login(client)
@@ -165,6 +174,37 @@ def test_provision_company_rejects_an_invalid_business_profile(client: TestClien
                        json=_provision_payload(business_profile="not_a_real_profile"))
     assert resp.status_code == 400
     assert resp.json()["detail"]["message_key"] == "errors.provisioning.invalid_business_profile"
+    assert _company_count() == 0
+
+
+def test_provision_company_stores_the_business_type_label(client: TestClient) -> None:
+    _reset_rate_limiter()
+    _seed_admin()
+    me = _vendor_login(client)
+
+    resp = client.post(
+        f"{VENDOR}/companies", headers={"X-CSRF-Token": str(me["csrf_token"])},
+        json=_provision_payload(business_type_label="Сервиз за велосипеди и тротинетки"),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["business_type_label"] == "Сервиз за велосипеди и тротинетки"
+
+    company_id = resp.json()["company_id"]
+    detail = client.get(f"{VENDOR}/companies/{company_id}",
+                        headers={"X-CSRF-Token": str(me["csrf_token"])})
+    assert detail.json()["business_type_label"] == "Сервиз за велосипеди и тротинетки"
+
+
+def test_provision_company_rejects_a_missing_business_type_label(client: TestClient) -> None:
+    _reset_rate_limiter()
+    _seed_admin()
+    me = _vendor_login(client)
+
+    resp = client.post(f"{VENDOR}/companies", headers={"X-CSRF-Token": str(me["csrf_token"])},
+                       json=_provision_payload(business_type_label="   "))
+    assert resp.status_code == 400
+    detail = resp.json()["detail"]
+    assert detail["message_key"] == "errors.provisioning.business_type_label_required"
     assert _company_count() == 0
 
 
@@ -212,7 +252,8 @@ def test_audit_write_failure_rolls_back_the_entire_provisioning_transaction(
         with pytest.raises(DatabaseError):
             provision_company(
                 db, bogus_admin_id, "Ще Изчезне ЕООД", "Собственик", "will-vanish@shop.bg",
-                "парола-1234567",
+                "парола-1234567", business_type_label="Тестова дейност",
+                modules=["repairflow"],
             )
         db.rollback()  # type: ignore[attr-defined]
 
@@ -242,6 +283,7 @@ def test_company_list_and_detail_expose_only_documented_metadata(client: TestCli
     row = rows[0]
     assert row["id"] == created["company_id"]
     assert row["business_profile"] == "automotive_repair"
+    assert row["business_type_label"] == "Ремонт на велосипеди и тротинетки"
     assert row["active_modules"] == ["professional-services"]
     assert row["subscription_state"] == "trial"
     assert "trial_ends_at" in row

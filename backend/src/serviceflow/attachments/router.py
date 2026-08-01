@@ -12,6 +12,7 @@ from business_os.identity.deps import (
     TenantDbDep,
     TenantDep,
     require_csrf,
+    require_repairflow_active,
     require_subscription_ok,
 )
 from business_os.shared_kernel.storage import LocalFilesystemStorage, get_local_storage
@@ -20,7 +21,7 @@ from serviceflow.attachments.models import Attachment
 from serviceflow.config import get_settings
 from serviceflow.service_orders import service as orders_service
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_repairflow_active)])
 
 
 class AttachmentOut(BaseModel):

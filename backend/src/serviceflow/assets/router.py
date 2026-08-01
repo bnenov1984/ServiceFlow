@@ -17,13 +17,14 @@ from business_os.identity.deps import (
     TenantDbDep,
     TenantDep,
     require_csrf,
+    require_repairflow_active,
     require_subscription_ok,
 )
 from serviceflow.assets import service
 from serviceflow.assets.models import Asset, AssetType
 from serviceflow.customers import service as customers_service
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_repairflow_active)])
 
 
 class AssetTypeOut(BaseModel):

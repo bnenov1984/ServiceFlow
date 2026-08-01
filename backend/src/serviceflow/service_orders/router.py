@@ -16,6 +16,7 @@ from business_os.identity.deps import (
     TenantDbDep,
     TenantDep,
     require_csrf,
+    require_repairflow_active,
     require_subscription_ok,
 )
 from serviceflow.assets import service as assets_service
@@ -32,7 +33,7 @@ from serviceflow.service_orders.models import (
 )
 from serviceflow.timeline import service as timeline_service
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_repairflow_active)])
 
 
 class OrderIn(BaseModel):
