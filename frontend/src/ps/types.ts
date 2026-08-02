@@ -43,3 +43,15 @@ export interface PsNextAction {
   completed: boolean;
   risk: "done" | "overdue" | "attention" | "ok";
 }
+
+export interface PsUser {
+  id: string;
+  name: string;
+}
+
+export interface PsDeadlineChange {
+  old_value: string | null;
+  new_value: string;
+  reason: string;
+  changed_at: string;
+}

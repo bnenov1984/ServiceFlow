@@ -1,80 +1,47 @@
 /**
- * Professional Services — walking skeleton (trimmed first slice). One real
- * screen: clients, assignments, next actions with request-time deadline risk.
- * No Kanban/calendar/notifications — those are PS's own later, out-of-scope
- * design (module docs: modules/professional-services).
+ * PropertyFlow dashboard (docs/business-os PropertyFlow task): client-oriented
+ * CRM-style screen — Клиенти | Ангажименти на избрания клиент | Следващи
+ * действия на избрания ангажимент, plus a bottom detail panel for the
+ * selected engagement. Existing API endpoints only, no new backend
+ * functionality — fields the mockup shows but the data model doesn't have
+ * (property/address, engagement "type", a single assignment owner) are
+ * dropped rather than fabricated; see AssignmentDetailPanel's doc comment.
  */
 
-import { useQueryClient, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { useAuth } from "../auth/AuthContext";
-import { EmptyState, ErrorState, Skeleton } from "../components/States";
+import { AssignmentDetailPanel } from "./AssignmentDetailPanel";
+import { AssignmentsColumn } from "./AssignmentsColumn";
+import { ClientsColumn } from "./ClientsColumn";
+import { NewAssignmentDialog } from "./dialogs/NewAssignmentDialog";
+import { NextActionsColumn } from "./NextActionsColumn";
+import { PsToolbar } from "./PsToolbar";
 import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
 import type {
   PsAssignment,
   PsClient,
-  PsDeadlineRisk,
   PsNextAction,
-  PsStage,
+  PsUser,
   PsWorkflowTemplate,
 } from "./types";
-
-function riskClass(risk: PsNextAction["risk"]): string {
-  switch (risk) {
-    case "overdue":
-      return "bg-red-50 text-red-700";
-    case "attention":
-      return "bg-amber-50 text-amber-700";
-    case "done":
-      return "bg-slate-100 text-slate-500";
-    default:
-      return "bg-green-50 text-green-700";
-  }
-}
-
-function deadlineRiskClass(risk: PsDeadlineRisk): string {
-  switch (risk) {
-    case "breached":
-    case "critical":
-      return "bg-red-50 text-red-700";
-    case "urgent":
-      return "bg-amber-50 text-amber-700";
-    case "attention":
-      return "bg-yellow-50 text-yellow-700";
-    case "normal":
-      return "bg-green-50 text-green-700";
-    default:
-      return "bg-slate-100 text-slate-500";
-  }
-}
 
 function errorText(error: unknown): string {
   return error instanceof ApiError ? t(error.messageKey, error.params) : t("errors.internal");
 }
 
 export function PsPage() {
-  const queryClient = useQueryClient();
-  const { me } = useAuth();
-  const [newClientName, setNewClientName] = useState("");
-  const [newAssignmentTitle, setNewAssignmentTitle] = useState("");
-  const [newAssignmentClientId, setNewAssignmentClientId] = useState("");
-  const [newAssignmentTemplateId, setNewAssignmentTemplateId] = useState("");
-  const [newActionTitle, setNewActionTitle] = useState("");
-  const [newActionAssignmentId, setNewActionAssignmentId] = useState("");
-  const [newActionDueOn, setNewActionDueOn] = useState("");
-  const [stageEditAssignmentId, setStageEditAssignmentId] = useState<string | null>(null);
-  const [stageEditTargetId, setStageEditTargetId] = useState("");
-  const [deadlineEditAssignmentId, setDeadlineEditAssignmentId] = useState<string | null>(null);
-  const [deadlineEditDate, setDeadlineEditDate] = useState("");
-  const [deadlineEditReason, setDeadlineEditReason] = useState("");
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
+  const [activeOnly, setActiveOnly] = useState(false);
+  const [newAssignmentOpen, setNewAssignmentOpen] = useState(false);
 
   const clients = useQuery({
     queryKey: queryKeys.psClients,
     queryFn: () => api.get<PsClient[]>("/ps/clients"),
   });
-  const assignments = useQuery({
+  const assignmentsQuery = useQuery({
     queryKey: queryKeys.psAssignments,
     queryFn: () => api.get<PsAssignment[]>("/ps/assignments"),
   });
@@ -86,332 +53,81 @@ export function PsPage() {
     queryKey: queryKeys.psWorkflowTemplates,
     queryFn: () => api.get<PsWorkflowTemplate[]>("/ps/workflow-templates"),
   });
-  const stageEditStages = useQuery({
-    queryKey: queryKeys.psAssignmentStages(stageEditAssignmentId ?? ""),
-    queryFn: () => api.get<PsStage[]>(`/ps/assignments/${stageEditAssignmentId}/stages`),
-    enabled: stageEditAssignmentId !== null,
+  const users = useQuery({
+    queryKey: queryKeys.users,
+    queryFn: () => api.get<PsUser[]>("/users"),
   });
 
-  const clientName = (id: string) => clients.data?.find((c) => c.id === id)?.name ?? id;
+  const allAssignments = assignmentsQuery.data ?? [];
+  const assignments = activeOnly
+    ? allAssignments.filter((a) => a.lifecycle_state === "active")
+    : allAssignments;
 
-  async function addClient() {
-    if (!newClientName.trim()) return;
-    await api.post("/ps/clients", { name: newClientName.trim() });
-    setNewClientName("");
-    await queryClient.invalidateQueries({ queryKey: queryKeys.psClients });
-  }
+  const selectedClient = clients.data?.find((c) => c.id === selectedClientId) ?? null;
+  const selectedAssignment = assignments.find((a) => a.id === selectedAssignmentId) ?? null;
 
-  async function addAssignment() {
-    if (!newAssignmentTitle.trim() || !newAssignmentClientId) return;
-    await api.post("/ps/assignments", {
-      client_id: newAssignmentClientId, title: newAssignmentTitle.trim(),
-      workflow_template_id: newAssignmentTemplateId || null,
-    });
-    setNewAssignmentTitle("");
-    setNewAssignmentTemplateId("");
-    await queryClient.invalidateQueries({ queryKey: queryKeys.psAssignments });
-  }
+  const selectClient = (client: PsClient) => {
+    setSelectedClientId(client.id);
+    setSelectedAssignmentId(null);
+  };
 
-  async function addAction() {
-    if (!newActionTitle.trim() || !newActionAssignmentId || !newActionDueOn || !me) return;
-    await api.post("/ps/next-actions", {
-      assignment_id: newActionAssignmentId, title: newActionTitle.trim(),
-      owner_user_id: me.user_id, due_on: newActionDueOn,
-    });
-    setNewActionTitle("");
-    await queryClient.invalidateQueries({ queryKey: queryKeys.psNextActions });
-  }
-
-  async function completeAction(id: string) {
-    await api.post(`/ps/next-actions/${id}/complete`);
-    await queryClient.invalidateQueries({ queryKey: queryKeys.psNextActions });
-  }
-
-  function openStageEdit(assignmentId: string) {
-    setStageEditAssignmentId(assignmentId);
-    setStageEditTargetId("");
-  }
-
-  async function submitStageChange(assignmentId: string) {
-    if (!stageEditTargetId) return;
-    await api.post(`/ps/assignments/${assignmentId}/stage`, { to_stage_id: stageEditTargetId });
-    setStageEditAssignmentId(null);
-    await queryClient.invalidateQueries({ queryKey: queryKeys.psAssignments });
-  }
-
-  function openDeadlineEdit(assignmentId: string, currentDeadline: string | null) {
-    setDeadlineEditAssignmentId(assignmentId);
-    setDeadlineEditDate(currentDeadline ?? "");
-    setDeadlineEditReason("");
-  }
-
-  async function submitDeadlineChange(assignmentId: string) {
-    if (!deadlineEditDate || !deadlineEditReason.trim()) return;
-    await api.post(`/ps/assignments/${assignmentId}/deadline`, {
-      official_deadline_on: deadlineEditDate, reason: deadlineEditReason.trim(),
-    });
-    setDeadlineEditAssignmentId(null);
-    await queryClient.invalidateQueries({ queryKey: queryKeys.psAssignments });
-  }
+  const selectAssignment = (assignment: PsAssignment) => {
+    setSelectedClientId(assignment.client_id);
+    setSelectedAssignmentId(assignment.id);
+  };
 
   return (
-    <div className="flex flex-col gap-8">
-      <h1 className="text-2xl font-bold text-slate-900">{t("ps.title")}</h1>
+    <div className="flex flex-col gap-4">
+      <PsToolbar
+        activeOnly={activeOnly}
+        onToggleActiveOnly={() => setActiveOnly((v) => !v)}
+        onNewAssignment={() => setNewAssignmentOpen(true)}
+      />
 
-      <section>
-        <h2 className="mb-2 text-lg font-semibold text-slate-800">{t("ps.clients")}</h2>
-        {clients.isLoading ? (
-          <Skeleton className="h-14" />
-        ) : clients.isError ? (
-          <ErrorState text={errorText(clients.error)} onRetry={() => void clients.refetch()} />
-        ) : clients.data && clients.data.length > 0 ? (
-          <ul className="mb-3 rounded-lg border border-slate-200 bg-white">
-            {clients.data.map((c) => (
-              <li key={c.id} className="border-b border-slate-100 px-3 py-2 last:border-0">
-                {c.name}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <EmptyState text={t("ps.clients_empty")} />
-        )}
-        <div className="mt-2 flex gap-2">
-          <input
-            value={newClientName}
-            onChange={(e) => setNewClientName(e.target.value)}
-            placeholder={t("ps.client_name_placeholder")}
-            className="flex-1 rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
-          />
-          <button
-            type="button"
-            onClick={() => void addClient()}
-            className="rounded-lg bg-blue-600 px-4 py-2 font-medium text-white min-h-touch"
-          >
-            {t("ps.client_add")}
-          </button>
-        </div>
-      </section>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <ClientsColumn
+          clients={clients.data}
+          assignments={assignments}
+          isLoading={clients.isLoading}
+          isError={clients.isError}
+          errorText={errorText(clients.error)}
+          onRetry={() => void clients.refetch()}
+          selectedClientId={selectedClientId}
+          onSelectClient={selectClient}
+        />
+        <AssignmentsColumn
+          client={selectedClient}
+          assignments={assignments}
+          actions={actions.data ?? []}
+          isLoading={assignmentsQuery.isLoading}
+          isError={assignmentsQuery.isError}
+          errorText={errorText(assignmentsQuery.error)}
+          onRetry={() => void assignmentsQuery.refetch()}
+          selectedAssignmentId={selectedAssignmentId}
+          onSelectAssignment={selectAssignment}
+          onAddClick={() => setNewAssignmentOpen(true)}
+        />
+        <NextActionsColumn
+          assignment={selectedAssignment}
+          actions={actions.data ?? []}
+          users={users.data ?? []}
+          isLoading={actions.isLoading}
+          isError={actions.isError}
+          errorText={errorText(actions.error)}
+          onRetry={() => void actions.refetch()}
+        />
+      </div>
 
-      <section>
-        <h2 className="mb-2 text-lg font-semibold text-slate-800">{t("ps.assignments")}</h2>
-        {assignments.isLoading ? (
-          <Skeleton className="h-14" />
-        ) : assignments.isError ? (
-          <ErrorState
-            text={errorText(assignments.error)}
-            onRetry={() => void assignments.refetch()}
-          />
-        ) : assignments.data && assignments.data.length > 0 ? (
-          <ul className="mb-3 rounded-lg border border-slate-200 bg-white">
-            {assignments.data.map((a) => (
-              <li
-                key={a.id}
-                className="flex flex-col gap-2 border-b border-slate-100 px-3 py-2 last:border-0 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div>
-                  <p className="font-medium text-slate-900">{a.title}</p>
-                  <p className="text-sm text-slate-500">{clientName(a.client_id)}</p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
-                    {a.current_stage?.name ?? t("ps.current_stage_none")}
-                  </span>
-                  <span
-                    className={`rounded-full px-2.5 py-1 text-xs font-medium ${deadlineRiskClass(a.current_deadline_risk)}`}
-                  >
-                    {a.official_deadline_on ?? t("ps.deadline_none")}
-                    {" · "}
-                    {t(`ps.deadline_risk_${a.current_deadline_risk}`)}
-                  </span>
-                  {a.current_stale && (
-                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500">
-                      {t("ps.stale_badge")}
-                    </span>
-                  )}
-                  {stageEditAssignmentId === a.id ? (
-                    <>
-                      <select
-                        value={stageEditTargetId}
-                        onChange={(e) => setStageEditTargetId(e.target.value)}
-                        className="rounded-lg border border-slate-300 px-2 py-1 text-sm min-h-touch"
-                      >
-                        <option value="">{t("ps.stage_change_label")}</option>
-                        {stageEditStages.data?.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        onClick={() => void submitStageChange(a.id)}
-                        className="rounded-lg border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50 min-h-touch"
-                      >
-                        {t("ps.stage_change_confirm")}
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => openStageEdit(a.id)}
-                      className="rounded-lg border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50 min-h-touch"
-                    >
-                      {t("ps.stage_change_label")}
-                    </button>
-                  )}
-                  {deadlineEditAssignmentId === a.id ? (
-                    <>
-                      <input
-                        type="date"
-                        value={deadlineEditDate}
-                        onChange={(e) => setDeadlineEditDate(e.target.value)}
-                        className="rounded-lg border border-slate-300 px-2 py-1 text-sm min-h-touch"
-                      />
-                      <input
-                        value={deadlineEditReason}
-                        onChange={(e) => setDeadlineEditReason(e.target.value)}
-                        placeholder={t("ps.deadline_reason_placeholder")}
-                        className="rounded-lg border border-slate-300 px-2 py-1 text-sm min-h-touch"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => void submitDeadlineChange(a.id)}
-                        className="rounded-lg border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50 min-h-touch"
-                      >
-                        {t("ps.stage_change_confirm")}
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => openDeadlineEdit(a.id, a.official_deadline_on)}
-                      className="rounded-lg border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50 min-h-touch"
-                    >
-                      {t("ps.deadline_change_label")}
-                    </button>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <EmptyState text={t("ps.assignments_empty")} />
-        )}
-        <div className="mt-2 flex flex-wrap gap-2">
-          <select
-            value={newAssignmentClientId}
-            onChange={(e) => setNewAssignmentClientId(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
-          >
-            <option value="">{t("ps.assignment_client_label")}</option>
-            {clients.data?.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-          <select
-            value={newAssignmentTemplateId}
-            onChange={(e) => setNewAssignmentTemplateId(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
-          >
-            <option value="">{t("ps.template_none")}</option>
-            {templates.data?.map((tpl) => (
-              <option key={tpl.id} value={tpl.id}>
-                {tpl.name}
-              </option>
-            ))}
-          </select>
-          <input
-            value={newAssignmentTitle}
-            onChange={(e) => setNewAssignmentTitle(e.target.value)}
-            placeholder={t("ps.assignment_title_placeholder")}
-            className="flex-1 rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
-          />
-          <button
-            type="button"
-            onClick={() => void addAssignment()}
-            className="rounded-lg bg-blue-600 px-4 py-2 font-medium text-white min-h-touch"
-          >
-            {t("ps.assignment_add")}
-          </button>
-        </div>
-      </section>
+      <AssignmentDetailPanel assignment={selectedAssignment} client={selectedClient} />
 
-      <section>
-        <h2 className="mb-2 text-lg font-semibold text-slate-800">{t("ps.next_actions")}</h2>
-        {actions.isLoading ? (
-          <Skeleton className="h-14" />
-        ) : actions.isError ? (
-          <ErrorState text={errorText(actions.error)} onRetry={() => void actions.refetch()} />
-        ) : actions.data && actions.data.length > 0 ? (
-          <ul className="mb-3 rounded-lg border border-slate-200 bg-white">
-            {actions.data.map((a) => (
-              <li
-                key={a.id}
-                className="flex items-center justify-between border-b border-slate-100 px-3 py-2 last:border-0"
-              >
-                <div>
-                  <p className="font-medium text-slate-900">{a.title}</p>
-                  <p className="text-sm text-slate-500">{a.due_on}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`rounded-full px-2.5 py-1 text-xs font-medium ${riskClass(a.risk)}`}
-                  >
-                    {t(`ps.risk_${a.risk}`)}
-                  </span>
-                  {!a.completed && (
-                    <button
-                      type="button"
-                      onClick={() => void completeAction(a.id)}
-                      className="rounded-lg border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50 min-h-touch"
-                    >
-                      {t("ps.action_complete")}
-                    </button>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <EmptyState text={t("ps.next_actions_empty")} />
-        )}
-        <div className="mt-2 flex flex-wrap gap-2">
-          <select
-            value={newActionAssignmentId}
-            onChange={(e) => setNewActionAssignmentId(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
-          >
-            <option value="">{t("ps.action_assignment_label")}</option>
-            {assignments.data?.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.title}
-              </option>
-            ))}
-          </select>
-          <input
-            value={newActionTitle}
-            onChange={(e) => setNewActionTitle(e.target.value)}
-            placeholder={t("ps.action_title_placeholder")}
-            className="flex-1 rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
-          />
-          <input
-            type="date"
-            value={newActionDueOn}
-            onChange={(e) => setNewActionDueOn(e.target.value)}
-            aria-label={t("ps.action_due_label")}
-            className="rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
-          />
-          <button
-            type="button"
-            onClick={() => void addAction()}
-            className="rounded-lg bg-blue-600 px-4 py-2 font-medium text-white min-h-touch"
-          >
-            {t("ps.action_add")}
-          </button>
-        </div>
-      </section>
+      <NewAssignmentDialog
+        open={newAssignmentOpen}
+        onClose={() => setNewAssignmentOpen(false)}
+        clients={clients.data ?? []}
+        templates={templates.data ?? []}
+        defaultClientId={selectedClientId}
+        onCreated={selectAssignment}
+      />
     </div>
   );
 }
