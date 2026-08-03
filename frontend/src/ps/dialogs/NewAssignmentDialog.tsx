@@ -90,12 +90,10 @@ export function NewAssignmentDialog({
             className="w-full rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
           />
         </div>
-        {/* No workflow-template management UI exists anywhere in the app yet
-            (the backend's POST /ps/workflow-templates is real but has no
-            frontend caller) — every company's template list is always
-            empty in practice today. Showing a picker that can only ever
-            offer "no template" is worse than not showing it; this
-            reappears on its own once templates actually exist. */}
+        {/* Templates are managed at ps/workflow-templates (Owner-only) — a
+            company with none yet still has an empty list here, so the picker
+            stays hidden until the first one is created rather than offering
+            a dropdown that can only ever say "no template". */}
         {templates.length > 0 && (
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="new-assignment-template">

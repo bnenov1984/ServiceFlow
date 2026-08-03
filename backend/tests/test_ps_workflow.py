@@ -131,11 +131,12 @@ def test_copy_on_create_proof(client: TestClient) -> None:
     own_stage_ids = {s["id"] for s in own_stages}
     assert template_stage_ids.isdisjoint(own_stage_ids)
 
-    # Mutate the template's *content* is not exposed via API (no edit endpoint
-    # in this slice) - the isolation proof that matters here is structural:
-    # the assignment's stages are a separate row set with separate ids,
-    # already asserted above. A second assignment from the same template
-    # gets its own independent copy too:
+    # Editing the template's content afterwards (PUT .../workflow-templates/{id},
+    # see test_update_template_never_touches_already_copied_assignment_stages
+    # below) never touches this assignment's own copy - the isolation proof
+    # that matters here is structural: the assignment's stages are a separate
+    # row set with separate ids, already asserted above. A second assignment
+    # from the same template gets its own independent copy too:
     resp2 = client.post(
         "/api/v1/ps/assignments",
         json={"client_id": client_id, "title": "Втора оценка",
@@ -335,3 +336,150 @@ def test_catalog_routes_404_when_module_inactive(client: TestClient) -> None:
     resp = client.get("/api/v1/ps/workflow-templates")
     assert resp.status_code == 404
     assert resp.json()["detail"]["message_key"] == "errors.ps.module_inactive"
+
+
+NEW_STAGES = [
+    {"name": "Първи контакт", "category": "work"},
+    {"name": "Одобрение", "category": "review"},
+]
+
+
+def test_update_template_replaces_name_and_stages(client: TestClient) -> None:
+    _seed("Сервиз Редакция", "edit@ps.bg")
+    me = _login(client, "edit@ps.bg")
+    headers = _headers(me)
+    template = _create_template(client, headers, VALUATION_STAGES)
+
+    resp = client.put(
+        f"/api/v1/ps/workflow-templates/{template['id']}",
+        json={"name": "Преработена оценка", "stages": NEW_STAGES},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["id"] == template["id"]
+    assert body["name"] == "Преработена оценка"
+    assert [s["name"] for s in body["stages"]] == [s["name"] for s in NEW_STAGES]
+    assert [s["category"] for s in body["stages"]] == [s["category"] for s in NEW_STAGES]
+    # New stage rows replace the old ones entirely (not appended alongside).
+    assert {s["id"] for s in body["stages"]}.isdisjoint({s["id"] for s in template["stages"]})
+
+    refetched = client.get(
+        f"/api/v1/ps/workflow-templates/{template['id']}", headers=headers,
+    ).json()
+    assert refetched["name"] == "Преработена оценка"
+    assert len(refetched["stages"]) == 2
+
+
+def test_update_template_rejects_empty_stage_list(client: TestClient) -> None:
+    _seed("Сервиз Редакция Празно", "edit-empty@ps.bg")
+    me = _login(client, "edit-empty@ps.bg")
+    headers = _headers(me)
+    template = _create_template(client, headers, VALUATION_STAGES)
+
+    resp = client.put(
+        f"/api/v1/ps/workflow-templates/{template['id']}",
+        json={"name": template["name"], "stages": []},
+        headers=headers,
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["message_key"] == "errors.ps.template_needs_stages"
+
+
+def test_update_template_rejects_unknown_category(client: TestClient) -> None:
+    _seed("Сервиз Редакция Категория", "edit-cat@ps.bg")
+    me = _login(client, "edit-cat@ps.bg")
+    headers = _headers(me)
+    template = _create_template(client, headers, VALUATION_STAGES)
+
+    resp = client.put(
+        f"/api/v1/ps/workflow-templates/{template['id']}",
+        json={"name": template["name"], "stages": [{"name": "X", "category": "not_real"}]},
+        headers=headers,
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["message_key"] == "errors.ps.invalid_stage_category"
+
+
+def test_update_template_404s_for_nonexistent_template(client: TestClient) -> None:
+    _seed("Сервиз Редакция Липсва", "edit-missing@ps.bg")
+    me = _login(client, "edit-missing@ps.bg")
+    headers = _headers(me)
+
+    resp = client.put(
+        f"/api/v1/ps/workflow-templates/{uuid.uuid4()}",
+        json={"name": "X", "stages": NEW_STAGES},
+        headers=headers,
+    )
+    assert resp.status_code == 404
+    assert resp.json()["detail"]["message_key"] == "errors.ps.template_not_found"
+
+
+def test_update_template_404s_cross_tenant(client: TestClient) -> None:
+    _seed("Сервиз А Редакция", "a-edit@ps.bg")
+    _seed("Сервиз Б Редакция", "b-edit@ps.bg")
+
+    me_a = _login(client, "a-edit@ps.bg")
+    headers_a = _headers(me_a)
+    template_a = _create_template(client, headers_a, VALUATION_STAGES)
+
+    client.post("/api/v1/auth/logout", headers=headers_a)
+    me_b = _login(client, "b-edit@ps.bg")
+    headers_b = _headers(me_b)
+
+    resp = client.put(
+        f"/api/v1/ps/workflow-templates/{template_a['id']}",
+        json={"name": "Отвлечен", "stages": NEW_STAGES},
+        headers=headers_b,
+    )
+    assert resp.status_code == 404
+    assert resp.json()["detail"]["message_key"] == "errors.ps.template_not_found"
+
+
+def test_update_template_never_touches_already_copied_assignment_stages(
+    client: TestClient,
+) -> None:
+    """The invariant this whole slice hinges on (ADR-PS-005 copy-on-create):
+    editing a template's stages after an assignment has already copied them
+    must leave that assignment's own stages completely untouched."""
+    _seed("Сервиз Редакция Копие", "edit-copy@ps.bg")
+    me = _login(client, "edit-copy@ps.bg")
+    headers = _headers(me)
+    template = _create_template(client, headers, VALUATION_STAGES)
+
+    client_id = client.post(
+        "/api/v1/ps/clients", json={"name": "Клиент"}, headers=headers,
+    ).json()["id"]
+    assignment = client.post(
+        "/api/v1/ps/assignments",
+        json={"client_id": client_id, "title": "Оценка", "workflow_template_id": template["id"]},
+        headers=headers,
+    ).json()
+    before_stages = client.get(
+        f"/api/v1/ps/assignments/{assignment['id']}/stages", headers=headers,
+    ).json()
+
+    resp = client.put(
+        f"/api/v1/ps/workflow-templates/{template['id']}",
+        json={"name": "Съвсем друго", "stages": NEW_STAGES},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+
+    after_stages = client.get(
+        f"/api/v1/ps/assignments/{assignment['id']}/stages", headers=headers,
+    ).json()
+    assert after_stages == before_stages
+
+    # A brand-new assignment from the (now-edited) template gets the new stages.
+    resp2 = client.post(
+        "/api/v1/ps/assignments",
+        json={"client_id": client_id, "title": "Втора оценка",
+              "workflow_template_id": template["id"]},
+        headers=headers,
+    )
+    assert resp2.status_code == 200, resp2.text
+    new_own_stages = client.get(
+        f"/api/v1/ps/assignments/{resp2.json()['id']}/stages", headers=headers,
+    ).json()
+    assert [s["name"] for s in new_own_stages] == [s["name"] for s in NEW_STAGES]

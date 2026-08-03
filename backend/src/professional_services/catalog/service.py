@@ -38,6 +38,39 @@ def create_template(
     return template
 
 
+def update_template(
+    db: Session, ctx: TenantContext, template_id: uuid.UUID,
+    name: str, stages: list[tuple[str, str]],
+) -> PSWorkflowTemplate:
+    """Replace a template's name and its full ordered stage set. Never
+    touches any assignment's own copied stages (PSAssignmentStage) — those
+    were copied at creation and are a structurally separate row set with
+    their own ids (ADR-PS-005, `test_copy_on_create_proof`); nothing here
+    can reach them. Same validation as `create_template`: at least one
+    stage, each a known category."""
+    if not stages:
+        raise CatalogError("errors.ps.template_needs_stages")
+    for _, category in stages:
+        if category not in STAGE_CATEGORIES:
+            raise CatalogError("errors.ps.invalid_stage_category")
+
+    template = get_template(db, ctx, template_id)
+    if template is None:
+        raise CatalogError("errors.ps.template_not_found", status=404)
+
+    template.name = name
+    for existing in list_template_stages(db, ctx, template_id):
+        db.delete(existing)
+    db.flush()
+    for sort, (stage_name, category) in enumerate(stages):
+        db.add(PSWorkflowTemplateStage(
+            company_id=ctx.company_id, template_id=template.id,
+            name=stage_name, category=category, sort=sort,
+        ))
+    db.commit()
+    return template
+
+
 def list_templates(db: Session, ctx: TenantContext) -> list[PSWorkflowTemplate]:
     stmt = scoped(select(PSWorkflowTemplate), PSWorkflowTemplate, ctx).where(
         PSWorkflowTemplate.is_active.is_(True)

@@ -4,6 +4,8 @@
  * has no view behind it yet, so it's greyed the same way the sidebar treats
  * Фактури/Настройки (AppShell's GrayedNavItem) rather than invented here. */
 
+import { Link } from "react-router-dom";
+import { useAuth } from "../auth/AuthContext";
 import { t } from "../i18n/bg";
 
 function FunnelIcon() {
@@ -24,6 +26,8 @@ export function PsToolbar({
   onToggleActiveOnly: () => void;
   onNewAssignment: () => void;
 }) {
+  const { me } = useAuth();
+
   return (
     <div className="mb-4 flex flex-wrap items-center gap-3">
       <div>
@@ -31,6 +35,14 @@ export function PsToolbar({
         <p className="text-sm text-slate-500">{t("ps.dashboard_subtitle")}</p>
       </div>
       <div className="ml-auto flex items-center gap-2">
+        {me?.is_owner && (
+          <Link
+            to="/ps/workflow-templates"
+            className="whitespace-nowrap rounded-lg border border-slate-300 px-4 py-2 font-medium text-slate-700 hover:bg-slate-50 min-h-touch"
+          >
+            {t("ps.workflow_templates_nav")}
+          </Link>
+        )}
         <button
           type="button"
           onClick={onNewAssignment}

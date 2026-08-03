@@ -59,3 +59,22 @@ def get_template(
             "code": "not_found", "message_key": "errors.ps.template_not_found", "params": {},
         })
     return _out(db, tenant, template)
+
+
+@router.put("/workflow-templates/{template_id}",
+           dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
+def update_template(
+    template_id: uuid.UUID, body: WorkflowTemplateCreate, db: TenantDbDep, tenant: TenantDep,
+) -> WorkflowTemplateOut:
+    """Replace the template's name and ordered stage list. Never touches any
+    assignment that already copied stages from this template at creation
+    (ADR-PS-005 copy-on-create) — only the template's own vocabulary changes."""
+    try:
+        template = service.update_template(
+            db, tenant, template_id, body.name, [(s.name, s.category) for s in body.stages],
+        )
+    except service.CatalogError as e:
+        raise HTTPException(status_code=e.status, detail={
+            "code": "template_update_failed", "message_key": e.message_key, "params": {},
+        }) from e
+    return _out(db, tenant, template)

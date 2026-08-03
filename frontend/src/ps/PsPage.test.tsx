@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PAGE_SIZE } from "./Pagination";
 import { PsPage } from "./PsPage";
@@ -121,7 +122,9 @@ function renderPsPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
-      <PsPage />
+      <MemoryRouter initialEntries={["/ps"]}>
+        <PsPage />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -242,6 +245,54 @@ describe("PsPage", () => {
       const badges = screen.getAllByText("Договор");
       expect(badges.length).toBeGreaterThan(0);
     });
+  });
+
+  it("disables the stage-change button, with a clear explanation, for an assignment with no stages", async () => {
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/ps/clients") {
+        return Promise.resolve([{ id: "c1", name: "Иван Петров", kind: "person" }]);
+      }
+      if (path === "/ps/assignments") {
+        return Promise.resolve([{
+          id: "a1", client_id: "c1", title: "Консултация", lifecycle_state: "active",
+          current_stage: null, official_deadline_on: null, internal_target_on: null,
+          current_deadline_risk: "none", current_stale: false,
+        }]);
+      }
+      if (path === "/ps/next-actions") return Promise.resolve([]);
+      if (path === "/ps/workflow-templates") return Promise.resolve([]);
+      if (path === "/users") return Promise.resolve([]);
+      if (/^\/ps\/assignments\/[^/]+\/stages$/.exec(path)) return Promise.resolve([]);
+      return Promise.reject(new Error(`unexpected GET ${path}`));
+    });
+    renderPsPage();
+    const user = userEvent.setup();
+
+    await clickCard(user, "Иван Петров");
+    await clickCard(user, "Консултация");
+
+    const button = await screen.findByRole("button", { name: "Промени етап" });
+    await waitFor(() => expect(button).toBeDisabled());
+    expect(button).toHaveAttribute(
+      "title", "Поръчката няма зададени етапи — създадена е без работен процес.",
+    );
+  });
+
+  it("hides the workflow-templates link for a non-owner", async () => {
+    setUpFakeBackend({ clients: [], assignments: [], actions: [] });
+    renderPsPage();
+
+    await screen.findByText("Табло");
+    expect(screen.queryByRole("link", { name: "Работни процеси" })).not.toBeInTheDocument();
+  });
+
+  it("shows the workflow-templates link for an Owner, pointing at the settings route", async () => {
+    mockUseAuth.mockReturnValue({ me: { user_id: "u1", name: "Мария", is_owner: true } });
+    setUpFakeBackend({ clients: [], assignments: [], actions: [] });
+    renderPsPage();
+
+    const link = await screen.findByRole("link", { name: "Работни процеси" });
+    expect(link).toHaveAttribute("href", "/ps/workflow-templates");
   });
 
   it("regression: switching to a client with fewer engagements than the current page resets pagination instead of showing an empty list", async () => {

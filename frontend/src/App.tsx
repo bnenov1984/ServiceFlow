@@ -13,6 +13,7 @@ import { IntakePage } from "./intake/IntakePage";
 import { OrderPage } from "./order/OrderPage";
 import { OrdersPage } from "./orders/OrdersPage";
 import { PsPage } from "./ps/PsPage";
+import { WorkflowTemplatesPage } from "./ps/WorkflowTemplatesPage";
 import { EmployeesPage } from "./settings/EmployeesPage";
 import { AppChooserPage, NoActiveAppsPage } from "./shell/AppChooser";
 import { AppShell } from "./shell/AppShell";
@@ -96,6 +97,7 @@ export function App() {
         <Route path="customers" element={<CustomersPage />} />
         <Route path="customers/:id" element={<CustomerProfilePage />} />
         <Route path="ps" element={<PsPage />} />
+        <Route path="ps/workflow-templates" element={<WorkflowTemplatesPage />} />
         <Route path="settings/employees" element={<EmployeesPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

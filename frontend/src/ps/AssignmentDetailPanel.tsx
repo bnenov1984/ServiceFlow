@@ -116,8 +116,10 @@ export function AssignmentDetailPanel({
         </div>
         <button
           type="button"
+          disabled={stages.data?.length === 0}
+          title={stages.data?.length === 0 ? t("ps.stage_change_disabled_hint") : undefined}
           onClick={() => setStageOpen(true)}
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50 min-h-touch"
+          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent min-h-touch"
         >
           {t("ps.stage_change_label")}
         </button>
