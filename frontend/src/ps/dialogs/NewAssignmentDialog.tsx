@@ -90,22 +90,30 @@ export function NewAssignmentDialog({
             className="w-full rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
           />
         </div>
-        <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="new-assignment-template">
-            {t("ps.template_label")}
-          </label>
-          <select
-            id="new-assignment-template"
-            value={templateId}
-            onChange={(e) => setTemplateId(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
-          >
-            <option value="">{t("ps.template_none")}</option>
-            {templates.map((tpl) => (
-              <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
-            ))}
-          </select>
-        </div>
+        {/* No workflow-template management UI exists anywhere in the app yet
+            (the backend's POST /ps/workflow-templates is real but has no
+            frontend caller) — every company's template list is always
+            empty in practice today. Showing a picker that can only ever
+            offer "no template" is worse than not showing it; this
+            reappears on its own once templates actually exist. */}
+        {templates.length > 0 && (
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="new-assignment-template">
+              {t("ps.template_label")}
+            </label>
+            <select
+              id="new-assignment-template"
+              value={templateId}
+              onChange={(e) => setTemplateId(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
+            >
+              <option value="">{t("ps.template_none")}</option>
+              {templates.map((tpl) => (
+                <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
         {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
         <div className="flex gap-2">
           <button

@@ -183,9 +183,9 @@ describe("PsPage", () => {
     const user = userEvent.setup();
 
     await clickCard(user, "Иван Петров");
-    await user.click(screen.getAllByText("+ Нов ангажимент")[0]);
+    await user.click(screen.getAllByText("+ Нова поръчка")[0]);
     await user.type(within(currentDialog()).getByLabelText("Заглавие"), "Нов ангажимент");
-    await user.click(within(currentDialog()).getByRole("button", { name: "Добави ангажимент" }));
+    await user.click(within(currentDialog()).getByRole("button", { name: "Добави поръчка" }));
 
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith("/ps/assignments", {
       client_id: "c1", title: "Нов ангажимент", workflow_template_id: null,
@@ -215,7 +215,7 @@ describe("PsPage", () => {
 
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith("/ps/next-actions/n1/complete"));
     expect(await screen.findByText("Покажи приключените (1)")).toBeInTheDocument();
-    expect(screen.getByText("Няма следващи действия.")).toBeInTheDocument();
+    expect(screen.getByText("Няма задачи.")).toBeInTheDocument();
   });
 
   it("changes an assignment's stage via the stage-change dialog", async () => {
@@ -274,7 +274,7 @@ describe("PsPage", () => {
     await clickCard(user, "Малък Клиент");
 
     expect(await screen.findByText("Единствен ангажимент")).toBeInTheDocument();
-    expect(screen.queryByText("Няма ангажименти.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Няма поръчки.")).not.toBeInTheDocument();
   });
 
   it("regression: reopening the deadline dialog for a different engagement shows that engagement's own deadline, not the previous one's", async () => {

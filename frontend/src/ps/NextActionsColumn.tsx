@@ -54,7 +54,7 @@ export function NextActionsColumn({
         disabled={action.completed}
         onChange={() => void complete(action.id)}
         aria-label={t("ps.action_mark_done")}
-        className="mt-1 h-4 w-4 min-h-touch min-w-touch shrink-0"
+        className="mt-1 h-5 w-5 shrink-0"
       />
       <div className="min-w-0 flex-1">
         <p className={`font-medium ${action.completed ? "text-slate-400 line-through" : "text-slate-900"}`}>
