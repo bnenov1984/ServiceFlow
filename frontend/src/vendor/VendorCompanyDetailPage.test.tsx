@@ -469,4 +469,111 @@ describe("VendorCompanyDetailPage", () => {
     resolvePut({ company_id: "c1", seat_limit: 8, changed: true, audit_id: "s1" });
     await waitFor(() => expect(mockPut).toHaveBeenCalledTimes(1));
   });
+
+  it("shows the archive button (never restore) for an active company", async () => {
+    mockGet.mockResolvedValue({ ...BASE_COMPANY, active_modules: [], archived_at: null });
+    renderPage();
+
+    expect(await screen.findByRole("button", { name: "Архивирай" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Възстанови" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Архивирана")).not.toBeInTheDocument();
+  });
+
+  it("opens a confirm dialog before archiving, without calling the API yet", async () => {
+    mockGet.mockResolvedValue({ ...BASE_COMPANY, active_modules: [], archived_at: null });
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Архивирай" }));
+
+    expect(screen.getByText(
+      "Сигурни ли сте, че искате да архивирате тази компания? Потребителите ѝ няма да могат да влизат, докато не бъде възстановена. Нищо не се изтрива.",
+    )).toBeInTheDocument();
+    expect(mockPut).not.toHaveBeenCalled();
+  });
+
+  it("archives on confirmation, updates the badge and archived-at field with no extra GET", async () => {
+    mockGet.mockResolvedValue({ ...BASE_COMPANY, active_modules: [], archived_at: null });
+    mockPut.mockResolvedValue({ company_id: "c1", archived_at: "2026-08-03T12:00:00Z", changed: true, audit_id: "a9" });
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Архивирай" }));
+    await user.click(screen.getByRole("button", { name: "Потвърди" }));
+
+    await waitFor(() => expect(mockPut).toHaveBeenCalledWith("/platform-admin/companies/c1/archive"));
+    expect(await screen.findByText("Архивирана")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Възстанови" })).toBeInTheDocument();
+    expect(mockGet).toHaveBeenCalledTimes(1);
+  });
+
+  it("restores an archived company directly, unconfirmed", async () => {
+    mockGet.mockResolvedValue({
+      ...BASE_COMPANY, active_modules: [], archived_at: "2026-08-01T00:00:00Z",
+    });
+    mockPut.mockResolvedValue({ company_id: "c1", archived_at: null, changed: true, audit_id: "a10" });
+    renderPage();
+    const user = userEvent.setup();
+
+    expect(await screen.findByRole("button", { name: "Възстанови" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Възстанови" }));
+
+    await waitFor(() => expect(mockPut).toHaveBeenCalledWith("/platform-admin/companies/c1/restore"));
+    expect(screen.queryByText("Архивирана")).not.toBeInTheDocument();
+  });
+
+  it("cancelling the archive confirmation makes no API call", async () => {
+    mockGet.mockResolvedValue({ ...BASE_COMPANY, active_modules: [], archived_at: null });
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Архивирай" }));
+    await user.click(screen.getByRole("button", { name: "Отказ" }));
+
+    expect(mockPut).not.toHaveBeenCalled();
+  });
+
+  it("invalidates [\"vendor\",\"companies\"] on a successful archive", async () => {
+    mockGet.mockResolvedValue({ ...BASE_COMPANY, active_modules: [], archived_at: null });
+    mockPut.mockResolvedValue({ company_id: "c1", archived_at: "2026-08-03T12:00:00Z", changed: true, audit_id: "a9" });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData(["vendor", "companies"], [{ id: "c1" }]);
+    renderPage("c1", queryClient);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Архивирай" }));
+    await user.click(screen.getByRole("button", { name: "Потвърди" }));
+
+    await waitFor(() =>
+      expect(queryClient.getQueryState(["vendor", "companies"])?.isInvalidated).toBe(true));
+  });
+
+  it("shows a recoverable inline error on archive failure", async () => {
+    mockGet.mockResolvedValue({ ...BASE_COMPANY, active_modules: [], archived_at: null });
+    mockPut.mockRejectedValue(new ApiError(500, "unknown", "errors.internal"));
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Архивирай" }));
+    await user.click(screen.getByRole("button", { name: "Потвърди" }));
+
+    expect(await screen.findByText("Възникна неочаквана грешка. Опитайте отново.")).toBeInTheDocument();
+    expect(screen.getByText("Сервиз А")).toBeInTheDocument();
+  });
+
+  it("prevents a duplicate archive request from a rapid double-click", async () => {
+    mockGet.mockResolvedValue({ ...BASE_COMPANY, active_modules: [], archived_at: null });
+    let resolvePut: (v: unknown) => void = () => {};
+    mockPut.mockReturnValue(new Promise((resolve) => { resolvePut = resolve; }));
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Архивирай" }));
+    const confirmButton = screen.getByRole("button", { name: "Потвърди" });
+    await user.click(confirmButton);
+    await user.click(confirmButton);
+
+    resolvePut({ company_id: "c1", archived_at: "2026-08-03T12:00:00Z", changed: true, audit_id: "a9" });
+    await waitFor(() => expect(mockPut).toHaveBeenCalledTimes(1));
+  });
 });

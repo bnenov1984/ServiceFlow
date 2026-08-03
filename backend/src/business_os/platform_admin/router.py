@@ -19,7 +19,7 @@ Error contract per docs/09 §1: message keys, never prose.
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
 from pydantic import BaseModel, EmailStr, Field
 
 from business_os.identity.contracts import CompanyAdminMetadata
@@ -123,6 +123,7 @@ class CompanySummary(BaseModel):
     seat_limit: int | None
     seat_usage: int
     created_at: datetime
+    archived_at: datetime | None
 
 
 class CompanyDetail(CompanySummary):
@@ -136,12 +137,18 @@ def _to_summary(metadata: CompanyAdminMetadata) -> CompanySummary:
         active_modules=metadata.active_modules, subscription_state=metadata.subscription_state,
         trial_ends_at=metadata.trial_ends_at, seat_limit=metadata.seat_limit,
         seat_usage=metadata.seat_usage, created_at=metadata.created_at,
+        archived_at=metadata.archived_at,
     )
 
 
 @router.get("/companies")
-def list_companies(auth: PlatformAdminDep, db: VendorDbDep) -> list[CompanySummary]:
-    return [_to_summary(c) for c in service.list_companies(db)]
+def list_companies(
+    auth: PlatformAdminDep, db: VendorDbDep,
+    status: str = Query("active", pattern="^(active|archived|all)$"),
+) -> list[CompanySummary]:
+    """Archived companies are hidden by default (`status=active`); pass
+    `status=archived` or `status=all` to see them."""
+    return [_to_summary(c) for c in service.list_companies(db, status=status)]
 
 
 @router.get("/companies/{company_id}")
@@ -355,5 +362,59 @@ def set_seat_limit(
         }) from e
     return SeatLimitResponse(
         company_id=result.company_id, seat_limit=result.seat_limit,
+        changed=result.changed, audit_id=result.audit_id,
+    )
+
+
+# --- Company archiving (docs/business-os/18 §9 phase 6) --------------------
+
+
+class ArchiveResponse(BaseModel):
+    """Mirrors `service.ArchiveResult` field-for-field."""
+
+    company_id: uuid.UUID
+    archived_at: datetime | None
+    changed: bool
+    audit_id: uuid.UUID
+
+
+@router.put("/companies/{company_id}/archive",
+           dependencies=[Depends(require_platform_csrf)])
+def archive_company(
+    auth: PlatformAdminDep, db: VendorDbDep, company_id: uuid.UUID,
+) -> ArchiveResponse:
+    """Archive a company — a logical/soft archive, never a delete. No user,
+    session, subscription, entitlement or business-data row is touched.
+    Idempotent in effect but always audited, even when the company was
+    already archived."""
+    _, admin = auth
+    try:
+        result = service.archive_company(db, admin.id, company_id)
+    except service.ArchiveError as e:
+        raise HTTPException(status_code=e.status, detail={
+            "code": "archive_failed", "message_key": e.message_key, "params": {},
+        }) from e
+    return ArchiveResponse(
+        company_id=result.company_id, archived_at=result.archived_at,
+        changed=result.changed, audit_id=result.audit_id,
+    )
+
+
+@router.put("/companies/{company_id}/restore",
+           dependencies=[Depends(require_platform_csrf)])
+def restore_company(
+    auth: PlatformAdminDep, db: VendorDbDep, company_id: uuid.UUID,
+) -> ArchiveResponse:
+    """Restore an archived company. Idempotent, symmetric to
+    `archive_company`."""
+    _, admin = auth
+    try:
+        result = service.restore_company(db, admin.id, company_id)
+    except service.ArchiveError as e:
+        raise HTTPException(status_code=e.status, detail={
+            "code": "archive_failed", "message_key": e.message_key, "params": {},
+        }) from e
+    return ArchiveResponse(
+        company_id=result.company_id, archived_at=result.archived_at,
         changed=result.changed, audit_id=result.audit_id,
     )

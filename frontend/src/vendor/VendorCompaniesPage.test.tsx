@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
@@ -53,6 +53,7 @@ describe("VendorCompaniesPage", () => {
         business_type_label: "Общ ремонт на техника",
         active_modules: [], subscription_state: "trial", trial_ends_at: null,
         seat_limit: 5, seat_usage: 2, created_at: "2026-07-01T00:00:00Z",
+        archived_at: null,
       },
     ]);
     renderPage();
@@ -60,9 +61,34 @@ describe("VendorCompaniesPage", () => {
 
     expect(await screen.findByText("Сервиз А")).toBeInTheDocument();
     expect(screen.getByText("2/5")).toBeInTheDocument();
+    expect(screen.queryByText("Архивирана")).not.toBeInTheDocument();
 
     await user.click(screen.getByText("Сервиз А"));
     expect(await screen.findByText("COMPANY_DETAIL_PAGE")).toBeInTheDocument();
+  });
+
+  it("defaults to the active-only filter and shows an archived badge when viewing archived companies", async () => {
+    mockGet.mockResolvedValue([]);
+    renderPage();
+
+    await waitFor(() =>
+      expect(mockGet).toHaveBeenCalledWith("/platform-admin/companies?status=active"));
+
+    mockGet.mockResolvedValue([
+      {
+        id: "c2", name: "Сервиз Б", business_profile: "generic_repair",
+        business_type_label: "Общ ремонт на техника",
+        active_modules: [], subscription_state: "trial", trial_ends_at: null,
+        seat_limit: null, seat_usage: 0, created_at: "2026-07-01T00:00:00Z",
+        archived_at: "2026-08-01T00:00:00Z",
+      },
+    ]);
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByLabelText("Статус"), "archived");
+
+    await waitFor(() =>
+      expect(mockGet).toHaveBeenCalledWith("/platform-admin/companies?status=archived"));
+    expect(await screen.findByText("Архивирана")).toBeInTheDocument();
   });
 
   it("navigates to the new-company form", async () => {

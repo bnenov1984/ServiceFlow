@@ -42,6 +42,7 @@ __all__ = [
     "CompanyProfile",
     "ProvisionedCompany",
     "ProvisioningError",
+    "archive_company",
     "get_business_profile",
     "get_company_admin_metadata",
     "get_company_profile",
@@ -49,6 +50,7 @@ __all__ = [
     "is_module_active",
     "list_companies_admin_metadata",
     "provision_company",
+    "restore_company",
     "revoke_module",
     "set_business_profile",
     "set_subscription_state",
@@ -180,6 +182,20 @@ def set_seat_limit(db: Session, company_id: uuid.UUID, new_limit: int | None) ->
     return _service.set_seat_limit(db, company_id, new_limit)
 
 
+def archive_company(db: Session, company_id: uuid.UUID) -> datetime | None:
+    """Logical/soft archive — never a delete (docs/business-os/18 §9 phase 6).
+    Non-committing — composed inside `platform_admin.service.archive_company`'s
+    single transaction. Returns the *old* `archived_at`, needed for the audit
+    record."""
+    return _service.archive_company(db, company_id)
+
+
+def restore_company(db: Session, company_id: uuid.UUID) -> datetime | None:
+    """Symmetric to `archive_company`. Non-committing — composed inside
+    `platform_admin.service.restore_company`'s single transaction."""
+    return _service.restore_company(db, company_id)
+
+
 @dataclass(frozen=True)
 class CompanyAdminMetadata:
     """The Vendor Control Plane's metadata-only view of one company
@@ -203,12 +219,16 @@ class CompanyAdminMetadata:
     seat_limit: int | None
     seat_usage: int
     created_at: datetime
+    archived_at: datetime | None
 
 
-def list_companies_admin_metadata(db: Session) -> list[CompanyAdminMetadata]:
+def list_companies_admin_metadata(
+    db: Session, status: str = "active"
+) -> list[CompanyAdminMetadata]:
     """Backs the vendor company-list screen. Metadata only — see
-    `CompanyAdminMetadata`."""
-    return [_to_admin_metadata(db, c) for c in _service.list_companies(db)]
+    `CompanyAdminMetadata`. `status`: "active" (default) / "archived" / "all",
+    passed straight through to `identity.service.list_companies`."""
+    return [_to_admin_metadata(db, c) for c in _service.list_companies(db, status=status)]
 
 
 def get_company_admin_metadata(db: Session, company_id: uuid.UUID) -> CompanyAdminMetadata | None:
@@ -240,4 +260,5 @@ def _to_admin_metadata(db: Session, company: Any) -> CompanyAdminMetadata:
         seat_limit=company.seat_limit,
         seat_usage=_service.count_active_seats(db, company.id),
         created_at=company.created_at,
+        archived_at=company.archived_at,
     )

@@ -52,6 +52,11 @@ SUBSCRIPTION_TRANSITIONED = "company.subscription_transitioned"
 # Seat limit (docs/business-os/18 §9 phase 5).
 SEAT_LIMIT_CHANGED = "company.seat_limit_changed"
 
+# Company archiving (docs/business-os/18 §9 phase 6) — logical/soft archive,
+# never a delete.
+COMPANY_ARCHIVED = "company.archived"
+COMPANY_RESTORED = "company.restored"
+
 # Every action this slice knows about. Kept as a frozenset so `record()` can
 # reject a typo'd or ad-hoc action string at the call site rather than silently
 # writing an unreviewable row (BOS-18 §9 phase 5+ extends this list further).
@@ -65,6 +70,8 @@ KNOWN_ACTIONS = frozenset({
     MODULE_REVOKED,
     SUBSCRIPTION_TRANSITIONED,
     SEAT_LIMIT_CHANGED,
+    COMPANY_ARCHIVED,
+    COMPANY_RESTORED,
 })
 
 

@@ -92,15 +92,23 @@ def _audit(db: Session, company_id: uuid.UUID, user_id: uuid.UUID | None,
     db.add(AuditLog(company_id=company_id, user_id=user_id, action=action, detail=detail or {}))
 
 
+def _is_company_archived(db: Session, company_id: uuid.UUID) -> bool:
+    company = get_company(db, company_id)
+    return company is not None and company.archived_at is not None
+
+
 def login(db: Session, email: str, password: str, device_label: str,
           client_key: str) -> tuple[AuthSession, str]:
     """Returns (session, raw_cookie_token). Raises AuthError."""
     _check_rate_limit(f"login:{client_key}:{email.lower()}", MAX_LOGIN_FAILURES)
 
     user = db.scalar(select(User).where(User.email.ilike(email)))
-    if user is None or not user.is_active or not security.verify_secret(
-        user.password_hash, password
-    ):
+    # An archived company's users fold into the same generic rejection as a
+    # deactivated user or wrong password (never a distinct message) — same
+    # anti-enumeration posture `not user.is_active` already has here.
+    if user is None or not user.is_active or (
+        user is not None and _is_company_archived(db, user.company_id)
+    ) or not security.verify_secret(user.password_hash, password):
         _record_failure(f"login:{client_key}:{email.lower()}")
         if user is not None:
             _audit(db, user.company_id, user.id, "login_failed")
@@ -134,7 +142,7 @@ def resolve_session(db: Session, raw_token: str) -> tuple[AuthSession, User] | N
     if expires_at < _now():
         return None
     user = db.get(User, session.user_id)
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or _is_company_archived(db, session.company_id):
         return None
     session.last_seen_at = _now()
     db.commit()
@@ -180,11 +188,21 @@ def get_company(db: Session, company_id: uuid.UUID) -> Company | None:
     return db.get(Company, company_id)
 
 
-def list_companies(db: Session) -> list[Company]:
+def list_companies(db: Session, status: str = "active") -> list[Company]:
     """Companies are RLS-exempt (identity bootstrap) — centralized here, same
     discipline as `list_users`. Backs the Vendor Control Plane's company list
-    (`identity.contracts.list_companies_admin_metadata`)."""
-    return list(db.scalars(select(Company).order_by(Company.created_at)))
+    (`identity.contracts.list_companies_admin_metadata`).
+
+    `status`: "active" (default, `archived_at IS NULL` — archived companies
+    hidden by default), "archived" (`archived_at IS NOT NULL`), or "all" (no
+    filter). The router constrains the query param to these three values;
+    anything else is a caller bug, not a user-facing validation case."""
+    stmt = select(Company).order_by(Company.created_at)
+    if status == "active":
+        stmt = stmt.where(Company.archived_at.is_(None))
+    elif status == "archived":
+        stmt = stmt.where(Company.archived_at.is_not(None))
+    return list(db.scalars(stmt))
 
 
 def is_module_active(db: Session, company_id: uuid.UUID, module_key: str) -> bool:
@@ -361,6 +379,34 @@ def set_seat_limit(db: Session, company_id: uuid.UUID, new_limit: int | None) ->
     old_limit = company.seat_limit
     company.seat_limit = new_limit
     return old_limit
+
+
+def archive_company(db: Session, company_id: uuid.UUID) -> datetime | None:
+    """Logical/soft archive — sets `archived_at`, nothing else. No user,
+    session, subscription, entitlement or business-data row is touched or
+    deleted; login (`login`) and session resolution (`resolve_session`) both
+    check `archived_at` directly, so an archived company's users are locked
+    out and any already-live session stops authorising requests on its very
+    next call, with no separate session-revocation step needed. Non-committing
+    — composed inside `platform_admin.service.archive_company`'s single
+    transaction. Returns the *old* `archived_at` (None if it wasn't archived),
+    needed for the audit record's `detail`."""
+    company = get_company(db, company_id)
+    assert company is not None
+    old = company.archived_at
+    company.archived_at = _now()
+    return old
+
+
+def restore_company(db: Session, company_id: uuid.UUID) -> datetime | None:
+    """Symmetric to `archive_company` — clears `archived_at`. Non-committing,
+    composed inside `platform_admin.service.restore_company`'s single
+    transaction. Returns the *old* `archived_at`."""
+    company = get_company(db, company_id)
+    assert company is not None
+    old = company.archived_at
+    company.archived_at = None
+    return old
 
 
 def create_company_with_owner(

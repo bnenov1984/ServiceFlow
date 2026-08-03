@@ -16,6 +16,7 @@ export interface CompanySummary {
   seat_limit: number | null;
   seat_usage: number;
   created_at: string;
+  archived_at: string | null;
 }
 
 export interface CompanyDetail extends CompanySummary {
@@ -62,6 +63,13 @@ export interface SubscriptionTransitionResult {
 export interface SeatLimitResult {
   company_id: string;
   seat_limit: number | null;
+  changed: boolean;
+  audit_id: string;
+}
+
+export interface ArchiveResult {
+  company_id: string;
+  archived_at: string | null;
   changed: boolean;
   audit_id: string;
 }

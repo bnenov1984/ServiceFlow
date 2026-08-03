@@ -350,12 +350,16 @@ def provision_company(
     )
 
 
-def list_companies(db: Session) -> list[identity_contracts.CompanyAdminMetadata]:
+def list_companies(
+    db: Session, status: str = "active"
+) -> list[identity_contracts.CompanyAdminMetadata]:
     """Backs the vendor company-list route — metadata only (ADR-BOS-009
     §Vendor data visibility). A thin pass-through to identity.contracts, kept
     here (not called directly from the router) so every vendor route goes
-    through this module the same way, regardless of which read/write it needs."""
-    return identity_contracts.list_companies_admin_metadata(db)
+    through this module the same way, regardless of which read/write it needs.
+    `status`: "active" (default, archived companies hidden) / "archived" /
+    "all" — the router constrains the query param to these three values."""
+    return identity_contracts.list_companies_admin_metadata(db, status=status)
 
 
 def get_company(
@@ -581,4 +585,83 @@ def set_seat_limit(
 
     return SeatLimitResult(
         company_id=company_id, seat_limit=new_limit, changed=changed, audit_id=audit_id,
+    )
+
+
+# --- Company archiving (docs/business-os/18 §9 phase 6) --------------------
+#
+# Logical/soft archive, never a delete: users, sessions, subscriptions,
+# entitlements, audit log and all tenant business data are left exactly as
+# they are. Archiving flips `companies.archived_at`, which two identity-side
+# checks (`identity.service.login`/`resolve_session`) read directly — an
+# archived company's users cannot log in, and any already-live session stops
+# authorising requests on its very next call. Same idempotent-but-always-
+# audited shape as entitlement grant/revoke and seat limit: archiving an
+# already-archived company (or restoring an already-active one) is a
+# harmless no-op (`changed=False`) but still gets its own audit row.
+
+
+class ArchiveError(Exception):
+    def __init__(self, message_key: str, status: int = 404) -> None:
+        self.message_key = message_key
+        self.status = status
+
+
+@dataclass(frozen=True)
+class ArchiveResult:
+    company_id: uuid.UUID
+    archived_at: datetime | None
+    changed: bool
+    audit_id: uuid.UUID
+
+
+def archive_company(
+    db: Session, platform_admin_id: uuid.UUID, company_id: uuid.UUID,
+) -> ArchiveResult:
+    """Archive a company — its own atomic operation (existence check,
+    mutation, one audit row, one commit)."""
+    metadata = identity_contracts.get_company_admin_metadata(db, company_id)
+    if metadata is None:
+        raise ArchiveError("errors.provisioning.company_not_found", status=404)
+
+    changed = metadata.archived_at is None
+    identity_contracts.archive_company(db, company_id)
+    audit_id = audit.record(
+        db, audit.COMPANY_ARCHIVED, correlation.ensure_bound(),
+        platform_admin_id=platform_admin_id, company_id=company_id,
+        detail={"changed": changed},
+    )
+    db.commit()
+
+    updated = identity_contracts.get_company_admin_metadata(db, company_id)
+    assert updated is not None
+    return ArchiveResult(
+        company_id=company_id, archived_at=updated.archived_at,
+        changed=changed, audit_id=audit_id,
+    )
+
+
+def restore_company(
+    db: Session, platform_admin_id: uuid.UUID, company_id: uuid.UUID,
+) -> ArchiveResult:
+    """Restore an archived company — symmetric to `archive_company` in every
+    respect (existence check, one audit row, one commit, idempotent)."""
+    metadata = identity_contracts.get_company_admin_metadata(db, company_id)
+    if metadata is None:
+        raise ArchiveError("errors.provisioning.company_not_found", status=404)
+
+    changed = metadata.archived_at is not None
+    identity_contracts.restore_company(db, company_id)
+    audit_id = audit.record(
+        db, audit.COMPANY_RESTORED, correlation.ensure_bound(),
+        platform_admin_id=platform_admin_id, company_id=company_id,
+        detail={"changed": changed},
+    )
+    db.commit()
+
+    updated = identity_contracts.get_company_admin_metadata(db, company_id)
+    assert updated is not None
+    return ArchiveResult(
+        company_id=company_id, archived_at=updated.archived_at,
+        changed=changed, audit_id=audit_id,
     )

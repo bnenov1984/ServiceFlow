@@ -31,6 +31,7 @@ export const queryKeys = {
   psDeadlineHistory: (id: string) => ["ps", "assignments", id, "deadline-history"] as const,
   vendorMe: ["vendor", "me"] as const,
   vendorCompanies: ["vendor", "companies"] as const,
+  vendorCompaniesList: (status: string) => ["vendor", "companies", status] as const,
   vendorCompany: (id: string) => ["vendor", "company", id] as const,
   employees: (includeInactive: boolean) => ["employees", includeInactive] as const,
 };

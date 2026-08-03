@@ -43,6 +43,10 @@ class Company(Base, TimestampMixin):
     subscription_state_changed_at: Mapped[datetime] = mapped_column(server_default=func.now())
     trial_ends_at: Mapped[datetime | None] = mapped_column(default=None)
     seat_limit: Mapped[int | None] = mapped_column(default=None)
+    # Logical/soft archive (docs/business-os/18 §9 phase 6): `NULL` = active,
+    # any timestamp = archived since then. The single source of truth — no
+    # companion `is_archived` bool, same convention as `AuthSession.revoked_at`.
+    archived_at: Mapped[datetime | None] = mapped_column(default=None)
 
 
 class User(Base, TimestampMixin):

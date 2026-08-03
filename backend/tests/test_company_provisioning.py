@@ -430,7 +430,10 @@ def test_provision_company_is_the_only_public_write_entry_point_in_its_module() 
         if inspect.isfunction(obj) and obj.__module__ == service.__name__
         and ("compan" in name or "provision" in name)  # "compan" covers company/companies
     }
-    assert candidates == {"provision_company", "list_companies", "get_company"}, (
+    assert candidates == {
+        "provision_company", "list_companies", "get_company",
+        "archive_company", "restore_company",
+    }, (
         f"unexpected company/provisioning-shaped functions in platform_admin.service: "
         f"{candidates} — company creation must only ever happen through provision_company"
     )

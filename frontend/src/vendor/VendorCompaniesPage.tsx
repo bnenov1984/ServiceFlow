@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { EmptyState, ErrorState, Skeleton } from "../components/States";
 import { t } from "../i18n/bg";
@@ -10,10 +11,17 @@ function errorText(error: unknown): string {
   return error instanceof ApiError ? t(error.messageKey, error.params) : t("errors.internal");
 }
 
+const STATUS_FILTERS: { value: string; labelKey: Parameters<typeof t>[0] }[] = [
+  { value: "active", labelKey: "vendor.status_filter_active" },
+  { value: "archived", labelKey: "vendor.status_filter_archived" },
+  { value: "all", labelKey: "vendor.status_filter_all" },
+];
+
 export function VendorCompaniesPage() {
+  const [status, setStatus] = useState("active");
   const companies = useQuery({
-    queryKey: queryKeys.vendorCompanies,
-    queryFn: () => api.get<CompanySummary[]>("/platform-admin/companies"),
+    queryKey: queryKeys.vendorCompaniesList(status),
+    queryFn: () => api.get<CompanySummary[]>(`/platform-admin/companies?status=${status}`),
   });
   const navigate = useNavigate();
 
@@ -28,6 +36,22 @@ export function VendorCompaniesPage() {
         >
           {t("vendor.new_company_action")}
         </button>
+      </div>
+
+      <div className="mb-4 flex items-center gap-2">
+        <label className="text-sm font-medium text-slate-700" htmlFor="company-status-filter">
+          {t("vendor.status_filter_label")}
+        </label>
+        <select
+          id="company-status-filter"
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          className="rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-touch"
+        >
+          {STATUS_FILTERS.map((f) => (
+            <option key={f.value} value={f.value}>{t(f.labelKey)}</option>
+          ))}
+        </select>
       </div>
 
       {companies.isLoading ? (
@@ -47,7 +71,14 @@ export function VendorCompaniesPage() {
                 onClick={() => navigate(`/vendor/companies/${c.id}`)}
                 className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-slate-50 min-h-touch"
               >
-                <span className="font-medium text-slate-900">{c.name}</span>
+                <span className="flex items-center gap-2 font-medium text-slate-900">
+                  {c.name}
+                  {c.archived_at && (
+                    <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">
+                      {t("vendor.archived_badge")}
+                    </span>
+                  )}
+                </span>
                 <span className="flex items-center gap-4 text-sm text-slate-500">
                   <span>{c.subscription_state}</span>
                   <span>

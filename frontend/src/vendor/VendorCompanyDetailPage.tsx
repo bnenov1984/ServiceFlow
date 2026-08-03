@@ -8,7 +8,7 @@ import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
 import type {
-  CompanyDetail, EntitlementResult, SeatLimitResult, SubscriptionTransitionResult,
+  ArchiveResult, CompanyDetail, EntitlementResult, SeatLimitResult, SubscriptionTransitionResult,
 } from "./types";
 
 // No module-metadata endpoint exists, so this is the same "smallest
@@ -68,6 +68,10 @@ export function VendorCompanyDetailPage() {
   const [seatLimitSubmitting, setSeatLimitSubmitting] = useState(false);
   const [seatLimitError, setSeatLimitError] = useState<string | null>(null);
 
+  const [archiveSubmitting, setArchiveSubmitting] = useState(false);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+  const [confirmArchiveOpen, setConfirmArchiveOpen] = useState(false);
+
   const isNotFound = company.isError && company.error instanceof ApiError
     && company.error.status === 404;
 
@@ -92,6 +96,23 @@ export function VendorCompanyDetailPage() {
       setEntitlementError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
     } finally {
       setEntitlementSubmitting(false);
+    }
+  };
+
+  const toggleArchive = async (action: "archive" | "restore") => {
+    if (archiveSubmitting || !id) return;
+    setArchiveSubmitting(true);
+    setArchiveError(null);
+    try {
+      const result = await api.put<ArchiveResult>(`/platform-admin/companies/${id}/${action}`);
+      queryClient.setQueryData(queryKeys.vendorCompany(id), (old: CompanyDetail | undefined) =>
+        old ? { ...old, archived_at: result.archived_at } : old);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.vendorCompanies });
+      setConfirmArchiveOpen(false);
+    } catch (err) {
+      setArchiveError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
+    } finally {
+      setArchiveSubmitting(false);
     }
   };
 
@@ -172,7 +193,14 @@ export function VendorCompanyDetailPage() {
         <ErrorState text={errorText(company.error)} onRetry={() => void company.refetch()} />
       ) : company.data ? (
         <>
-          <h1 className="mb-4 text-xl font-semibold text-slate-900">{company.data.name}</h1>
+          <h1 className="mb-4 flex items-center gap-2 text-xl font-semibold text-slate-900">
+            {company.data.name}
+            {company.data.archived_at && (
+              <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">
+                {t("vendor.archived_badge")}
+              </span>
+            )}
+          </h1>
           <dl className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-white p-6 sm:grid-cols-2">
             <Field label={t("vendor.field_business_profile")} value={company.data.business_profile} />
             <Field
@@ -254,6 +282,9 @@ export function VendorCompanyDetailPage() {
               label={t("vendor.field_subscription_changed_at")}
               value={company.data.subscription_state_changed_at}
             />
+            {company.data.archived_at && (
+              <Field label={t("vendor.field_archived_at")} value={company.data.archived_at} />
+            )}
           </dl>
 
           <div className="mt-4 flex flex-col items-start gap-2">
@@ -290,6 +321,40 @@ export function VendorCompanyDetailPage() {
               {t("vendor.subscription_transition_action")}
             </button>
           </div>
+
+          <div className="mt-4 flex flex-col items-start gap-2">
+            {company.data.archived_at ? (
+              <button
+                type="button"
+                disabled={archiveSubmitting}
+                onClick={() => void toggleArchive("restore")}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 min-h-touch"
+              >
+                {t("vendor.restore_action")}
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={archiveSubmitting}
+                onClick={() => setConfirmArchiveOpen(true)}
+                className="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 min-h-touch"
+              >
+                {t("vendor.archive_action")}
+              </button>
+            )}
+            {archiveError && (
+              <p role="alert" className="text-sm text-red-700">{archiveError}</p>
+            )}
+          </div>
+
+          <ConfirmDialog
+            open={confirmArchiveOpen}
+            title={t("vendor.archive_confirm_title")}
+            message={t("vendor.archive_confirm_message")}
+            onClose={() => setConfirmArchiveOpen(false)}
+            onConfirm={() => void toggleArchive("archive")}
+            submitting={archiveSubmitting}
+          />
 
           <ConfirmDialog
             open={confirmRevokeOpen}
