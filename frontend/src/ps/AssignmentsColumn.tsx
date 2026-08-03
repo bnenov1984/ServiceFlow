@@ -119,7 +119,10 @@ export function AssignmentsColumn({
                       >
                         <p className="font-medium text-slate-900">{a.title}</p>
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+                          <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                            {t("ps.current_stage_label")}
+                          </span>
+                          <span className="rounded-full bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white">
                             {a.current_stage?.name ?? t("ps.current_stage_none")}
                           </span>
                           {a.current_stale && (

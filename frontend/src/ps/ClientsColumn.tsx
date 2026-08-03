@@ -92,7 +92,11 @@ export function ClientsColumn({
                     <span className="block text-xs text-slate-500">{clientKindLabel(c.kind)}</span>
                   </span>
                   {engagementCount(c.id) > 0 && (
-                    <span className="shrink-0 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+                    <span
+                      title={t("ps.client_order_count_label", { count: engagementCount(c.id) })}
+                      aria-label={t("ps.client_order_count_label", { count: engagementCount(c.id) })}
+                      className="shrink-0 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700"
+                    >
                       {engagementCount(c.id)}
                     </span>
                   )}

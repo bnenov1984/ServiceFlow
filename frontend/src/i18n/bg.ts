@@ -346,6 +346,7 @@ export const bg = {
   "ps.filter_toggle_title": "Покажи само активни поръчки",
 
   "ps.clients": "Клиенти",
+  "ps.client_order_count_label": "{count} поръчки",
   "ps.new_client": "+ Нов клиент",
   "ps.client_search_placeholder": "Търсене на клиенти…",
   "ps.clients_empty": "Няма клиенти.",
@@ -371,7 +372,7 @@ export const bg = {
   "ps.assignment_add": "Добави поръчка",
   "ps.new_assignment_dialog_title": "Нова поръчка",
 
-  "ps.next_actions": "Задачи",
+  "ps.next_actions": "Задачи по поръчката",
   "ps.actions_for": "За поръчка: {name}",
   "ps.actions_pick_assignment": "Изберете поръчка, за да видите задачите.",
   "ps.new_action": "+ Нова задача",
@@ -389,6 +390,10 @@ export const bg = {
   "ps.risk_overdue": "Просрочено",
   "ps.risk_attention": "Внимание",
   "ps.risk_ok": "Наред",
+
+  "ps.current_stage_label": "Текущ етап",
+  "ps.stage_state_completed_label": "Завършен етап",
+  "ps.stage_state_future_label": "Предстоящ етап",
 
   "ps.detail_tab_details": "Детайли",
   "ps.detail_tab_history": "История",

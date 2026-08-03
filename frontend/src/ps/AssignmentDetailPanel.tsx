@@ -12,40 +12,63 @@ import { api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
 import { DeadlineChangeDialog } from "./dialogs/DeadlineChangeDialog";
 import { StageChangeDialog } from "./dialogs/StageChangeDialog";
+import { stageState } from "./format";
 import type { PsAssignment, PsClient, PsDeadlineChange, PsStage } from "./types";
 
 type Tab = "details" | "history";
 
 function StagesPanel({ assignment, stages }: { assignment: PsAssignment; stages: PsStage[] | undefined }) {
-  const currentSort = assignment.current_stage?.sort ?? -1;
+  const ordered = stages ? [...stages].sort((a, b) => a.sort - b.sort) : [];
   return (
     <div className="border-t border-slate-100 p-4 lg:border-l lg:border-t-0">
       <h3 className="mb-3 text-sm font-semibold text-slate-800">{t("ps.stages_panel_title")}</h3>
-      {stages && stages.length > 0 ? (
-        <ol className="flex flex-col gap-3">
-          {[...stages].sort((a, b) => a.sort - b.sort).map((s) => {
-            const state = s.sort < currentSort ? "done" : s.sort === currentSort ? "current" : "pending";
+      {ordered.length > 0 ? (
+        <ol className="flex flex-col">
+          {ordered.map((s, i) => {
+            const state = stageState(s, assignment.current_stage);
+            const isLast = i === ordered.length - 1;
+            const stateLabel = state === "completed"
+              ? t("ps.stage_state_completed_label")
+              : state === "current"
+                ? t("ps.current_stage_label")
+                : t("ps.stage_state_future_label");
             return (
-              <li key={s.id} className="flex items-center gap-2">
+              <li key={s.id} className="relative flex gap-3 pb-5 last:pb-0">
+                {!isLast && (
+                  <span
+                    aria-hidden
+                    className={`absolute left-[9px] top-5 h-full w-0.5 ${
+                      state === "completed" ? "bg-green-500" : "bg-slate-200"
+                    }`}
+                  />
+                )}
                 <span
                   aria-hidden
-                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs ${
-                    state === "done"
+                  className={`relative z-10 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs ${
+                    state === "completed"
                       ? "bg-green-600 text-white"
                       : state === "current"
-                        ? "bg-blue-600 text-white"
-                        : "border border-slate-300 text-slate-400"
+                        ? "bg-blue-600 text-white ring-4 ring-blue-100"
+                        : "border-2 border-slate-300 bg-white text-slate-400"
                   }`}
                 >
-                  {state === "done" ? "✓" : ""}
+                  {state === "completed" ? "✓" : ""}
                 </span>
-                <span
-                  className={`text-sm ${state === "pending" ? "text-slate-400" : "text-slate-800"} ${
-                    state === "current" ? "font-semibold" : ""
-                  }`}
-                >
-                  {s.name}
-                </span>
+                <div className="flex min-w-0 flex-col">
+                  <span className="sr-only">{stateLabel}</span>
+                  <span
+                    className={`text-sm ${state === "future" ? "text-slate-400" : "text-slate-800"} ${
+                      state === "current" ? "font-semibold" : ""
+                    }`}
+                  >
+                    {s.name}
+                  </span>
+                  {state === "current" && (
+                    <span className="mt-0.5 w-fit rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700">
+                      {t("ps.current_stage_label")}
+                    </span>
+                  )}
+                </div>
               </li>
             );
           })}
@@ -108,11 +131,16 @@ export function AssignmentDetailPanel({
   return (
     <section className="rounded-lg border border-slate-200 bg-white">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-1">
           <h2 className="font-semibold text-slate-900">{assignment.title}</h2>
-          <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
-            {assignment.current_stage?.name ?? t("ps.current_stage_none")}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              {t("ps.current_stage_label")}
+            </span>
+            <span className="rounded-full bg-blue-600 px-3 py-1 text-sm font-semibold text-white">
+              {assignment.current_stage?.name ?? t("ps.current_stage_none")}
+            </span>
+          </div>
         </div>
         <button
           type="button"

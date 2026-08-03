@@ -40,6 +40,7 @@ export function NextActionsColumn({
   const forAssignment = assignment ? actions.filter((a) => a.assignment_id === assignment.id) : [];
   const open = forAssignment.filter((a) => !a.completed).sort((a, b) => a.due_on.localeCompare(b.due_on));
   const done = forAssignment.filter((a) => a.completed);
+  const next = open[0] ?? null;
 
   const complete = async (id: string) => {
     await api.post(`/ps/next-actions/${id}/complete`);
@@ -94,6 +95,21 @@ export function NextActionsColumn({
           <p className="truncate px-4 pt-3 text-sm text-slate-500">
             {t("ps.actions_for", { name: assignment.title })}
           </p>
+          {next && (
+            <div className="mx-4 mt-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-700">
+                {t("ps.next_action_label")}
+              </p>
+              <div className="mt-1 flex items-center justify-between gap-2">
+                <span className="min-w-0 truncate text-sm font-medium text-slate-900">{next.title}</span>
+                <span className="shrink-0 text-xs text-slate-500">{next.due_on}</span>
+              </div>
+              <div className="mt-1 flex items-center gap-1.5 text-xs text-slate-600">
+                <Avatar name={ownerName(users, next.owner_user_id)} />
+                <span>{ownerName(users, next.owner_user_id)}</span>
+              </div>
+            </div>
+          )}
           <div className="flex-1 px-2 py-2">
             {isLoading ? (
               <div className="flex flex-col gap-2 p-2">

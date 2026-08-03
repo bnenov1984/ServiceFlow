@@ -156,7 +156,9 @@ describe("PsPage", () => {
     await screen.findByText("Продажба апартамент");
     await clickCard(user, "Продажба апартамент");
 
-    expect(await screen.findByText("Изпрати оферта")).toBeInTheDocument();
+    // Appears twice by design: once in the "Следваща задача" summary, once
+    // in the open-tasks list below it.
+    await waitFor(() => expect(screen.getAllByText("Изпрати оферта").length).toBeGreaterThan(0));
     expect(screen.getByRole("heading", { name: "Продажба апартамент" })).toBeInTheDocument();
     expect(screen.getByText("2026-09-01")).toBeInTheDocument();
   });

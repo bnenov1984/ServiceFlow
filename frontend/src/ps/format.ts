@@ -1,6 +1,6 @@
 /** Shared badge-color + derived-value helpers for the PropertyFlow dashboard. */
 
-import type { PsDeadlineRisk, PsNextAction } from "./types";
+import type { PsDeadlineRisk, PsNextAction, PsStage } from "./types";
 
 export function riskClass(risk: PsNextAction["risk"]): string {
   switch (risk) {
@@ -39,4 +39,30 @@ export function nextActionFor(actions: PsNextAction[], assignmentId: string): Ps
     .filter((a) => a.assignment_id === assignmentId && !a.completed)
     .sort((a, b) => a.due_on.localeCompare(b.due_on));
   return open[0] ?? null;
+}
+
+export type StageState = "completed" | "current" | "future";
+
+/** Completed/current/future from the assignment's own copied stage order
+ * (`sort`) and its single `current_stage.id` — the only stage facts the API
+ * exposes. Stage-transition history (PSAssignmentStageHistory) is recorded
+ * on the backend but has no read endpoint, so "completed" here means
+ * "earlier in the configured sequence than the current stage," not a
+ * verified visit record — free-form transitions (PS-12 §4) can in principle
+ * skip a stage entirely. A display simplification of real data, never
+ * fabricated state. Exactly one stage is ever "current": the one whose id
+ * matches `currentStage.id`, checked before the sort comparison so it can
+ * never also read as "completed" even if some future data anomaly gave two
+ * stages the same sort value.
+ *
+ * TODO(stage-history): "completed" here is a visual sequence approximation,
+ * not proven history — it can be wrong whenever a transition skips a stage
+ * (PS-12 §4 allows jumping to any of the assignment's own stages, not just
+ * the next one in order). Once a read endpoint for PSAssignmentStageHistory
+ * exists, "completed" must be derived from actual recorded transitions for
+ * this assignment, not from `stage.sort < currentStage.sort`. */
+export function stageState(stage: PsStage, currentStage: PsStage | null): StageState {
+  if (currentStage && stage.id === currentStage.id) return "current";
+  if (currentStage && stage.sort < currentStage.sort) return "completed";
+  return "future";
 }
