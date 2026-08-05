@@ -21,6 +21,7 @@ export interface Me {
   active_modules: string[];
   seat_limit: number | null;
   seat_usage: number;
+  has_pin: boolean;
 }
 
 interface AuthState {

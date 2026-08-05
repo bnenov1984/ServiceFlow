@@ -35,10 +35,17 @@ class UserOut(BaseModel):
     email: str
     is_owner: bool
     is_active: bool
+    # Whether a PIN is set — never the hash itself. Lets PIN-switch UI (and
+    # the idle-lock screen) tell "wrong PIN" apart from "no PIN set yet"
+    # without ever exposing pin_hash.
+    has_pin: bool
 
 
 def _user_out(u: User) -> UserOut:
-    return UserOut(id=u.id, name=u.name, email=u.email, is_owner=u.is_owner, is_active=u.is_active)
+    return UserOut(
+        id=u.id, name=u.name, email=u.email, is_owner=u.is_owner, is_active=u.is_active,
+        has_pin=u.pin_hash is not None,
+    )
 
 
 @users_router.get("")
@@ -119,11 +126,18 @@ class MeResponse(BaseModel):
     active_modules: list[str]
     seat_limit: int | None
     seat_usage: int
+    has_pin: bool
 
 
 class PinSwitchRequest(BaseModel):
     user_id: uuid.UUID
     pin: str = Field(min_length=1, max_length=20)
+
+
+class SetPinRequest(BaseModel):
+    # Same bounds as EmployeeIn.pin (an Owner setting one for someone else at
+    # creation time) — one PIN vocabulary, not two.
+    pin: str = Field(min_length=4, max_length=20)
 
 
 def _client_key(request: Request) -> str:
@@ -140,6 +154,7 @@ def _me(db: Session, session: AuthSession, user: User) -> MeResponse:
         active_modules=service.active_modules(db, session.company_id),
         seat_limit=company.seat_limit,
         seat_usage=service.count_active_seats(db, session.company_id),
+        has_pin=user.pin_hash is not None,
     )
 
 
@@ -187,3 +202,22 @@ def pin_switch(body: PinSwitchRequest, auth: AuthDep, db: DbDep) -> MeResponse:
             "code": "pin_failed", "message_key": e.message_key, "params": {},
         }) from e
     return _me(db, session, target)
+
+
+@router.post("/pin", dependencies=[Depends(require_csrf)])
+def set_pin(body: SetPinRequest, auth: AuthDep, db: DbDep) -> MeResponse:
+    """Tenant self-service: set or replace the caller's own PIN. No
+    `user_id` in the request — there is nothing here a caller could point
+    at someone else's account. Never touched by Vendor provisioning
+    (`ProvisionCompanyRequest` has no PIN field, and never will).
+
+    Not gated by `require_subscription_ok`: the whole `/auth/*` surface is
+    identity/session mechanics exempt from the mutation gate (same as
+    `logout`/`pin-switch`, enforced by
+    `test_identity_auth_mechanics_are_never_gated_by_subscription_state`) —
+    a suspended company's owner must still be able to set a PIN and get
+    into the app to see why (ADR-009's "all data visible" even suspended),
+    the same reasoning that already keeps login/logout/pin-switch open."""
+    session, user = auth
+    service.set_own_pin(db, user, body.pin)
+    return _me(db, session, user)

@@ -48,6 +48,28 @@ export const bg = {
   "auth.pin_hint": "Изберете потребител и въведете PIN.",
   "auth.pin_clear": "Изтрий",
   "auth.pin_confirm": "Потвърди",
+  "auth.pin_no_pin_hint": "Няма зададен PIN",
+
+  // --- self-service PIN setup ---
+  "pin.set_form_enter_label": "Нов PIN",
+  "pin.set_form_confirm_label": "Потвърдете PIN",
+  "pin.set_form_mismatch": "PIN кодовете не съвпадат.",
+  "pin.set_form_too_short": "PIN трябва да е поне 4 цифри.",
+  "pin.set_form_confirm_hint": "Въведете същия PIN отново.",
+  "pin.set_form_success": "PIN е зададен.",
+  "pin.locked_no_pin_title": "Нямате зададен PIN",
+  "pin.locked_no_pin_hint": "За бързо превключване е нужен PIN. Задайте го сега или влезте отново с парола.",
+  "pin.locked_set_action": "Задайте PIN",
+  "pin.locked_login_with_password": "Влезте с парола",
+  "pin.switch_no_pin_hint": "Няма зададен PIN",
+  "pin.setup_prompt_title": "Задайте PIN за бързо превключване",
+  "pin.setup_prompt_hint": "С PIN можете бързо да сменяте активния потребител на това устройство, без да въвеждате парола всеки път.",
+  "pin.setup_prompt_dismiss": "По-късно",
+  "pin.my_pin_title": "Моят PIN",
+  "pin.my_pin_set_hint": "Задали сте PIN за бързо превключване на потребител.",
+  "pin.my_pin_not_set_hint": "Нямате зададен PIN за бързо превключване на потребител.",
+  "pin.my_pin_set_action": "Задайте PIN",
+  "pin.my_pin_change_action": "Смени PIN",
 
   // --- search dropdown ---
   "search.customers": "Клиенти",

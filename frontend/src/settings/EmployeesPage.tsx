@@ -11,6 +11,7 @@ import { EmptyState, ErrorState, Skeleton } from "../components/States";
 import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
+import { MyPinCard } from "./MyPinCard";
 
 interface Employee {
   id: string;
@@ -138,6 +139,8 @@ export function EmployeesPage() {
   return (
     <section>
       <h1 className="mb-4 text-xl font-semibold text-slate-900">{t("employees.title")}</h1>
+
+      <MyPinCard />
 
       <p className="mb-4 text-sm text-slate-600">
         {t("employees.seat_usage_label")}: {me.seat_usage}/{me.seat_limit ?? t("employees.seat_limit_unlimited")}

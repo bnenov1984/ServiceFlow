@@ -24,7 +24,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { PinSetupPrompt } from "../auth/PinSetupPrompt";
 import { PinSwitchDialog } from "../auth/PinSwitchDialog";
+import { SetPinForm } from "../auth/SetPinForm";
 import { useAuth } from "../auth/AuthContext";
 import { Avatar } from "../components/Avatar";
 import { PinPad } from "../components/PinPad";
@@ -245,6 +247,7 @@ export function AppShell() {
         onSwitchUser={() => setPinOpen(true)}
       />
       {currentApp?.id === "repairflow" && <RepairFlowToolbar />}
+      <PinSetupPrompt />
 
       {healthProblem && (
         <div role="alert" className="bg-red-600 px-4 py-2 text-sm font-medium text-white">
@@ -353,12 +356,22 @@ export function AppShell() {
 /**
  * Idle lock (ADR-008): inline user list + PIN pad, NO dismissal path other than
  * a correct PIN (identity re-verified via pin-switch — self included) or logout.
+ *
+ * A user with no PIN set (every vendor-provisioned owner, until they use
+ * self-service PIN setup) must never reach the PinPad — pin-switch would
+ * unconditionally reject them, indistinguishable from a wrong PIN. Selecting
+ * yourself with no PIN instead offers to set one on the spot (unlocking
+ * immediately after, same trust boundary pin-switch itself already has — no
+ * password re-entry) or to log out and back in with a password. Any *other*
+ * pin-less user's entry is disabled outright: nothing productive can happen
+ * from this screen for someone else's missing PIN.
  */
-function LockedPanel({ onUnlocked }: { onUnlocked: () => void }) {
+export function LockedPanel({ onUnlocked }: { onUnlocked: () => void }) {
   const { me, logout } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<LockUser | null>(null);
+  const [settingPin, setSettingPin] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -366,6 +379,21 @@ function LockedPanel({ onUnlocked }: { onUnlocked: () => void }) {
     queryKey: queryKeys.users,
     queryFn: () => api.get<LockUser[]>("/users"),
   });
+
+  const selectUser = (u: LockUser) => {
+    setSelected(u);
+    setSettingPin(false);
+    setError(null);
+  };
+
+  const cancelSelection = () => {
+    setSelected(null);
+    setSettingPin(false);
+    setError(null);
+  };
+
+  const loginWithPassword = () =>
+    void logout().catch(() => {}).finally(() => navigate("/login"));
 
   const submitPin = async (pin: string) => {
     if (!selected) return;
@@ -382,25 +410,78 @@ function LockedPanel({ onUnlocked }: { onUnlocked: () => void }) {
     }
   };
 
+  const isSelf = selected && selected.id === me?.user_id;
+
   return (
     <div className="flex flex-col gap-3">
       {!selected ? (
         <ul className="flex flex-col gap-2">
-          {(users ?? []).map((u) => (
-            <li key={u.id}>
+          {(users ?? []).map((u) => {
+            const self = u.id === me?.user_id;
+            const disabled = !u.has_pin && !self;
+            return (
+              <li key={u.id}>
+                <button
+                  type="button"
+                  disabled={disabled}
+                  title={disabled ? t("pin.switch_no_pin_hint") : undefined}
+                  onClick={() => selectUser(u)}
+                  className="flex w-full items-center gap-3 rounded-lg border border-slate-200 px-4 py-3 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent min-h-touch"
+                >
+                  <Avatar name={u.name} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-medium text-slate-800">
+                      {self ? t("shell.you_suffix", { name: u.name }) : u.name}
+                    </span>
+                    {!u.has_pin && (
+                      <span className="block text-xs text-slate-400">
+                        {t("pin.switch_no_pin_hint")}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : isSelf && !selected.has_pin ? (
+        <div className="flex flex-col items-center gap-4">
+          <div className="flex items-center gap-3">
+            <Avatar name={selected.name} />
+            <span className="font-medium">{selected.name}</span>
+          </div>
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-center">
+            <p className="font-medium text-amber-900">{t("pin.locked_no_pin_title")}</p>
+            <p className="mt-1 text-sm text-amber-800">{t("pin.locked_no_pin_hint")}</p>
+          </div>
+          {settingPin ? (
+            <SetPinForm onDone={onUnlocked} onCancel={() => setSettingPin(false)} />
+          ) : (
+            <div className="flex flex-col items-center gap-2">
               <button
                 type="button"
-                onClick={() => setSelected(u)}
-                className="flex w-full items-center gap-3 rounded-lg border border-slate-200 px-4 py-3 text-left hover:bg-slate-50 min-h-touch"
+                onClick={() => setSettingPin(true)}
+                className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 min-h-touch"
               >
-                <Avatar name={u.name} />
-                <span className="font-medium text-slate-800">
-                  {u.id === me?.user_id ? t("shell.you_suffix", { name: u.name }) : u.name}
-                </span>
+                {t("pin.locked_set_action")}
               </button>
-            </li>
-          ))}
-        </ul>
+              <button
+                type="button"
+                onClick={loginWithPassword}
+                className="text-sm font-medium text-blue-700 hover:underline"
+              >
+                {t("pin.locked_login_with_password")}
+              </button>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={cancelSelection}
+            className="text-sm text-slate-500 hover:underline"
+          >
+            {t("common.cancel")}
+          </button>
+        </div>
       ) : (
         <div className="flex flex-col items-center gap-4">
           <div className="flex items-center gap-3">
@@ -415,7 +496,7 @@ function LockedPanel({ onUnlocked }: { onUnlocked: () => void }) {
           )}
           <button
             type="button"
-            onClick={() => setSelected(null)}
+            onClick={cancelSelection}
             className="text-sm text-slate-500 hover:underline"
           >
             {t("common.cancel")}
@@ -424,7 +505,7 @@ function LockedPanel({ onUnlocked }: { onUnlocked: () => void }) {
       )}
       <button
         type="button"
-        onClick={() => void logout().catch(() => {}).finally(() => navigate("/login"))}
+        onClick={loginWithPassword}
         className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium hover:bg-slate-50 min-h-touch"
       >
         {t("shell.logout")}
@@ -438,4 +519,5 @@ interface LockUser {
   name: string;
   is_owner: boolean;
   is_active: boolean;
+  has_pin: boolean;
 }

@@ -182,6 +182,21 @@ def pin_switch(db: Session, session: AuthSession, target_user_id: uuid.UUID,
     return target
 
 
+def set_own_pin(db: Session, user: User, pin: str) -> None:
+    """Tenant self-service: any authenticated user may set or replace their
+    own PIN (docs/business-os PIN self-service task) — the gap
+    `create_employee`'s optional `pin` (an Owner setting one for someone
+    *else* at creation time) never covered. No permission check beyond being
+    authenticated as yourself: changing your own PIN needs no elevated
+    privilege, and there is no `user_id` parameter anywhere in this path —
+    structurally, this can only ever change the caller's own row. Same
+    hashing as every other PIN write (`security.hash_secret`), so a PIN set
+    here verifies through the existing `pin_switch` check unchanged."""
+    user.pin_hash = security.hash_secret(pin)
+    _audit(db, user.company_id, user.id, "pin_set")
+    db.commit()
+
+
 def get_company(db: Session, company_id: uuid.UUID) -> Company | None:
     """Companies are RLS-exempt (ADR-016) — centralizing the lookup here is the
     documented compensating control; callers must not query Company directly."""

@@ -661,7 +661,14 @@ def test_provisioning_write_functions_never_commit() -> None:
 # by exercising all 30+ routes over HTTP — a completeness proof, not a
 # sample.
 
-_IDENTITY_ROUTE_EXEMPTIONS = {"/api/v1/auth/logout", "/api/v1/auth/pin-switch"}
+_IDENTITY_ROUTE_EXEMPTIONS = {
+    "/api/v1/auth/logout", "/api/v1/auth/pin-switch",
+    # Self-service PIN set/replace (docs/business-os PIN self-service task)
+    # — identity/session mechanics, same exemption reasoning as logout and
+    # pin-switch: a suspended company's owner must still be able to set a
+    # PIN and get in to see why.
+    "/api/v1/auth/pin",
+}
 
 
 def test_every_csrf_route_outside_identity_also_requires_subscription_ok() -> None:

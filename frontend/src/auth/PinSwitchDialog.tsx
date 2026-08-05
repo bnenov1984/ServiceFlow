@@ -19,6 +19,7 @@ interface UserItem {
   name: string;
   is_owner: boolean;
   is_active: boolean;
+  has_pin: boolean;
 }
 
 export function PinSwitchDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -60,11 +61,18 @@ export function PinSwitchDialog({ open, onClose }: { open: boolean; onClose: () 
               <li key={u.id}>
                 <button
                   type="button"
+                  disabled={!u.has_pin}
+                  title={u.has_pin ? undefined : t("pin.switch_no_pin_hint")}
                   onClick={() => setSelected(u)}
-                  className="flex w-full items-center gap-3 rounded-lg border border-slate-200 px-4 py-3 text-left hover:bg-slate-50 min-h-touch"
+                  className="flex w-full items-center gap-3 rounded-lg border border-slate-200 px-4 py-3 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent min-h-touch"
                 >
                   <Avatar name={u.name} />
-                  <span className="font-medium text-slate-800">{u.name}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-medium text-slate-800">{u.name}</span>
+                    {!u.has_pin && (
+                      <span className="block text-xs text-slate-400">{t("pin.switch_no_pin_hint")}</span>
+                    )}
+                  </span>
                 </button>
               </li>
             ))}
