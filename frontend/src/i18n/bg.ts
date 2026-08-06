@@ -542,6 +542,7 @@ export const bg = {
   "vendor.subscription_state_cancelled": "Прекратен",
   "errors.subscription.invalid_state": "Невалиден статус на абонамента.",
   "errors.subscription.reason_required": "Причината е задължителна.",
+  "errors.subscription.mutations_blocked": "Промени не са позволени — абонаментът на компанията не е активен.",
   "vendor.seat_limit_edit_action": "Промени",
   "vendor.field_seat_limit_new": "Нов лимит на местата",
   "vendor.seat_limit_unlimited_checkbox": "Неограничено",

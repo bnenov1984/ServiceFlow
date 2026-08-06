@@ -24,4 +24,14 @@ describe("t()", () => {
   it("keeps unmatched placeholders visible instead of dropping them", () => {
     expect(t("search.empty", {})).toContain("{q}");
   });
+
+  // Regression test: the backend returns this message_key with a 402 when a
+  // suspended/cancelled company attempts a mutation, but the catalog didn't
+  // have an entry for it - t() silently fell back to the generic error text
+  // instead of telling the tenant their subscription is the reason.
+  it("has a real message for errors.subscription.mutations_blocked, not the generic fallback", () => {
+    const result = t("errors.subscription.mutations_blocked");
+    expect(result).not.toBe(bg["errors.internal"]);
+    expect(result).toBe(bg["errors.subscription.mutations_blocked"]);
+  });
 });
