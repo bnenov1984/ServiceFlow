@@ -65,4 +65,63 @@ describe("PinPad", () => {
     fireEvent.click(screen.getByRole("button", { name: "Потвърди" }));
     expect(onSubmit).toHaveBeenCalledWith("12345678");
   });
+
+  // Regression test for the follow-up bug found during review of the digit
+  // -loss fix: confirm's onClick read `pin` correctly, but nothing stopped
+  // it running twice - two confirm clicks landing in the same batch (same
+  // mechanism as the digit-loss bug: no re-render happens between them)
+  // both saw the button as not-yet-disabled and both called onSubmit. A
+  // useState-backed guard would have the identical stale-closure problem;
+  // only a ref mutation is visible to the second call within the same batch.
+  it("invokes onSubmit only once when confirm is activated twice in the same batch", () => {
+    const onSubmit = vi.fn();
+    render(<PinPad onSubmit={onSubmit} />);
+
+    act(() => {
+      for (const digit of ["1", "2", "3", "4"]) {
+        fireEvent.click(screen.getByRole("button", { name: digit }));
+      }
+    });
+
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Потвърди" }));
+      fireEvent.click(screen.getByRole("button", { name: "Потвърди" }));
+    });
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit).toHaveBeenCalledWith("1234");
+  });
+
+  it("disables digits, clear, and confirm while the disabled prop is set", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const { rerender } = render(<PinPad onSubmit={onSubmit} />);
+
+    await user.click(screen.getByRole("button", { name: "1" }));
+    rerender(<PinPad onSubmit={onSubmit} disabled />);
+
+    expect(screen.getByRole("button", { name: "2" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Изтрий" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Потвърди" })).toBeDisabled();
+  });
+
+  it("the confirm guard resets on the next entry, so a real retry after submitting still works", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(<PinPad onSubmit={onSubmit} />);
+
+    for (const digit of ["1", "2", "3", "4"]) {
+      await user.click(screen.getByRole("button", { name: digit }));
+    }
+    await user.click(screen.getByRole("button", { name: "Потвърди" }));
+
+    for (const digit of ["5", "6", "7", "8"]) {
+      await user.click(screen.getByRole("button", { name: digit }));
+    }
+    await user.click(screen.getByRole("button", { name: "Потвърди" }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(2);
+    expect(onSubmit).toHaveBeenNthCalledWith(1, "1234");
+    expect(onSubmit).toHaveBeenNthCalledWith(2, "5678");
+  });
 });

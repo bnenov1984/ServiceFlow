@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../lib/api";
@@ -74,6 +74,30 @@ describe("SetPinForm", () => {
 
     expect(await screen.findByText("Възникна неочаквана грешка. Опитайте отново.")).toBeInTheDocument();
     expect(screen.getByText("Нов PIN")).toBeInTheDocument();
+  });
+
+  // Regression test for the PinPad confirm re-entrancy guard: two confirm
+  // clicks landing in the same React batch (no re-render between them, same
+  // mechanism the digit-loss bug had) used to both fire handleConfirm,
+  // doubling the POST /auth/pin call.
+  it("does not send a duplicate POST /auth/pin when confirm is activated twice in the same batch", async () => {
+    mockPost.mockResolvedValue({ has_pin: true });
+    render(<SetPinForm onDone={() => {}} />);
+    const user = userEvent.setup();
+
+    await enterPin(user, "1234");
+    expect(await screen.findByText("Потвърдете PIN")).toBeInTheDocument();
+
+    for (const d of "1234") {
+      await user.click(screen.getByRole("button", { name: d }));
+    }
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Потвърди" }));
+      fireEvent.click(screen.getByRole("button", { name: "Потвърди" }));
+    });
+
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+    expect(mockPost).toHaveBeenCalledWith("/auth/pin", { pin: "1234" });
   });
 
   it("calls onCancel when provided and clicked", async () => {
