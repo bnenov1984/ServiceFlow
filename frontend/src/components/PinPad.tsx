@@ -12,8 +12,14 @@ export function PinPad({
 }) {
   const [pin, setPin] = useState("");
 
+  // Functional updater, not `setPin(pin + digit)`: two clicks dispatched
+  // close together (rapid real touch-typing, or scripted rapid clicks) each
+  // read `pin` from their own render's closure before React commits the
+  // first update, so a plain closure read silently drops digits under
+  // React 18's automatic batching. The updater form always sees the latest
+  // pending state regardless of how many presses land in the same batch.
   const press = (digit: string) => {
-    if (pin.length < 8) setPin(pin + digit);
+    setPin((prev) => (prev.length < 8 ? prev + digit : prev));
   };
 
   return (
