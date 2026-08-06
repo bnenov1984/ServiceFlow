@@ -9,6 +9,7 @@ export function ConfirmDialog({
   open,
   title,
   message,
+  error,
   onClose,
   onConfirm,
   submitting,
@@ -16,6 +17,12 @@ export function ConfirmDialog({
   open: boolean;
   title: string;
   message: string;
+  /** Rendered inside this dialog's own top-layer content, not the caller's
+   * page body: a native <dialog> shown via showModal() sits above the rest
+   * of the page, so an error rendered outside it is invisible while the
+   * dialog stays open on failure (confirmed bug - the error existed in the
+   * DOM, just behind the modal). */
+  error?: string | null;
   onClose: () => void;
   onConfirm: () => void;
   submitting: boolean;
@@ -24,6 +31,9 @@ export function ConfirmDialog({
     <Dialog open={open} onClose={onClose} title={title}>
       <div className="flex flex-col gap-4">
         <p className="text-sm text-slate-600">{message}</p>
+        {error && (
+          <p role="alert" className="text-sm text-red-700">{error}</p>
+        )}
         <div className="flex gap-2">
           <button
             type="button"

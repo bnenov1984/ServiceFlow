@@ -339,6 +339,104 @@ describe("EmployeesPage", () => {
     expect(await screen.findByText("Компанията трябва да има поне един активен собственик.")).toBeInTheDocument();
   });
 
+  // Regression tests for the confirmed bug: the error was set in state and
+  // rendered, but as a sibling in the page body - a native <dialog> shown
+  // via showModal() sits in the browser's top layer, above the rest of the
+  // page, so that error was invisible while the dialog stayed open. jsdom
+  // doesn't enforce that visual stacking (it'll happily report page-body
+  // text as "in the document" either way), so these assert DOM *nesting* -
+  // the error must be `within` the dialog itself, not just present anywhere.
+  it("keeps the deactivate dialog open and shows the error inside it on failure", async () => {
+    mockGet.mockResolvedValue(EMPLOYEES);
+    mockPatch.mockRejectedValue(new ApiError(500, "unknown", "errors.internal"));
+    renderPage();
+    const user = userEvent.setup();
+
+    const ivanRow = (await screen.findByText("Иван")).closest("li");
+    if (!ivanRow) throw new Error("Ivan's row not found");
+    await user.click(within(ivanRow).getByRole("button", { name: "Деактивирай" }));
+    const dialog = dialogByTitle("Деактивиране на служител");
+    await user.click(within(dialog).getByRole("button", { name: "Потвърди" }));
+
+    expect(await within(dialog).findByText("Възникна неочаквана грешка. Опитайте отново."))
+      .toBeInTheDocument();
+    expect(dialog).toHaveAttribute("open");
+    expect(mockPatch).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows retrying a failed deactivate without closing the dialog first", async () => {
+    mockGet.mockResolvedValue(EMPLOYEES);
+    mockPatch
+      .mockRejectedValueOnce(new ApiError(500, "unknown", "errors.internal"))
+      .mockResolvedValueOnce({ ...EMPLOYEES[1], is_active: false });
+    renderPage();
+    const user = userEvent.setup();
+
+    const ivanRow = (await screen.findByText("Иван")).closest("li");
+    if (!ivanRow) throw new Error("Ivan's row not found");
+    await user.click(within(ivanRow).getByRole("button", { name: "Деактивирай" }));
+    const dialog = dialogByTitle("Деактивиране на служител");
+    await user.click(within(dialog).getByRole("button", { name: "Потвърди" }));
+    await within(dialog).findByText("Възникна неочаквана грешка. Опитайте отново.");
+
+    await user.click(within(dialog).getByRole("button", { name: "Потвърди" }));
+
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledTimes(2));
+    expect(mockPatch).toHaveBeenNthCalledWith(2, "/users/u2", { is_active: false });
+  });
+
+  it("cancelling after a failed deactivate does not leak the error into the next dialog opened", async () => {
+    mockGet.mockResolvedValue(EMPLOYEES);
+    mockPatch.mockRejectedValue(new ApiError(500, "unknown", "errors.internal"));
+    renderPage();
+    const user = userEvent.setup();
+
+    const ivanRow = (await screen.findByText("Иван")).closest("li");
+    if (!ivanRow) throw new Error("Ivan's row not found");
+    await user.click(within(ivanRow).getByRole("button", { name: "Деактивирай" }));
+    const deactivateDialog = dialogByTitle("Деактивиране на служител");
+    await user.click(within(deactivateDialog).getByRole("button", { name: "Потвърди" }));
+    await within(deactivateDialog).findByText("Възникна неочаквана грешка. Опитайте отново.");
+    await user.click(within(deactivateDialog).getByRole("button", { name: "Отказ" }));
+
+    const mariaRow = (await screen.findByText("Мария")).closest("li");
+    if (!mariaRow) throw new Error("Maria's row not found");
+    await user.click(within(mariaRow).getByRole("button", { name: "Направи служител" }));
+    const demoteDialog = dialogByTitle("Промяна на роля");
+
+    expect(within(demoteDialog).queryByText("Възникна неочаквана грешка. Опитайте отново."))
+      .not.toBeInTheDocument();
+  });
+
+  it("keeps the demote dialog open and shows the error inside it on failure", async () => {
+    mockGet.mockResolvedValue(EMPLOYEES);
+    mockPatch.mockRejectedValue(new ApiError(500, "unknown", "errors.internal"));
+    renderPage();
+    const user = userEvent.setup();
+
+    const mariaRow = (await screen.findByText("Мария")).closest("li");
+    if (!mariaRow) throw new Error("Maria's row not found");
+    await user.click(within(mariaRow).getByRole("button", { name: "Направи служител" }));
+    const dialog = dialogByTitle("Промяна на роля");
+    await user.click(within(dialog).getByRole("button", { name: "Потвърди" }));
+
+    expect(await within(dialog).findByText("Възникна неочаквана грешка. Опитайте отново."))
+      .toBeInTheDocument();
+    expect(dialog).toHaveAttribute("open");
+  });
+
+  it("still shows a page-level error for reactivate (no confirm dialog) on failure", async () => {
+    mockGet.mockResolvedValue(EMPLOYEES);
+    mockPatch.mockRejectedValue(new ApiError(500, "unknown", "errors.internal"));
+    renderPage();
+    const user = userEvent.setup();
+
+    await screen.findByText("Стефан");
+    await user.click(screen.getByRole("button", { name: "Активирай" }));
+
+    expect(await screen.findByText("Възникна неочаквана грешка. Опитайте отново.")).toBeInTheDocument();
+  });
+
   it("prevents a duplicate promote request from a rapid double-click", async () => {
     mockGet.mockResolvedValue(EMPLOYEES);
     let resolvePatch: (v: unknown) => void = () => {};

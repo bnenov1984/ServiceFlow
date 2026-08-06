@@ -306,13 +306,24 @@ export function EmployeesPage() {
         <EmptyState text={t("employees.empty")} />
       )}
 
-      {patchError && <p role="alert" className="mt-2 text-sm text-red-700">{patchError}</p>}
+      {/* Promote/reactivate have no confirm step (unconfirmed-additive, by
+          design), so a failure there has no dialog to show it in - this
+          stays visible for those paths. Deactivate/demote failures show
+          inside their own ConfirmDialog instead (see the `error` prop
+          below) and are suppressed here to avoid a duplicate. */}
+      {patchError && confirmDeactivateId === null && confirmDemoteId === null && (
+        <p role="alert" className="mt-2 text-sm text-red-700">{patchError}</p>
+      )}
 
       <ConfirmDialog
         open={confirmDeactivateId !== null}
         title={t("employees.deactivate_confirm_title")}
         message={t("employees.deactivate_confirm_message")}
-        onClose={() => setConfirmDeactivateId(null)}
+        error={confirmDeactivateId !== null ? patchError : null}
+        onClose={() => {
+          setConfirmDeactivateId(null);
+          setPatchError(null);
+        }}
         onConfirm={() => {
           if (confirmDeactivateId) void setActive(confirmDeactivateId, false);
         }}
@@ -323,7 +334,11 @@ export function EmployeesPage() {
         open={confirmDemoteId !== null}
         title={t("employees.demote_confirm_title")}
         message={t("employees.demote_confirm_message")}
-        onClose={() => setConfirmDemoteId(null)}
+        error={confirmDemoteId !== null ? patchError : null}
+        onClose={() => {
+          setConfirmDemoteId(null);
+          setPatchError(null);
+        }}
         onConfirm={() => {
           if (confirmDemoteId) void setRole(confirmDemoteId, false);
         }}
