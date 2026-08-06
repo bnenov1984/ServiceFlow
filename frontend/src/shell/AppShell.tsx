@@ -27,12 +27,12 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-do
 import { PinSetupPrompt } from "../auth/PinSetupPrompt";
 import { PinSwitchDialog } from "../auth/PinSwitchDialog";
 import { SetPinForm } from "../auth/SetPinForm";
-import { useAuth } from "../auth/AuthContext";
+import { useAuth, type Me } from "../auth/AuthContext";
 import { Avatar } from "../components/Avatar";
 import { Dialog } from "../components/Dialog";
 import { PinPad } from "../components/PinPad";
 import { t, type MessageKey } from "../i18n/bg";
-import { ApiError, api } from "../lib/api";
+import { ApiError, api, setCsrfToken } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
 import { SearchBox } from "./SearchBox";
 
@@ -505,8 +505,14 @@ export function LockedPanel({ onUnlocked }: { onUnlocked: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      await api.post("/auth/pin-switch", { user_id: selected.id, pin });
-      queryClient.clear();
+      const switchedMe = await api.post<Me>("/auth/pin-switch", { user_id: selected.id, pin });
+      // Seed "me" directly and never tear it down - see PinSwitchDialog.tsx
+      // for the full rationale (queryClient.clear() here previously left
+      // the header showing the pre-switch user until an unrelated
+      // navigation/remount forced a fresh /auth/me fetch).
+      setCsrfToken(switchedMe.csrf_token);
+      queryClient.setQueryData(queryKeys.me, switchedMe);
+      queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== "me" });
       onUnlocked();
     } catch (err) {
       setError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));

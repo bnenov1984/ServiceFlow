@@ -1,13 +1,20 @@
 /**
  * PIN switch (ADR-008, docs/15 §6.6): pick a user, enter PIN, swap the acting
- * identity. On success the entire query cache is cleared — a rare, deliberate
- * full reset so nothing from the previous actor lingers (docs/15 §5.3).
+ * identity. On success every *other* cached query is wiped — a rare,
+ * deliberate full reset so nothing from the previous actor lingers
+ * (docs/15 §5.3) — but "me" itself is seeded directly from the response,
+ * never torn down, matching LoginPage.tsx's already-established pattern:
+ * `queryClient.clear()`/`removeQueries` on "me" destroys the query object
+ * AuthProvider's own `useQuery` observer is subscribed to, and that observer
+ * does not reliably pick up a query recreated from scratch afterward -
+ * confirmed by this exact bug (the header kept the previous user's name
+ * until an unrelated navigation/remount forced a fresh fetch).
  */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { t } from "../i18n/bg";
-import { ApiError, api } from "../lib/api";
+import { ApiError, api, setCsrfToken } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
 import { Avatar } from "../components/Avatar";
 import { Dialog } from "../components/Dialog";
@@ -56,8 +63,14 @@ export function PinSwitchDialog({ open, onClose }: { open: boolean; onClose: () 
     setBusy(true);
     setError(null);
     try {
-      await api.post<Me>("/auth/pin-switch", { user_id: selected.id, pin });
-      queryClient.clear();
+      const switchedMe = await api.post<Me>("/auth/pin-switch", { user_id: selected.id, pin });
+      // Synchronous, not a reliance on AuthContext's own useEffect picking
+      // up the new csrf_token off the query cache - see LoginPage.tsx for
+      // the same ordering and why it matters (a request fired before that
+      // effect runs would otherwise carry the previous user's token).
+      setCsrfToken(switchedMe.csrf_token);
+      queryClient.setQueryData(queryKeys.me, switchedMe);
+      queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== "me" });
       handleClose();
     } catch (err) {
       setError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
