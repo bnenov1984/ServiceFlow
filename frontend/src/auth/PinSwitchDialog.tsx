@@ -35,6 +35,22 @@ export function PinSwitchDialog({ open, onClose }: { open: boolean; onClose: () 
     enabled: open,
   });
 
+  // Dialog never unmounts its children just because `open` becomes false
+  // (see Dialog.tsx) — only `selected` going back to null actually tears
+  // down the selected-user branch (and with it, the mounted PinPad holding
+  // whatever partial PIN was typed). Routing every close path (X, Escape,
+  // successful submit) through this one function is what makes a reopened
+  // dialog start clean, instead of only resetting on success like before.
+  // `busy` is deliberately left alone here: if a request is still in
+  // flight when the dialog closes, leaving `busy` true keeps confirm
+  // guarded on reopen until that request resolves, rather than allowing a
+  // second, overlapping /auth/pin-switch call.
+  const handleClose = () => {
+    setSelected(null);
+    setError(null);
+    onClose();
+  };
+
   const submitPin = async (pin: string) => {
     if (!selected) return;
     setBusy(true);
@@ -42,8 +58,7 @@ export function PinSwitchDialog({ open, onClose }: { open: boolean; onClose: () 
     try {
       await api.post<Me>("/auth/pin-switch", { user_id: selected.id, pin });
       queryClient.clear();
-      onClose();
-      setSelected(null);
+      handleClose();
     } catch (err) {
       setError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
     } finally {
@@ -52,7 +67,7 @@ export function PinSwitchDialog({ open, onClose }: { open: boolean; onClose: () 
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title={t("auth.pin_title")}>
+    <Dialog open={open} onClose={handleClose} title={t("auth.pin_title")}>
       {!selected ? (
         <ul className="flex flex-col gap-2">
           {(users ?? [])
