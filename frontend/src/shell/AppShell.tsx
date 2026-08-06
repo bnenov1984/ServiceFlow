@@ -29,6 +29,7 @@ import { PinSwitchDialog } from "../auth/PinSwitchDialog";
 import { SetPinForm } from "../auth/SetPinForm";
 import { useAuth } from "../auth/AuthContext";
 import { Avatar } from "../components/Avatar";
+import { Dialog } from "../components/Dialog";
 import { PinPad } from "../components/PinPad";
 import { t, type MessageKey } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
@@ -132,28 +133,110 @@ function AppSwitcher({ apps, current }: { apps: AppDef[]; current: AppDef | unde
   );
 }
 
+/** Header account control: avatar + name trigger opens a small actions menu
+ * (self-service PIN, switch user, manual lock, logout). Previously this
+ * button only opened PinSwitchDialog directly - the other actions had no
+ * header-level entry point before this task (self-service PIN lived only
+ * in Settings' "Моят PIN" card, and there was no way to lock the screen
+ * on demand, only via the 5-minute idle timeout). Same bespoke
+ * open/absolute-list idiom as AppSwitcher, just role="menu"/"menuitem"
+ * (actions, not a navigation choice). */
+function AccountMenu({
+  onOpenPinForm, onSwitchUser, onLock,
+}: { onOpenPinForm: () => void; onSwitchUser: () => void; onLock: () => void }) {
+  const { me, logout } = useAuth();
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+
+  if (!me) return null;
+
+  const act = (fn: () => void) => {
+    setOpen(false);
+    fn();
+  };
+
+  return (
+    <div className="relative ml-auto">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={t("shell.account_menu_label")}
+        className="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-slate-100 min-h-touch"
+      >
+        <Avatar name={me.name} />
+        <span className="hidden text-sm font-medium text-slate-700 md:inline">{me.name}</span>
+      </button>
+      {open && (
+        <ul
+          role="menu"
+          className="absolute right-0 top-full z-40 mt-1 w-56 rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+        >
+          <li role="none">
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => act(onOpenPinForm)}
+              className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 min-h-touch"
+            >
+              {me.has_pin ? t("pin.my_pin_change_action") : t("pin.my_pin_set_action")}
+            </button>
+          </li>
+          <li role="none">
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => act(onSwitchUser)}
+              className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 min-h-touch"
+            >
+              {t("shell.switch_user")}
+            </button>
+          </li>
+          <li role="none">
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => act(onLock)}
+              className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 min-h-touch"
+            >
+              {t("shell.lock_screen_action")}
+            </button>
+          </li>
+          <li role="none">
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => act(() => void logout().catch(() => {}).finally(() => navigate("/login")))}
+              className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 min-h-touch"
+            >
+              {t("shell.logout")}
+            </button>
+          </li>
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /** Platform-level top bar only: brand, app switcher, account menu. Never
  * RepairFlow (or any other app)-specific - see RepairFlowToolbar for that. */
 function GlobalHeader({
-  activeApps, currentApp, onSwitchUser,
-}: { activeApps: AppDef[]; currentApp: AppDef | undefined; onSwitchUser: () => void }) {
-  const { me } = useAuth();
-
+  activeApps, currentApp, onOpenPinForm, onSwitchUser, onLock,
+}: {
+  activeApps: AppDef[];
+  currentApp: AppDef | undefined;
+  onOpenPinForm: () => void;
+  onSwitchUser: () => void;
+  onLock: () => void;
+}) {
   return (
     <header className="flex items-center gap-4 border-b border-slate-200 bg-white px-4 py-2">
       <Link to="/" className="text-lg font-bold text-slate-900">
         {t("app.name")}
       </Link>
       <AppSwitcher apps={activeApps} current={currentApp} />
-      <button
-        type="button"
-        onClick={onSwitchUser}
-        title={t("shell.switch_user")}
-        className="ml-auto flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-slate-100 min-h-touch"
-      >
-        <Avatar name={me?.name ?? "?"} />
-        <span className="hidden text-sm font-medium text-slate-700 md:inline">{me?.name}</span>
-      </button>
+      <AccountMenu onOpenPinForm={onOpenPinForm} onSwitchUser={onSwitchUser} onLock={onLock} />
     </header>
   );
 }
@@ -181,7 +264,7 @@ function RepairFlowToolbar() {
   );
 }
 
-function useIdleLock(): [boolean, () => void] {
+function useIdleLock(): [boolean, () => void, () => void] {
   const [locked, setLocked] = useState(false);
 
   useEffect(() => {
@@ -198,15 +281,19 @@ function useIdleLock(): [boolean, () => void] {
     };
   }, []);
 
-  return [locked, () => setLocked(false)];
+  // Manual lock ("Заключи екрана" in the account menu) reuses the same
+  // `locked` state and LockedPanel/onUnlocked flow the idle timeout drives -
+  // no second lock UI, just a different trigger for the same overlay.
+  return [locked, () => setLocked(false), () => setLocked(true)];
 }
 
 export function AppShell() {
   const { me, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [pinOpen, setPinOpen] = useState(false);
-  const [locked, unlock] = useIdleLock();
+  const [pinSwitchOpen, setPinSwitchOpen] = useState(false);
+  const [pinFormOpen, setPinFormOpen] = useState(false);
+  const [locked, unlock, lock] = useIdleLock();
 
   const activeApps = APPS.filter(
     (a) => a.moduleKey === null || me?.active_modules.includes(a.moduleKey),
@@ -244,7 +331,9 @@ export function AppShell() {
       <GlobalHeader
         activeApps={activeApps}
         currentApp={currentApp}
-        onSwitchUser={() => setPinOpen(true)}
+        onOpenPinForm={() => setPinFormOpen(true)}
+        onSwitchUser={() => setPinSwitchOpen(true)}
+        onLock={lock}
       />
       {currentApp?.id === "repairflow" && <RepairFlowToolbar />}
       <PinSetupPrompt />
@@ -338,7 +427,23 @@ export function AppShell() {
         </nav>
       )}
 
-      <PinSwitchDialog open={pinOpen} onClose={() => setPinOpen(false)} />
+      <PinSwitchDialog open={pinSwitchOpen} onClose={() => setPinSwitchOpen(false)} />
+
+      {/* Mounted only while open, unlike PinSwitchDialog's always-mounted-but-
+          toggled pattern - SetPinForm renders a PinPad immediately (no
+          "pick a user first" gating step), so leaving it permanently mounted
+          would put a second, merely CSS-hidden set of digit buttons in the
+          DOM at all times, colliding with LockedPanel's own PinPad whenever
+          the screen is locked. */}
+      {pinFormOpen && (
+        <Dialog
+          open
+          onClose={() => setPinFormOpen(false)}
+          title={me?.has_pin ? t("pin.my_pin_change_action") : t("pin.my_pin_set_action")}
+        >
+          <SetPinForm onDone={() => setPinFormOpen(false)} onCancel={() => setPinFormOpen(false)} />
+        </Dialog>
+      )}
 
       {locked && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-slate-900/80 p-4">

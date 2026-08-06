@@ -98,6 +98,16 @@ describe("EmployeesPage", () => {
     expect(mockGet).toHaveBeenCalledWith("/users?include_inactive=true");
   });
 
+  it("no longer shows a 'Моят PIN' card - self-service PIN moved to the header account menu", async () => {
+    mockGet.mockResolvedValue(EMPLOYEES);
+    renderPage();
+
+    expect(await screen.findByText("Иван")).toBeInTheDocument();
+    expect(screen.queryByText("Моят PIN")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Задайте PIN" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Смени PIN" })).not.toBeInTheDocument();
+  });
+
   it("shows an empty state when there are no employees", async () => {
     mockGet.mockResolvedValue([]);
     renderPage();

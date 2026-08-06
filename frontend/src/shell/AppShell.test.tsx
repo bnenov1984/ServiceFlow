@@ -153,7 +153,7 @@ describe("Business OS shell: global header vs RepairFlow toolbar (26.07.2026)", 
 
   it("8: the account menu stays available globally regardless of the current app", () => {
     renderShell("/ps", ["repairflow", "professional-services"]);
-    expect(screen.getByTitle("Смяна на потребител")).toBeInTheDocument();
+    expect(screen.getByTitle("Профил")).toBeInTheDocument();
     expect(screen.getByText("Мария")).toBeInTheDocument();
   });
 

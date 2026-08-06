@@ -23,6 +23,8 @@ export const bg = {
   "shell.search_placeholder": "Търсене: клиент, апарат, модел, сериен №…",
   "shell.logout": "Изход",
   "shell.switch_user": "Смяна на потребител",
+  "shell.account_menu_label": "Профил",
+  "shell.lock_screen_action": "Заключи екрана",
   "shell.locked_title": "Екранът е заключен",
   "shell.locked_hint": "Изберете потребител и въведете PIN, за да продължите.",
   "shell.building": "Този екран се изгражда.",
@@ -65,9 +67,6 @@ export const bg = {
   "pin.setup_prompt_title": "Задайте PIN за бързо превключване",
   "pin.setup_prompt_hint": "С PIN можете бързо да сменяте активния потребител на това устройство, без да въвеждате парола всеки път.",
   "pin.setup_prompt_dismiss": "По-късно",
-  "pin.my_pin_title": "Моят PIN",
-  "pin.my_pin_set_hint": "Задали сте PIN за бързо превключване на потребител.",
-  "pin.my_pin_not_set_hint": "Нямате зададен PIN за бързо превключване на потребител.",
   "pin.my_pin_set_action": "Задайте PIN",
   "pin.my_pin_change_action": "Смени PIN",
 
