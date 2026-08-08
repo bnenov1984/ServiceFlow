@@ -1,5 +1,10 @@
 /** Shared shapes for the customers screens (docs/15 §6.7). */
 
+export interface CustomerCompanyRequisites {
+  address: string | null;
+  eik: string | null;
+}
+
 export interface CustomerListItem {
   id: string;
   name: string;
@@ -17,6 +22,8 @@ export interface CustomerDetail {
   phone: string;
   phone2: string | null;
   email: string | null;
+  is_company: boolean;
+  company_requisites: CustomerCompanyRequisites | null;
   archived: boolean;
   anonymized: boolean;
 }

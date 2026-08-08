@@ -226,14 +226,15 @@ def list_companies(db: Session, status: str = "active") -> list[Company]:
 # `companies.requisites` is schemaless JSONB and `companies.vat_registered`
 # has no write path anywhere in the app today (audited: neither is ever set
 # outside this module). The full legal field set an issued invoice will
-# need (ЕИК, ДДС №, МОЛ, IBAN...) is an explicitly open accountant question
-# (R1) — inventing it here would be exactly what that document exists to
-# prevent. `address` and `phone` are the only two requisites keys any code
-# in the repo actually consumes today (the intake protocol PDF,
-# `service_orders/router.py`'s `requisites.get("address"/"phone")`), so
-# they are the only ones this V1 slice exposes. Extending the set later is
-# additive (new allow-listed keys), not a schema change.
-COMPANY_REQUISITE_KEYS = ("address", "phone")
+# need is bounded by docs/ACCOUNTANT_REVIEW.md §3: name/address/ЕИК are
+# LAW-CONFIRMED required (R1), the VAT number is derivable as "BG" + ЕИК
+# once `vat_registered` is known (R2, no separate stored field needed), and
+# МОЛ (R3) / IBAN (R4) are LAW-CONFIRMED not required — inventing beyond
+# that list here would be exactly what that document exists to prevent.
+# `address`, `phone`, and `eik` are therefore the only requisites keys this
+# V1 slice exposes. Extending the set later is additive (new allow-listed
+# keys), not a schema change.
+COMPANY_REQUISITE_KEYS = ("address", "phone", "eik")
 
 
 def update_company_requisites(

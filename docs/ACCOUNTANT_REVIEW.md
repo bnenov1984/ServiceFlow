@@ -221,13 +221,15 @@ same ЕИК, only when `vat_registered` is true.**
 - `Company.requisites.address` — **already collectible** (Company Legal
   Requisites slice).
 - Legal name — **already available** (`Company.name`, always set, no gap).
-- ЕИК/БУЛСТАТ — **not yet collectible.** Not in the current allow-list
-  (`COMPANY_REQUISITE_KEYS = ("address", "phone")` in `identity/service.py`).
-  **Needs a new write/UI surface.**
-- VAT number — **not yet collectible as a distinct field**, though it is
-  fully derivable from ЕИК once ЕИК is collected and `vat_registered` is
-  known (both already true or about-to-be-true) — likely does not need its
-  own stored field at all, just a `"BG" + eik` formatter, once ЕИК exists.
+- ЕИК/БУЛСТАТ — **collectible** (seller/buyer legal-requisites prerequisite
+  slice). In the allow-list (`COMPANY_REQUISITE_KEYS = ("address", "phone",
+  "eik")` in `identity/service.py`), with a Settings → Фирма field and a
+  conservative structural validator (digits, 9 or 13 characters — see
+  `shared_kernel/normalize.is_valid_eik`).
+- VAT number — **not a distinct stored field**, and by design: it is fully
+  derivable from ЕИК once ЕИК is collected and `vat_registered` is known
+  (both now real fields) — just a `"BG" + eik` formatter, no independent
+  storage needed.
 
 **R3 (МОЛ) — LAW-CONFIRMED: not required.** МОЛ (materially responsible
 person) does not appear among ЗДДС чл. 114's enumerated mandatory elements
@@ -257,12 +259,38 @@ regime change is a live example of the law moving under this exact article).
 When the recipient is itself a taxable person (a business), ЗДДС чл. 114
 requires the same category of identifiers on the buyer side: name, address,
 and identification number (ЕИК, plus VAT number when the buyer is itself
-VAT-registered). **Schema/UI gap is larger than the seller side**:
-`Customer.company_requisites` (JSONB) and `Customer.is_company` exist at the
-model/API level — `POST`/`PATCH /customers` already accept both — but **no
-frontend screen sets either field today**. There is currently no way,
-through the product, for an Owner to flag a customer as a company or record
-their ЕИК/VAT number.
+VAT-registered). **Schema/UI gap closed for name/address/ЕИК (seller/buyer
+legal-requisites prerequisite slice):** `Customer.company_requisites` is now
+a typed, allow-listed `CustomerCompanyRequisites` schema (`address`, `eik`;
+`extra="forbid"`, `customers/router.py`) — replacing the previous fully-
+unconstrained `dict[str, Any]` — and `Customer.is_company` is settable from
+the intake create flow and editable in place from the customer profile
+page's "Данни за фактуриране" section.
+
+**Buyer VAT-number handling — OPEN, deferred to a future Issue-slice, not
+frozen by this document.** Unlike R2 on the seller side (§3, explicitly
+LAW-CONFIRMED and grounded in ЗДДС чл. 94, ал. 2 for the *reporting entity's
+own* VAT-registration derivation), this document has never stated a
+buyer-side equivalent. The `{address, eik}` contract intentionally omits a
+stored buyer VAT-number field for this prerequisite slice — that scoping
+choice was made by the implementer on the assumption that the same
+"BG" + ЕИК derivation formula that's law-confirmed for a VAT-registered
+entity's own number would extend to a VAT-registered buyer too, since it's
+the same underlying legal fact about how BG VAT numbers are assigned,
+independent of transaction role. That assumption itself has **not** been
+accountant-confirmed here, and — more concretely blocking than the
+derivation-formula question — there is still **no `Customer`-side
+VAT-registration signal at all** (no `vat_registered`-equivalent field), so
+the product has no way today to know *whether* a given company customer is
+VAT-registered in the first place. **Consequence: `Invoice.buyer` snapshots
+are not yet complete for a VAT-registered B2B recipient** — `{address, eik}`
+is sufficient only for the currently frozen prerequisite scope (schema/UI
+existence of `is_company`/`company_requisites`), not for a future Issue
+workflow's completeness gate on VAT-registered buyers. Both the missing
+buyer VAT-registration flag and confirmation of the derivation formula for
+the buyer role need to be resolved — by product decision and/or
+professional review — before that future Issue slice can build a correct
+`Invoice.buyer` snapshot for this case.
 
 **B2 (individual/B2C buyer) — PROFESSIONAL REVIEW REQUIRED.** This is the
 most sensitive open item in the whole document, and deliberately **not**
@@ -662,11 +690,11 @@ writing down) · **deferred** (intentionally out of V1 scope).
 | `InvoiceLine.vat_rate` | **Already sufficient (schema) / documentation semantics change required (convention)** | Nullable `Numeric(5,2)` is the right shape; the `NULL` = not-charged vs. `0.00` = zero-rated convention (§6) needs to be written down, not just assumed by whoever writes the Issue code. |
 | *(unit of measure)* | **Deferred** | Not confirmed as a real gap — flagged PROFESSIONAL REVIEW REQUIRED (§5), not yet classified as needing schema/code work. |
 | `Company.name` | **Already sufficient** | Real, always-set legal/business name; no gap. |
-| `Company.requisites` | **Code plumbing required + frontend/write surface required** | `address`/`phone` already collectible; ЕИК needs adding to `COMPANY_REQUISITE_KEYS` (`identity/service.py`) *and* a new field on the Settings → Фирма screen. §3. |
+| `Company.requisites` | **Done (prerequisite slice landed)** | `address`/`phone`/`eik` are collectible (`COMPANY_REQUISITE_KEYS` in `identity/service.py`, `eik` allow-listed and structurally validated in `identity/router.py`) with a Settings → Фирма field. No separate VAT-number field — always `"BG" + eik` once `vat_registered` is true (R2). |
 | `Company.vat_registered` | **Already sufficient** | Already collectible via the landed Company Legal Requisites slice — no further gap. |
 | `Customer.name` | **Already sufficient** | Real, UI-editable field; no gap. |
-| `Customer.is_company` | **Frontend/write surface required** | Backend already accepts it (`POST`/`PATCH /customers`); zero UI sets it today. §4. |
-| `Customer.company_requisites` | **Code plumbing required + frontend/write surface required** | Backend accepts it as a fully unconstrained `dict[str, Any]` today — unlike `Company.requisites`, it has **no allow-listed contract at all** yet. Before building UI, it needs the same allow-list-contract treatment `Company.requisites` already got, not just a form bolted onto the existing unrestricted endpoint. The larger of the two requisites gaps. §4. |
+| `Customer.is_company` | **Done (prerequisite slice landed)** | Settable from the intake create flow and editable in place from the customer profile's "Данни за фактуриране" section. §4. |
+| `Customer.company_requisites` | **Done for name/address/ЕИК (prerequisite slice landed); buyer VAT-number handling still OPEN** | Replaced the unconstrained `dict[str, Any]` with a typed, allow-listed `CustomerCompanyRequisites` schema (`address`, `eik` only, `extra="forbid"`) in `customers/router.py` — the same allow-list-contract treatment `Company.requisites` already had. No stored buyer VAT-number field — but unlike the seller side (R2), this document never froze that omission for buyers; it's an implementer scoping choice pending confirmation. `Invoice.buyer` is not yet complete for a VAT-registered B2B buyer: no `Customer`-side VAT-registration signal exists either. §4. |
 | `document_sequences` | **Done (prerequisite slice landed)** | The compliance defect described in §1 is fixed, without a migration: `service_orders.service` now exposes `allocate_sequence()` (generic atomic counter, no formatting), `next_order_number()` (unchanged year-scoped order behavior), and `next_invoice_number()` (continuous, 10-digit zero-padded, keyed on the new `INVOICE_SEQUENCE_EPOCH = 0` constant instead of a bare inline `0`). `year=0` for `kind="invoice"` is documented in code as a fixed series/epoch marker, never a calendar year, and is only ever referenced through that one named constant — see `service_orders/service.py`. |
 
 **Documentation decisions that must change** once this pass is accepted:
@@ -694,12 +722,19 @@ should also flag the year-scoping issue found here, since it inherits
    detail exposure. Landed as its own prerequisite slice; still `NULL` for
    every row until a future Issue workflow populates it — D2's "which
    order-timeline moment" question remains open.
-4. The seller ЕИК field (§3) extends the existing Company Legal Requisites
-   allow-list (`COMPANY_REQUISITE_KEYS` in `identity/service.py`) and
-   becomes part of the Issue-time completeness check.
-5. The buyer identifiers (§4) become a new Customer UI surface for
-   `is_company`/`company_requisites` that does not exist today, gated on
-   B2's professional-review answer for the individual-customer case.
+4. ~~The seller ЕИК field (§3) extends the existing Company Legal Requisites
+   allow-list~~ — **done**: `eik` is in `COMPANY_REQUISITE_KEYS`
+   (`identity/service.py`) with a Settings → Фирма field; still needs
+   wiring into the Issue-time completeness check once Issue itself exists.
+5. ~~The buyer identifiers (§4) become a new Customer UI surface~~ —
+   **done for B1's name/address/ЕИК** (company buyer): `is_company`/
+   `company_requisites` are settable from the intake create flow and
+   editable from the customer profile page. **Still open:** B1's buyer
+   VAT-number handling (no stored field, no `Customer`-side VAT-registration
+   signal — see §4) needs its own product decision/professional review
+   before a future Issue slice can build `Invoice.buyer` correctly for a
+   VAT-registered B2B buyer. B2 (individual/B2C buyer) remains gated on its
+   own professional-review answer — untouched by this slice.
 6. The correction mechanism (§7) — Annul action copy and scope — is built
    to explicitly cover case A only; credit/debit notes are a distinct,
    later slice, not retrofitted onto `annuls_invoice_id`.

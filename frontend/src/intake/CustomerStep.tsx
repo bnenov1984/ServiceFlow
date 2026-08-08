@@ -7,6 +7,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
+import { CustomerCompanyFields } from "../customers/CustomerCompanyFields";
 import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
@@ -53,6 +54,8 @@ export function CustomerStep({
   const [newName, setNewName] = useState("");
   const [newPhone, setNewPhone] = useState("");
   const [newEmail, setNewEmail] = useState("");
+  const [isCompany, setIsCompany] = useState(false);
+  const [companyRequisites, setCompanyRequisites] = useState({ address: "", eik: "" });
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const queryClient = useQueryClient();
@@ -95,6 +98,10 @@ export function CustomerStep({
     try {
       const created = await api.post<CustomerOut>("/customers", {
         name: newName, phone: newPhone, email: newEmail || null,
+        is_company: isCompany,
+        company_requisites: isCompany
+          ? { address: companyRequisites.address.trim() || null, eik: companyRequisites.eik.trim() || null }
+          : null,
       });
       await queryClient.invalidateQueries({ queryKey: ["customers"] });
       onResolved({
@@ -173,6 +180,12 @@ export function CustomerStep({
             onChange={(e) => setNewEmail(e.target.value)}
             placeholder={t("intake.customer_email_optional")}
             className="rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
+          />
+          <CustomerCompanyFields
+            isCompany={isCompany}
+            onIsCompanyChange={setIsCompany}
+            requisites={companyRequisites}
+            onRequisitesChange={setCompanyRequisites}
           />
           {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
           <div className="flex gap-2">

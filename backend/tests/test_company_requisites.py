@@ -1,8 +1,10 @@
 """Company Legal Requisites (invoice-readiness prerequisite slice,
 docs/ACCOUNTANT_REVIEW.md §4 R1/§2 T1): Owner-only read/update of
 `companies.requisites`/`companies.vat_registered` through an explicit
-allow-listed contract (`address`, `phone`, `vat_registered` only — the full
-legal field set is an open accountant question, not implemented here).
+allow-listed contract (`address`, `phone`, `eik`, `vat_registered` only —
+МОЛ/IBAN are LAW-CONFIRMED not required (R3/R4), and no separate VAT-number
+field is stored since it's always derivable as "BG" + eik once
+`vat_registered` is true, R2).
 
 No new table, no migration — `companies.requisites`/`vat_registered` already
 exist; every mutation writes to the existing tenant `audit_log`.
@@ -74,7 +76,7 @@ def test_owner_can_read_requisites_defaulting_to_empty(client: TestClient) -> No
                       headers={"X-CSRF-Token": str(me["csrf_token"])})
     assert resp.status_code == 200
     body = resp.json()
-    assert body == {"address": None, "phone": None, "vat_registered": False}
+    assert body == {"address": None, "phone": None, "eik": None, "vat_registered": False}
 
 
 def test_owner_can_update_requisites(client: TestClient) -> None:
@@ -83,18 +85,86 @@ def test_owner_can_update_requisites(client: TestClient) -> None:
     headers = {"X-CSRF-Token": str(me["csrf_token"])}
 
     resp = client.patch("/api/v1/company/requisites", headers=headers, json={
-        "address": "гр. София, ул. Примерна 1", "phone": "029876543", "vat_registered": True,
+        "address": "гр. София, ул. Примерна 1", "phone": "029876543",
+        "eik": "130489869", "vat_registered": True,
     })
     assert resp.status_code == 200
     assert resp.json() == {
-        "address": "гр. София, ул. Примерна 1", "phone": "029876543", "vat_registered": True,
+        "address": "гр. София, ул. Примерна 1", "phone": "029876543",
+        "eik": "130489869", "vat_registered": True,
     }
 
     # Persisted, not just echoed back.
     resp2 = client.get("/api/v1/company/requisites", headers=headers)
     assert resp2.json() == {
-        "address": "гр. София, ул. Примерна 1", "phone": "029876543", "vat_registered": True,
+        "address": "гр. София, ул. Примерна 1", "phone": "029876543",
+        "eik": "130489869", "vat_registered": True,
     }
+
+
+def test_owner_can_change_eik(client: TestClient) -> None:
+    _seed_owner()
+    me = _login(client)
+    headers = {"X-CSRF-Token": str(me["csrf_token"])}
+
+    client.patch("/api/v1/company/requisites", headers=headers, json={"eik": "130489869"})
+    resp = client.patch("/api/v1/company/requisites", headers=headers, json={"eik": "175074752"})
+
+    assert resp.status_code == 200
+    assert resp.json()["eik"] == "175074752"
+
+
+def test_eik_partial_update_preserves_address_and_phone(client: TestClient) -> None:
+    _seed_owner()
+    me = _login(client)
+    headers = {"X-CSRF-Token": str(me["csrf_token"])}
+
+    client.patch("/api/v1/company/requisites", headers=headers,
+                json={"address": "гр. Русе", "phone": "082111222"})
+    resp = client.patch("/api/v1/company/requisites", headers=headers,
+                        json={"eik": "130489869"})
+
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "address": "гр. Русе", "phone": "082111222",
+        "eik": "130489869", "vat_registered": False,
+    }
+
+
+def test_eik_surrounding_whitespace_is_trimmed(client: TestClient) -> None:
+    _seed_owner()
+    me = _login(client)
+    headers = {"X-CSRF-Token": str(me["csrf_token"])}
+
+    resp = client.patch("/api/v1/company/requisites", headers=headers,
+                        json={"eik": "  130489869  "})
+    assert resp.status_code == 200
+    assert resp.json()["eik"] == "130489869"
+
+
+def test_eik_with_13_digits_is_accepted(client: TestClient) -> None:
+    """13 digits: a VAT sub-registration/branch ЕИК is a legally valid
+    second length (docs/ACCOUNTANT_REVIEW.md §3 R1) — not just the 9-digit
+    primary Commercial Register form."""
+    _seed_owner()
+    me = _login(client)
+    headers = {"X-CSRF-Token": str(me["csrf_token"])}
+
+    resp = client.patch("/api/v1/company/requisites", headers=headers,
+                        json={"eik": "1304898690001"})
+    assert resp.status_code == 200
+    assert resp.json()["eik"] == "1304898690001"
+
+
+@pytest.mark.parametrize("bad_eik", ["12345", "12345678901234", "12345abcd", "not-digits"])
+def test_malformed_eik_is_rejected(client: TestClient, bad_eik: str) -> None:
+    _seed_owner()
+    me = _login(client)
+    headers = {"X-CSRF-Token": str(me["csrf_token"])}
+
+    resp = client.patch("/api/v1/company/requisites", headers=headers, json={"eik": bad_eik})
+    assert resp.status_code == 400
+    assert resp.json()["message_key"] == "errors.validation"
 
 
 def test_partial_update_leaves_other_fields_untouched(client: TestClient) -> None:
@@ -130,13 +200,13 @@ def test_unlisted_key_is_rejected(client: TestClient) -> None:
     me = _login(client)
     headers = {"X-CSRF-Token": str(me["csrf_token"])}
 
-    # "eik" is exactly the kind of field ACCOUNTANT_REVIEW.md R1 has not
-    # approved yet — the contract must reject it outright, not silently drop
-    # it or store it as an arbitrary extra key. FastAPI validation errors go
-    # through the app's own docs/09 §1 envelope (main.py's
-    # RequestValidationError handler), not a raw 422 body.
+    # "iban" is exactly the kind of field ACCOUNTANT_REVIEW.md R4 has
+    # explicitly confirmed is NOT required — the contract must reject it
+    # outright, not silently drop it or store it as an arbitrary extra key.
+    # FastAPI validation errors go through the app's own docs/09 §1 envelope
+    # (main.py's RequestValidationError handler), not a raw 422 body.
     resp = client.patch("/api/v1/company/requisites", headers=headers,
-                        json={"eik": "123456789"})
+                        json={"iban": "BG80BNBG96611020345678"})
     assert resp.status_code == 400
     assert resp.json()["message_key"] == "errors.validation"
 
@@ -191,7 +261,7 @@ def test_requisites_are_tenant_isolated(client: TestClient) -> None:
                       headers={"X-CSRF-Token": str(owner_b["csrf_token"])})
     # Company B never wrote anything - must never see Company A's values,
     # confirming isolation without any client-suppliable company id to guess.
-    assert resp.json() == {"address": None, "phone": None, "vat_registered": False}
+    assert resp.json() == {"address": None, "phone": None, "eik": None, "vat_registered": False}
 
 
 def test_update_recorded_in_tenant_audit_log(client: TestClient) -> None:

@@ -9,7 +9,7 @@ vendor-set seat limit (ADR-BOS-009 ownership matrix).
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from sqlalchemy.orm import Session
 
 from business_os.identity import service
@@ -23,6 +23,7 @@ from business_os.identity.deps import (
     require_subscription_ok,
 )
 from business_os.identity.models import AuthSession, Company, User
+from business_os.shared_kernel.normalize import is_valid_eik, normalize_eik
 from serviceflow.config import get_settings
 
 router = APIRouter()
@@ -114,19 +115,36 @@ def update_employee(user_id: uuid.UUID, body: EmployeePatch, db: DbDep,
 
 
 class CompanyRequisitesPatch(BaseModel):
-    # extra="forbid" is the allow-list enforcement point: only these three
+    # extra="forbid" is the allow-list enforcement point: only these four
     # fields can ever reach service.update_company_requisites — there is no
     # way to submit an arbitrary JSON key through this contract.
     model_config = ConfigDict(extra="forbid")
 
     address: str | None = Field(default=None, max_length=500)
     phone: str | None = Field(default=None, max_length=30)
+    # ЕИК/БУЛСТАТ (docs/ACCOUNTANT_REVIEW.md §3 R1, LAW-CONFIRMED required).
+    # No separate VAT-number field: it's always "BG" + eik once
+    # vat_registered is true (R2) — nothing to independently store.
+    eik: str | None = Field(default=None, max_length=20)
     vat_registered: bool | None = None
+
+    @field_validator("eik")
+    @classmethod
+    def _validate_eik(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = normalize_eik(value)
+        if not normalized:
+            return None
+        if not is_valid_eik(normalized):
+            raise ValueError("invalid EIK/BULSTAT: expected 9 or 13 digits")
+        return normalized
 
 
 class CompanyRequisitesOut(BaseModel):
     address: str | None
     phone: str | None
+    eik: str | None
     vat_registered: bool
 
 
@@ -134,7 +152,7 @@ def _company_requisites_out(company: Company) -> CompanyRequisitesOut:
     requisites = company.requisites or {}
     return CompanyRequisitesOut(
         address=requisites.get("address"), phone=requisites.get("phone"),
-        vat_registered=company.vat_registered,
+        eik=requisites.get("eik"), vat_registered=company.vat_registered,
     )
 
 

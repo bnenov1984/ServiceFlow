@@ -16,6 +16,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { ContactsSection } from "../order/ContactsSection";
 import { AnonymizeDialog } from "./AnonymizeDialog";
 import { CustomerAssetsSection } from "./CustomerAssetsSection";
+import { CustomerCompanyDetailsSection } from "./CustomerCompanyDetailsSection";
 import { CustomerOrdersSection } from "./CustomerOrdersSection";
 import type { CustomerDetail } from "./types";
 
@@ -153,7 +154,8 @@ export function CustomerProfilePage() {
             emptyText={t("customer.history_none")}
           />
         </div>
-        <div>
+        <div className="flex flex-col gap-4">
+          <CustomerCompanyDetailsSection customerId={customerId} customer={customer} />
           <ContactsSection customerId={customerId} />
         </div>
       </div>

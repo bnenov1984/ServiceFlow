@@ -25,6 +25,11 @@ gate passes.
   vat_registered bool, settings jsonb (language, protocol terms text, warranty
   default days, backup destinations, testing_status_enabled, worker_can_issue_invoices).
   Exactly one row in V1; the schema doesn't know that.
+  Implemented allow-listed `requisites` keys (docs/ACCOUNTANT_REVIEW.md §3
+  R1/R2/R3/R4): `address`, `phone`, `eik` — no separate ДДС № field (always
+  `"BG" + eik` once `vat_registered`), no МОЛ/IBAN/logo (R3/R4 LAW-CONFIRMED
+  not required, logo out of scope). The full list above is the aspirational
+  domain shape; this is the current implemented subset.
 - **users** — name, email/login (unique per company), password_hash (argon2id, C5),
   pin_hash, is_owner bool, is_active bool, language.
   Two roles = one boolean (blueprint: Owner/Worker, one person may be both — Owner
@@ -38,6 +43,10 @@ gate passes.
 - **customers** — name, phone, phone2, email, is_company bool, company_requisites
   jsonb NULL (B2B invoices), notes, **phone_normalized**, **name_translit**
   (ADR-010 shadow columns, trigram-indexed), anonymized_at NULL.
+  Allow-listed `company_requisites` keys (docs/ACCOUNTANT_REVIEW.md §4 B1,
+  the buyer/B2B-customer mirror of the companies row above): `address`,
+  `eik` — same no-separate-VAT-number reasoning as the seller side, applied
+  by symmetry (B1 doesn't itself spell out a buyer VAT-number field).
 
 ### assets
 - **asset_types** — code, name_bg, icon, field_defs jsonb: ordered

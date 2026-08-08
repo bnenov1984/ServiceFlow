@@ -34,3 +34,23 @@ def normalize_phone(value: str) -> str:
 def normalize_identifier(value: str) -> str:
     """IMEI/VIN/serial/рег.№: uppercase alphanumerics only (spaces, dashes dropped)."""
     return "".join(ch for ch in value.upper() if ch.isalnum())
+
+
+def normalize_eik(value: str) -> str:
+    """ЕИК/БУЛСТАТ: strip incidental surrounding whitespace only — matches
+    the trim-before-validate convention every normalizer here follows. Does
+    not validate format; see is_valid_eik. Used identically by both the
+    seller (Company.requisites) and buyer-company (Customer.company_requisites)
+    contracts — one canonical rule, not two (docs/ACCOUNTANT_REVIEW.md §3 R1)."""
+    return value.strip()
+
+
+def is_valid_eik(value: str) -> bool:
+    """Conservative structural check only: digits, and one of the two
+    legally valid lengths — 9 (primary Commercial Register entity) or 13
+    (VAT sub-registration/branch). No checksum/modulus algorithm and no
+    registry lookup: docs/ACCOUNTANT_REVIEW.md doesn't establish a single
+    unambiguous format, so this deliberately stays permissive rather than
+    risk rejecting a valid business. Expects an already-normalized value
+    (see normalize_eik)."""
+    return value.isdigit() and len(value) in (9, 13)

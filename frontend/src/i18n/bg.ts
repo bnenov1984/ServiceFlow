@@ -361,6 +361,11 @@ export const bg = {
   "customer.anonymize_step2_confirm": "Анонимизирай окончателно",
   "customer.anonymized_done": "Клиентът е анонимизиран.",
   "customer.archived_badge": "Архивиран",
+  "customer.type_label": "Тип клиент",
+  "customer.type_individual": "Физическо лице",
+  "customer.type_company": "Фирма",
+  "customer.company_details": "Данни за фактуриране",
+  "customer.company_details_none": "Клиентът е физическо лице.",
 
   // --- professional services / PropertyFlow dashboard ---
   "ps.title": "PropertyFlow",
@@ -594,6 +599,7 @@ export const bg = {
   "company.requisites_hint": "Тези данни се използват в протокола за приемане и ще се използват при издаване на фактури.",
   "company.field_address": "Адрес",
   "company.field_phone": "Телефон",
+  "company.field_eik": "ЕИК / БУЛСТАТ",
   "company.field_vat_registered": "Регистрация по ЗДДС",
   "company.save_action": "Запази",
   "company.saved": "Данните за фирмата са запазени.",

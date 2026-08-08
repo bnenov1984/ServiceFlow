@@ -4937,6 +4937,17 @@
             ],
             "title": "Phone"
           },
+          "eik": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eik"
+          },
           "vat_registered": {
             "type": "boolean",
             "title": "Vat Registered"
@@ -4946,6 +4957,7 @@
         "required": [
           "address",
           "phone",
+          "eik",
           "vat_registered"
         ],
         "title": "CompanyRequisitesOut"
@@ -4975,6 +4987,18 @@
               }
             ],
             "title": "Phone"
+          },
+          "eik": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eik"
           },
           "vat_registered": {
             "anyOf": [
@@ -5216,6 +5240,38 @@
         ],
         "title": "ContactRecordPatch"
       },
+      "CustomerCompanyRequisites": {
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "eik": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eik"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CustomerCompanyRequisites",
+        "description": "Buyer-company legal requisites for a future Invoice.buyer snapshot\n(docs/ACCOUNTANT_REVIEW.md §4 B1, LAW-CONFIRMED core list) — replaces\nthe previously fully-unconstrained `dict[str, Any]`; `extra=\"forbid\"`\nis the allow-list enforcement point, same pattern as the seller-side\n`CompanyRequisitesPatch`. No separate VAT-number field, by the same\nreasoning §3 R2 applies to the seller: for a domestic company it is\nalways \"BG\" + eik, so nothing independent needs storing (international/\nreverse-charge buyers are out of scope for V1)."
+      },
       "CustomerContactRecordIn": {
         "properties": {
           "type": {
@@ -5343,14 +5399,12 @@
           "company_requisites": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/CustomerCompanyRequisites"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Company Requisites"
+            ]
           },
           "notes": {
             "type": "string",
@@ -5410,14 +5464,12 @@
           "company_requisites": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/CustomerCompanyRequisites"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Company Requisites"
+            ]
           },
           "notes": {
             "type": "string",
@@ -5511,14 +5563,12 @@
           "company_requisites": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/CustomerCompanyRequisites"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Company Requisites"
+            ]
           },
           "notes": {
             "type": "string",
@@ -5628,14 +5678,12 @@
           "company_requisites": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/CustomerCompanyRequisites"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Company Requisites"
+            ]
           },
           "notes": {
             "anyOf": [

@@ -59,20 +59,24 @@ describe("CompanyRequisitesPage", () => {
 
   it("loads and pre-fills the current requisites for an owner", async () => {
     vi.mocked(api.get).mockResolvedValue({
-      address: "гр. София, ул. Тестова 1", phone: "029876543", vat_registered: true,
+      address: "гр. София, ул. Тестова 1", phone: "029876543", eik: "130489869",
+      vat_registered: true,
     });
     renderPage();
 
     expect(await screen.findByDisplayValue("гр. София, ул. Тестова 1")).toBeInTheDocument();
     expect(screen.getByDisplayValue("029876543")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("130489869")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Регистрация по ЗДДС" })).toBeChecked();
   });
 
   it("submits the edited fields via PATCH and shows a success toast", async () => {
     const user = userEvent.setup();
-    vi.mocked(api.get).mockResolvedValue({ address: null, phone: null, vat_registered: false });
+    vi.mocked(api.get).mockResolvedValue({
+      address: null, phone: null, eik: null, vat_registered: false,
+    });
     vi.mocked(api.patch).mockResolvedValue({
-      address: "гр. Пловдив", phone: "032111222", vat_registered: false,
+      address: "гр. Пловдив", phone: "032111222", eik: null, vat_registered: false,
     });
     renderPage();
 
@@ -82,14 +86,36 @@ describe("CompanyRequisitesPage", () => {
     await user.click(screen.getByRole("button", { name: "Запази" }));
 
     expect(api.patch).toHaveBeenCalledWith("/company/requisites", {
-      address: "гр. Пловдив", phone: "032111222", vat_registered: false,
+      address: "гр. Пловдив", phone: "032111222", eik: "", vat_registered: false,
+    });
+    expect(await screen.findByText("Данните за фирмата са запазени.")).toBeInTheDocument();
+  });
+
+  it("saves an edited ЕИК via PATCH", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockResolvedValue({
+      address: null, phone: null, eik: null, vat_registered: false,
+    });
+    vi.mocked(api.patch).mockResolvedValue({
+      address: null, phone: null, eik: "130489869", vat_registered: false,
+    });
+    renderPage();
+
+    await screen.findByLabelText("ЕИК / БУЛСТАТ");
+    await user.type(screen.getByLabelText("ЕИК / БУЛСТАТ"), "130489869");
+    await user.click(screen.getByRole("button", { name: "Запази" }));
+
+    expect(api.patch).toHaveBeenCalledWith("/company/requisites", {
+      address: "", phone: "", eik: "130489869", vat_registered: false,
     });
     expect(await screen.findByText("Данните за фирмата са запазени.")).toBeInTheDocument();
   });
 
   it("renders a save error inline instead of silently failing", async () => {
     const user = userEvent.setup();
-    vi.mocked(api.get).mockResolvedValue({ address: null, phone: null, vat_registered: false });
+    vi.mocked(api.get).mockResolvedValue({
+      address: null, phone: null, eik: null, vat_registered: false,
+    });
     vi.mocked(api.patch).mockRejectedValue(
       new ApiError(402, "subscription_not_active", "errors.subscription.mutations_blocked"),
     );

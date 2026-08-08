@@ -1,10 +1,9 @@
 """Customer endpoints per docs/09 §customers."""
 
 import uuid
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from business_os.identity.deps import (
     TenantDbDep,
@@ -14,11 +13,40 @@ from business_os.identity.deps import (
     require_repairflow_active,
     require_subscription_ok,
 )
+from business_os.shared_kernel.normalize import is_valid_eik, normalize_eik
 from serviceflow.customers import service
 from serviceflow.customers.models import Customer
 from serviceflow.service_orders import service as orders_service
 
 router = APIRouter(dependencies=[Depends(require_repairflow_active)])
+
+
+class CustomerCompanyRequisites(BaseModel):
+    """Buyer-company legal requisites for a future Invoice.buyer snapshot
+    (docs/ACCOUNTANT_REVIEW.md §4 B1, LAW-CONFIRMED core list) — replaces
+    the previously fully-unconstrained `dict[str, Any]`; `extra="forbid"`
+    is the allow-list enforcement point, same pattern as the seller-side
+    `CompanyRequisitesPatch`. No separate VAT-number field, by the same
+    reasoning §3 R2 applies to the seller: for a domestic company it is
+    always "BG" + eik, so nothing independent needs storing (international/
+    reverse-charge buyers are out of scope for V1)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    address: str | None = Field(default=None, max_length=500)
+    eik: str | None = Field(default=None, max_length=20)
+
+    @field_validator("eik")
+    @classmethod
+    def _validate_eik(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = normalize_eik(value)
+        if not normalized:
+            return None
+        if not is_valid_eik(normalized):
+            raise ValueError("invalid EIK/BULSTAT: expected 9 or 13 digits")
+        return normalized
 
 
 class CustomerIn(BaseModel):
@@ -27,7 +55,7 @@ class CustomerIn(BaseModel):
     phone2: str | None = Field(default=None, max_length=30)
     email: str | None = Field(default=None, max_length=200)
     is_company: bool = False
-    company_requisites: dict[str, Any] | None = None
+    company_requisites: CustomerCompanyRequisites | None = None
     notes: str = Field(default="", max_length=5000)
 
 
@@ -37,7 +65,7 @@ class CustomerPatch(BaseModel):
     phone2: str | None = Field(default=None, max_length=30)
     email: str | None = Field(default=None, max_length=200)
     is_company: bool | None = None
-    company_requisites: dict[str, Any] | None = None
+    company_requisites: CustomerCompanyRequisites | None = None
     notes: str | None = Field(default=None, max_length=5000)
 
 
@@ -48,7 +76,7 @@ class CustomerOut(BaseModel):
     phone2: str | None
     email: str | None
     is_company: bool
-    company_requisites: dict[str, Any] | None
+    company_requisites: CustomerCompanyRequisites | None
     notes: str
     archived: bool
     anonymized: bool
@@ -57,9 +85,18 @@ class CustomerOut(BaseModel):
 
     @staticmethod
     def of(c: Customer, duplicate_ids: list[uuid.UUID] | None = None) -> "CustomerOut":
+        # Built via .get() rather than **c.company_requisites so a read
+        # never breaks on an unexpected stored key — it's dropped from the
+        # response, not deleted from the row (matches _company_requisites_out's
+        # established defensive-read pattern on the Company/seller side).
+        raw = c.company_requisites or None
+        requisites = (
+            CustomerCompanyRequisites(address=raw.get("address"), eik=raw.get("eik"))
+            if raw else None
+        )
         return CustomerOut(
             id=c.id, name=c.name, phone=c.phone, phone2=c.phone2, email=c.email,
-            is_company=c.is_company, company_requisites=c.company_requisites,
+            is_company=c.is_company, company_requisites=requisites,
             notes=c.notes, archived=c.archived_at is not None,
             anonymized=c.anonymized_at is not None, row_version=c.row_version,
             duplicate_ids=duplicate_ids or [],

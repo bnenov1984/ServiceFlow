@@ -1,10 +1,11 @@
 /** Company Legal Requisites (invoice-readiness prerequisite slice,
- * docs/ACCOUNTANT_REVIEW.md §4 R1/§2 T1): Owner-only. Only `address`,
- * `phone`, and `vat_registered` are editable here - the full legal field
- * set an issued invoice will need (ЕИК, ДДС №, МОЛ, IBAN...) is an
- * explicitly open accountant question, not implemented. `address`/`phone`
- * already feed the intake protocol PDF (service_orders/router.py) and will
- * feed the invoice seller snapshot once Invoice Issue exists. */
+ * docs/ACCOUNTANT_REVIEW.md §4 R1/§2 T1): Owner-only. `address`, `phone`,
+ * `eik`, and `vat_registered` are editable here - МОЛ/IBAN are
+ * LAW-CONFIRMED not required (R3/R4), and no separate VAT-number field
+ * exists since it's always "BG" + eik once `vat_registered` is true (R2).
+ * `address`/`phone` already feed the intake protocol PDF
+ * (service_orders/router.py); all four will feed the invoice seller
+ * snapshot once Invoice Issue exists. */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
@@ -19,6 +20,7 @@ import { SettingsNav } from "./SettingsNav";
 interface CompanyRequisites {
   address: string | null;
   phone: string | null;
+  eik: string | null;
   vat_registered: boolean;
 }
 
@@ -39,6 +41,7 @@ export function CompanyRequisitesPage() {
 
   const [address, setAddress] = useState("");
   const [phone, setPhone] = useState("");
+  const [eik, setEik] = useState("");
   const [vatRegistered, setVatRegistered] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +50,7 @@ export function CompanyRequisitesPage() {
     if (requisites.data) {
       setAddress(requisites.data.address ?? "");
       setPhone(requisites.data.phone ?? "");
+      setEik(requisites.data.eik ?? "");
       setVatRegistered(requisites.data.vat_registered);
     }
   }, [requisites.data]);
@@ -67,7 +71,8 @@ export function CompanyRequisitesPage() {
     setError(null);
     try {
       const updated = await api.patch<CompanyRequisites>("/company/requisites", {
-        address: address.trim(), phone: phone.trim(), vat_registered: vatRegistered,
+        address: address.trim(), phone: phone.trim(), eik: eik.trim(),
+        vat_registered: vatRegistered,
       });
       queryClient.setQueryData(queryKeys.companyRequisites, updated);
       pushToast("success", t("company.saved"));
@@ -123,6 +128,22 @@ export function CompanyRequisitesPage() {
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               maxLength={30}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
+            />
+          </div>
+
+          <div>
+            <label
+              className="mb-1 block text-sm font-medium text-slate-700"
+              htmlFor="company-eik"
+            >
+              {t("company.field_eik")}
+            </label>
+            <input
+              id="company-eik"
+              value={eik}
+              onChange={(e) => setEik(e.target.value)}
+              maxLength={20}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
             />
           </div>
