@@ -62,10 +62,15 @@ __all__ = [
 @dataclass(frozen=True)
 class CompanyProfile:
     """The subset of Company data another module may need (e.g. a document
-    letterhead) — never the ORM model itself."""
+    letterhead, or an Invoice seller snapshot at Issue time) — never the ORM
+    model itself. `vat_registered` lives on `Company` as its own column, not
+    inside `requisites` (identity/router.py's own split) — carried here
+    alongside it so a caller building a seller snapshot never needs a second
+    round trip or a direct `Company` read of its own."""
 
     name: str
     requisites: dict[str, Any]
+    vat_registered: bool
 
 
 def get_company_profile(db: Session, company_id: uuid.UUID) -> CompanyProfile:
@@ -77,7 +82,10 @@ def get_company_profile(db: Session, company_id: uuid.UUID) -> CompanyProfile:
     same invariant the original call site relied on."""
     company = _service.get_company(db, company_id)
     assert company is not None
-    return CompanyProfile(name=company.name, requisites=company.requisites)
+    return CompanyProfile(
+        name=company.name, requisites=company.requisites,
+        vat_registered=company.vat_registered,
+    )
 
 
 def is_module_active(db: Session, company_id: uuid.UUID, module_key: str) -> bool:

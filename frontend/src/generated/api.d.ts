@@ -811,6 +811,23 @@ export interface paths {
         patch: operations["patch_invoice_api_v1_invoices__invoice_id__patch"];
         trace?: never;
     };
+    "/api/v1/invoices/{invoice_id}/issue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Issue Invoice */
+        post: operations["issue_invoice_api_v1_invoices__invoice_id__issue_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tasks": {
         parameters: {
             query?: never;
@@ -2021,6 +2038,24 @@ export interface components {
             draft_total: number;
             /** Tax Event Date */
             tax_event_date: string | null;
+            /** Issued At */
+            issued_at: string | null;
+            /** Seller */
+            seller: {
+                [key: string]: unknown;
+            } | null;
+            /** Buyer */
+            buyer: {
+                [key: string]: unknown;
+            } | null;
+            /** Vat Mode */
+            vat_mode: string | null;
+            /** Net */
+            net: number | null;
+            /** Vat */
+            vat: number | null;
+            /** Gross */
+            gross: number | null;
         };
         /** InvoiceLineIn */
         InvoiceLineIn: {
@@ -2084,6 +2119,14 @@ export interface components {
         InvoicePatchIn: {
             /** Lines */
             lines: components["schemas"]["InvoiceLineIn"][];
+        };
+        /** IssueRequest */
+        IssueRequest: {
+            /**
+             * Tax Event Date
+             * Format: date
+             */
+            tax_event_date: string;
         };
         /** LaborLineIn */
         LaborLineIn: {
@@ -4651,6 +4694,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["InvoicePatchIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    issue_invoice_api_v1_invoices__invoice_id__issue_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invoice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IssueRequest"];
             };
         };
         responses: {

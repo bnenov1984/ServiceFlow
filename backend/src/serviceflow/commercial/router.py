@@ -6,13 +6,14 @@ OrderDetailOut carries only the derived paid_amount/balance summary, not a raw
 payments list, matching how Task/Attachment/ContactRecord are exposed via
 their own endpoints rather than embedded.
 
-Invoice is a Draft-only slice here: POST creates a draft prefilled from the
-order's lines (via service_orders' public contract — never its internal
-models), GET lists/reads, PATCH replaces the line set (drafts only, docs/09
-lists no separate invoice_lines sub-resource, unlike part-lines/labor-lines).
-No issue/annul/reissue/PDF endpoints and no `?q=` search yet — nothing is
-issue-numbered or buyer-snapshotted yet for `q` to usefully search across
-(see commercial/models.py's module docstring)."""
+Invoice is a Draft-then-Issue slice here: POST creates a draft prefilled
+from the order's lines (via service_orders' public contract — never its
+internal models), GET lists/reads, PATCH replaces the line set (drafts
+only, docs/09 lists no separate invoice_lines sub-resource, unlike
+part-lines/labor-lines), POST .../issue transitions draft -> issued
+(Phase A only — non-VAT-registered seller, individual buyer; see
+commercial/service.py's `issue()`). No annul/reissue/PDF endpoints and no
+`?q=` search yet (see commercial/models.py's module docstring)."""
 
 import uuid
 from datetime import date, datetime
@@ -26,6 +27,7 @@ from business_os.identity.deps import (
     TenantDbDep,
     TenantDep,
     require_csrf,
+    require_owner,
     require_repairflow_active,
     require_subscription_ok,
 )
@@ -141,14 +143,27 @@ class InvoiceOut(BaseModel):
 
 class InvoiceDetailOut(InvoiceOut):
     lines: list[InvoiceLineOut]
-    draft_total: float  # informational sum of current lines — never stored (BR-3)
+    # Informational sum of current lines (BR-3, never stored). Kept in the
+    # response unconditionally rather than branching the schema by status:
+    # once issued, lines are frozen, so this is always numerically identical
+    # to `net` (both = Σ qty×unit_price) — `net`/`vat`/`gross` below are the
+    # authoritative, immutable legal totals; this is a live/informational
+    # echo that happens to agree with them post-Issue.
+    draft_total: float
     # Taxable-event date (ЗДДС чл. 114, ал. 1; docs/ACCOUNTANT_REVIEW.md §2) —
-    # distinct from issued_at (not itself exposed here, matching InvoiceOut's
-    # existing lifecycle-field scope). Read-only: no request schema in this
-    # file accepts it, and no service function sets it — NULL for every
-    # Draft this slice can create. Populating it is a future Issue-workflow
-    # responsibility.
+    # distinct from issued_at. NULL for every Draft; populated by Issue.
     tax_event_date: date | None
+    # Issue-owned fields (docs/ACCOUNTANT_REVIEW.md 'RepairFlow Invoice V1
+    # Freeze' §5, Phase-A) — NULL for every Draft, populated atomically by
+    # POST .../issue. No request schema in this file accepts any of these;
+    # they are exclusively server-written.
+    issued_at: datetime | None
+    seller: dict[str, Any] | None
+    buyer: dict[str, Any] | None
+    vat_mode: str | None
+    net: float | None
+    vat: float | None
+    gross: float | None
 
 
 def _invoice_not_found() -> HTTPException:
@@ -158,8 +173,12 @@ def _invoice_not_found() -> HTTPException:
 
 
 def _invoice_error(e: service.InvoiceError) -> HTTPException:
+    # 404s raised as InvoiceError (Issue's locked-fetch-not-found path) get
+    # the exact same envelope shape _invoice_not_found() already uses for
+    # every other endpoint's not-found case — one 404 shape, not two.
+    code = "not_found" if e.status == 404 else "invoice_error"
     return HTTPException(status_code=e.status, detail={
-        "code": "invoice_error", "message_key": e.message_key, "params": {},
+        "code": code, "message_key": e.message_key, "params": {},
     })
 
 
@@ -169,6 +188,13 @@ def _invoice_detail(db: TenantDbDep, tenant: TenantDep, invoice: Invoice) -> Inv
         lines=[InvoiceLineOut.of(line) for line in service.list_lines(db, tenant, invoice.id)],
         draft_total=float(service.draft_total(db, tenant, invoice.id)),
         tax_event_date=invoice.tax_event_date,
+        issued_at=invoice.issued_at,
+        seller=invoice.seller,
+        buyer=invoice.buyer,
+        vat_mode=invoice.vat_mode,
+        net=float(invoice.net) if invoice.net is not None else None,
+        vat=float(invoice.vat) if invoice.vat is not None else None,
+        gross=float(invoice.gross) if invoice.gross is not None else None,
     )
 
 
@@ -215,6 +241,27 @@ def patch_invoice(invoice_id: uuid.UUID, body: InvoicePatchIn, db: TenantDbDep,
     fields: list[dict[str, Any]] = [line.model_dump() for line in body.lines]
     try:
         invoice = service.replace_lines(db, tenant, invoice, fields)
+    except service.InvoiceError as e:
+        raise _invoice_error(e) from e
+    return _invoice_detail(db, tenant, invoice)
+
+
+class IssueRequest(BaseModel):
+    # The only client-owned datum Issue accepts — number/seller/buyer/
+    # totals/vat_mode/issued_at/status are exclusively server-resolved
+    # (docs/ACCOUNTANT_REVIEW.md D1: never backend-derived, so no default
+    # here either — omitting it is a validation failure, not an auto-fill).
+    tax_event_date: date
+
+
+@router.post(
+    "/invoices/{invoice_id}/issue",
+    dependencies=[Depends(require_csrf), Depends(require_owner), Depends(require_subscription_ok)],
+)
+def issue_invoice(invoice_id: uuid.UUID, body: IssueRequest, db: TenantDbDep,
+                  tenant: TenantDep) -> InvoiceDetailOut:
+    try:
+        invoice = service.issue(db, tenant, invoice_id, body.tax_event_date)
     except service.InvoiceError as e:
         raise _invoice_error(e) from e
     return _invoice_detail(db, tenant, invoice)

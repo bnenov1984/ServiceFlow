@@ -659,16 +659,25 @@ three are product conveniences, not legal requisites:
 | Payment-to-invoice reconciliation (linking specific `Payment` rows to a specific issued `Invoice` beyond the order level). | `Payment.invoice_id` already exists as a nullable FK — the column is already there, unused; no schema gap, purely a later feature-completeness item. May follow Issue/PDF. §12. |
 | True 0%-rated supplies (as opposed to "not charged because unregistered"). | Already representable via the `vat_mode`/`vat_rate` convention documented in §6 (explicit `0.00` vs. `NULL`) once that convention is written down; no schema change needed when this is eventually built. §6. |
 
-### 5. Phase-A Invoice Issue — approved product scope (not yet implemented)
+### 5. Phase-A Invoice Issue — approved product scope (implemented)
 
 **Product scope decision, not a legal conclusion.** Following the read-only
 Issue architectural audit, the PO approved a deliberately narrow first
-implementation slice for the future `POST /invoices/{id}/issue` endpoint.
-This is a **scoping freeze only** — nothing below marks any of §6's VAT-
-rounding question or §4's buyer VAT-number gap as resolved, and no Issue
-code exists yet (still true as of this entry: only the small prerequisite
-plumbing — `service_orders.contracts.get_next_invoice_number`, the
-`invoice_issued` timeline-allowlist entry, this documentation — has landed).
+implementation slice for `POST /invoices/{id}/issue`. This remains a
+**scoping freeze**, not a legal resolution — nothing below marks §6's VAT-
+rounding question or §4's buyer VAT-number gap as answered; Phase A works
+around both by excluding the cases that would require them.
+
+**Landed** (`commercial/service.py`'s `issue()`, `commercial/router.py`'s
+`POST /invoices/{id}/issue`, full test coverage in
+`backend/tests/test_invoice_issue.py`): one DB transaction with one commit,
+`SELECT ... FOR UPDATE` on the Invoice row acquired first (both the
+not-found/wrong-tenant resolution and the concurrency mechanism — a losing
+concurrent Issue call blocks on the lock, then sees `status != draft` and is
+rejected before ever reaching number allocation), every validation ordered
+before `service_orders.contracts.get_next_invoice_number()` so no ordinary
+failure ever consumes a number, and a rollback-tested guarantee that a
+failure after allocation but before commit restores the sequence.
 
 | Phase-A Issue supports | Phase-A Issue explicitly does NOT support |
 |---|---|
@@ -748,8 +757,9 @@ should also flag the year-scoping issue found here, since it inherits
    order-timeline moment" question remains open.
 4. ~~The seller ЕИК field (§3) extends the existing Company Legal Requisites
    allow-list~~ — **done**: `eik` is in `COMPANY_REQUISITE_KEYS`
-   (`identity/service.py`) with a Settings → Фирма field; still needs
-   wiring into the Issue-time completeness check once Issue itself exists.
+   (`identity/service.py`) with a Settings → Фирма field, and — **also
+   done, §5** — wired into the Phase-A Issue-time completeness check
+   (`errors.invoices.seller_incomplete`/`seller_vat_unsupported`).
 5. ~~The buyer identifiers (§4) become a new Customer UI surface~~ —
    **done for B1's name/address/ЕИК** (company buyer): `is_company`/
    `company_requisites` are settable from the intake create flow and

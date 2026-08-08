@@ -190,15 +190,19 @@ Attributes are business attributes, not columns.
 - **Attributes:** invoice number (strictly sequential at issue time, per ЗДДС), issue
   date, tax-event date (the date the taxable event/advance payment occurred — legally
   distinct from issue date, ЗДДС чл. 114, ал. 1; schema field landed as its own
-  prerequisite slice, docs/ACCOUNTANT_REVIEW.md §2 — populated by a future Issue
-  workflow, not by any code today), seller requisites (snapshot of Company), buyer
+  prerequisite slice, docs/ACCOUNTANT_REVIEW.md §2 — supplied explicitly on the Issue
+  request, never backend-derived, D1), seller requisites (snapshot of Company), buyer
   requisites (snapshot of Customer), lines (imported from labor lines, part lines,
   plus manual lines and adjustments), VAT treatment per company registration mode,
   totals, currency (EUR; currency-abstracted), state, reference to annulled
   predecessor (corrections), order reference.
 - **Lifecycle:** **Draft → Issued → (Annulled)**. Drafts are editable and unnumbered.
   Issue assigns the next number and freezes the document. Corrections = annul +
-  reissue; issued invoices are never edited (legal requirement).
+  reissue; issued invoices are never edited (legal requirement). **Phase A Issue
+  implemented** (docs/ACCOUNTANT_REVIEW.md 'RepairFlow Invoice V1 Freeze' §5):
+  non-VAT-registered seller, individual buyer only — a VAT-registered seller or a
+  company buyer is explicitly rejected, not silently mishandled. Annul/reissue,
+  VAT-registered-seller Issue, and company-buyer Issue remain future slices.
 - **Invariants:** numbering has no gaps and no reuse; requisite snapshots make the
   document self-contained even if company/customer data later changes; invoices are
   **optional per order** (B2C walk-ins often need none) and possible on Отказана

@@ -2604,6 +2604,59 @@
         }
       }
     },
+    "/api/v1/invoices/{invoice_id}/issue": {
+      "post": {
+        "tags": [
+          "commercial"
+        ],
+        "summary": "Issue Invoice",
+        "operationId": "issue_invoice_api_v1_invoices__invoice_id__issue_post",
+        "parameters": [
+          {
+            "name": "invoice_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Invoice Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceDetailOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/tasks": {
       "get": {
         "tags": [
@@ -6162,6 +6215,86 @@
               }
             ],
             "title": "Tax Event Date"
+          },
+          "issued_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issued At"
+          },
+          "seller": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seller"
+          },
+          "buyer": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Buyer"
+          },
+          "vat_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vat Mode"
+          },
+          "net": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net"
+          },
+          "vat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vat"
+          },
+          "gross": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gross"
           }
         },
         "type": "object",
@@ -6174,7 +6307,14 @@
           "row_version",
           "lines",
           "draft_total",
-          "tax_event_date"
+          "tax_event_date",
+          "issued_at",
+          "seller",
+          "buyer",
+          "vat_mode",
+          "net",
+          "vat",
+          "gross"
         ],
         "title": "InvoiceDetailOut"
       },
@@ -6343,6 +6483,20 @@
           "lines"
         ],
         "title": "InvoicePatchIn"
+      },
+      "IssueRequest": {
+        "properties": {
+          "tax_event_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Tax Event Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tax_event_date"
+        ],
+        "title": "IssueRequest"
       },
       "LaborLineIn": {
         "properties": {

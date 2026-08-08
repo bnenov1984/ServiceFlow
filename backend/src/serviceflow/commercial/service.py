@@ -1,22 +1,27 @@
-"""Payment recording (docs/01 §Payment) and Invoice drafts (docs/01 §Invoice).
+"""Payment recording (docs/01 §Payment) and Invoice drafts + Issue
+(docs/01 §Invoice).
 
 Money totals stay derived, never stored (BR-3): paid_amount and balance are
 computed here, not persisted. Invoice draft creation/editing is this file's
-other half — issue, numbering, annul/reissue, PDF and VAT computation are a
-later slice (see commercial/models.py docstring); everything below only ever
-produces/edits `status="draft"` rows."""
+second part; `issue()` is the third — annul/reissue, PDF and VAT-registered-
+seller/company-buyer support are still a later slice (see
+commercial/models.py docstring and docs/ACCOUNTANT_REVIEW.md's 'RepairFlow
+Invoice V1 Freeze' §5, Phase-A scope)."""
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from business_os.identity import contracts as identity_contracts
 from business_os.shared_kernel.db import TenantContext, scoped
 from business_os.shared_kernel.events import DomainEvent, publish
+from business_os.shared_kernel.normalize import is_valid_eik, normalize_eik
 from serviceflow.commercial.models import Invoice, InvoiceLine, Payment
+from serviceflow.customers import contracts as customers_contracts
 from serviceflow.service_orders import contracts as orders_contracts
 
 
@@ -141,5 +146,103 @@ def replace_lines(db: Session, ctx: TenantContext, invoice: Invoice,
             source=fields["source"], sort=sort,
         ))
     invoice.row_version += 1
+    db.commit()
+    return invoice
+
+
+# --- Issue (Phase A only: non-VAT-registered seller, individual buyer —
+# docs/ACCOUNTANT_REVIEW.md 'RepairFlow Invoice V1 Freeze' §5) --------------
+
+
+def issue(db: Session, ctx: TenantContext, invoice_id: uuid.UUID,
+         tax_event_date: date) -> Invoice:
+    """One transaction, one commit. Every validation that can fail runs
+    before number allocation (`get_next_invoice_number` near the end), so
+    the overwhelmingly common failure modes never touch the sequence at
+    all — see the read-only Issue architectural audit this implements.
+
+    Locks the Invoice row first (`SELECT ... FOR UPDATE`, via `scoped()`,
+    so tenant isolation is inherited for free) — this is both the 404/
+    not-found resolution and the concurrency mechanism: a second concurrent
+    Issue call on the same invoice blocks here until the first commits or
+    rolls back, then re-reads `status` (now `"issued"`) and rejects at the
+    very next check, before ever reaching number allocation. Doing the fetch
+    and the lock as one step (rather than the GET/PATCH endpoints' existing
+    "router pre-fetches unlocked, then calls the service" shape) is a
+    deliberate departure — Issue's exclusivity requirement is structurally
+    different from a simple already-fetched-object mutation."""
+    invoice = db.scalar(
+        scoped(select(Invoice), Invoice, ctx)
+        .where(Invoice.id == invoice_id)
+        .with_for_update()
+    )
+    if invoice is None:
+        raise InvoiceError("errors.invoices.not_found", status=404)
+    if invoice.status != "draft":
+        raise InvoiceError("errors.invoices.not_draft")
+
+    lines = list_lines(db, ctx, invoice.id)
+    if not lines:
+        raise InvoiceError("errors.invoices.empty")
+    # Defensive-only: qty>=1/unit_price>=0 are already enforced by
+    # InvoiceLineIn at the only write path (replace_lines) — nothing here
+    # can currently produce an invalid value, so there is no reachable
+    # failure to reject, unlike the EIK re-check below (legacy/direct-DB
+    # data can bypass request validation for a *stored* field; these are
+    # ordinary ORM-typed int/Decimal columns, not free-form input).
+
+    company = identity_contracts.get_company_profile(db, ctx.company_id)
+    requisites = company.requisites or {}
+    seller_address = requisites.get("address")
+    seller_eik_raw = requisites.get("eik")
+    seller_eik = normalize_eik(seller_eik_raw) if seller_eik_raw else None
+    if not company.name or not seller_address or not seller_eik or not is_valid_eik(seller_eik):
+        raise InvoiceError("errors.invoices.seller_incomplete")
+    if company.vat_registered:
+        raise InvoiceError("errors.invoices.seller_vat_unsupported")
+
+    order = orders_contracts.get_order_summary(db, ctx, invoice.order_id)
+    assert order is not None  # invoice.order_id is a real FK; scoped() already proved same-tenant
+    customer = customers_contracts.get_customer_summary(db, ctx, order.customer_id)
+    assert customer is not None  # same: a real FK, same-tenant by construction
+    if customer.is_company:
+        raise InvoiceError("errors.invoices.company_buyer_unsupported")
+    # Customer.name is NOT NULL at the schema level — no reachable "buyer
+    # incomplete" failure exists for an individual buyer to check for.
+
+    assert invoice.currency == "EUR"  # the only value any write path has ever set (server_default)
+
+    if any(line.vat_rate is not None for line in lines):
+        raise InvoiceError("errors.invoices.vat_state_invalid")
+
+    net = sum((line.qty * line.unit_price for line in lines), Decimal("0"))
+    vat = Decimal("0.00")
+    gross = net
+
+    formatted_number = orders_contracts.get_next_invoice_number(db, ctx)
+
+    # Independent, immutable JSON values — never a reference into
+    # Company.requisites/Customer.company_requisites, so a later edit to
+    # either can never retroactively change an issued document.
+    invoice.seller = {
+        "name": company.name, "address": seller_address, "eik": seller_eik,
+        "vat_registered": False,
+    }
+    invoice.buyer = {"name": customer.name}
+    invoice.vat_mode = "not_registered"
+    invoice.net = net
+    invoice.vat = vat
+    invoice.gross = gross
+    invoice.number = int(formatted_number)
+    invoice.issued_at = _now()
+    invoice.tax_event_date = tax_event_date
+    invoice.status = "issued"
+    invoice.row_version += 1
+
+    publish(db, DomainEvent(
+        type="invoice_issued", company_id=ctx.company_id, actor_user_id=ctx.user_id,
+        subject_id=invoice.order_id,
+        data={"invoice_id": str(invoice.id), "invoice_number": formatted_number},
+    ))
     db.commit()
     return invoice
