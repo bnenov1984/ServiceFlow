@@ -15,7 +15,7 @@ issue-numbered or buyer-snapshotted yet for `q` to usefully search across
 (see commercial/models.py's module docstring)."""
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -142,6 +142,13 @@ class InvoiceOut(BaseModel):
 class InvoiceDetailOut(InvoiceOut):
     lines: list[InvoiceLineOut]
     draft_total: float  # informational sum of current lines — never stored (BR-3)
+    # Taxable-event date (ЗДДС чл. 114, ал. 1; docs/ACCOUNTANT_REVIEW.md §2) —
+    # distinct from issued_at (not itself exposed here, matching InvoiceOut's
+    # existing lifecycle-field scope). Read-only: no request schema in this
+    # file accepts it, and no service function sets it — NULL for every
+    # Draft this slice can create. Populating it is a future Issue-workflow
+    # responsibility.
+    tax_event_date: date | None
 
 
 def _invoice_not_found() -> HTTPException:
@@ -161,6 +168,7 @@ def _invoice_detail(db: TenantDbDep, tenant: TenantDep, invoice: Invoice) -> Inv
         **InvoiceOut.of(invoice).model_dump(),
         lines=[InvoiceLineOut.of(line) for line in service.list_lines(db, tenant, invoice.id)],
         draft_total=float(service.draft_total(db, tenant, invoice.id)),
+        tax_event_date=invoice.tax_event_date,
     )
 
 

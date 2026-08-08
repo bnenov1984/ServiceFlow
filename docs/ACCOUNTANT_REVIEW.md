@@ -99,7 +99,7 @@ The original 26 items, each classified as exactly one of:
 | N1 | Numbering continuity (annual reset vs. continuous) | **LAW-CONFIRMED** | Continuous, never reset by calendar year. ППЗДДС §1 below. **Contradicts current architecture** — see §1. |
 | N2 | Number format (digits, leading zeros, prefix) | **LAW-CONFIRMED** (format) / **PRODUCT DECISION** (padding display) | 10-digit, Arabic numerals only, no letters. ЗДДС чл. 113/114, ППЗДДС чл. 78. |
 | N3 | Numbering reset on VAT-registration status change | **LAW-CONFIRMED** | No reset — same continuous sequence rule as N1 applies regardless of registration status changes. |
-| D1 | Tax event date, distinct field from issue date | **LAW-CONFIRMED** | Yes, required. ЗДДС чл. 114, ал. 1 (tax-event/advance-payment date is its own enumerated element). **Schema gap** — see §2. |
+| D1 | Tax event date, distinct field from issue date | **LAW-CONFIRMED** | Yes, required. ЗДДС чл. 114, ал. 1 (tax-event/advance-payment date is its own enumerated element). **Done** (migration 0018): `invoices.tax_event_date` (Date, nullable, read-only) — see §2. |
 | D2 | How the tax event date is determined | **PRODUCT DECISION** (bounded by law) | Law defines *what* the tax event is (чл. 25 ЗДДС); RepairFlow decides *which order-timeline moment* maps to it. See §2. |
 | T1 | Seller printed field set | **LAW-CONFIRMED** (core list) / **PROFESSIONAL REVIEW REQUIRED** (completeness sign-off) | Name, address, identification number are law-confirmed; final field-by-field sign-off still wanted. See §3. |
 | B1 | Buyer field set — company (B2B) | **LAW-CONFIRMED** (core list) / **PROFESSIONAL REVIEW REQUIRED** (completeness sign-off) | Same shape as T1, buyer side. See §4. |
@@ -181,21 +181,25 @@ property of the company's document history, not of its current VAT status.
 invoice's mandatory elements, "the date on which the tax event for the
 supply occurred, **or** the date on which an advance payment was received"
 — a field legally distinct from the invoice's own issue date (which is a
-separate, also-mandatory element). **`invoices` has no such field today**
-and none of docs/01, 08, 09 mention the concept — this is a genuine schema
-gap, not merely undocumented. Unlike every other Etap-4 `invoices` column,
-this one was **not** pre-provisioned by migration 0009 and needs a real
-`ALTER TABLE ADD COLUMN tax_event_date date` when this slice is
-implemented (still no migration created by this pass).
+separate, also-mandatory element). **Done (migration 0018):**
+`invoices.tax_event_date` (`Date`, nullable, no server default, no
+backfill) — added as its own prerequisite slice, schema and read-only API
+exposure only (`GET`/`POST`-detail responses include it; no request schema
+accepts it — no code writes it yet). Unlike every other Etap-4 `invoices`
+column, this one was **not** pre-provisioned by migration 0009.
 
-**D2 — PRODUCT DECISION, bounded by law.** ЗДДС чл. 25 defines the tax event
-itself as the supply of the goods/service (transfer of ownership, or
-completion of the service) — for RepairFlow's repair-order fact pattern,
-the natural candidate is the order's delivery moment (`delivered_at` /
-warranty-return equivalent), not the invoice's own issue date, which can
-legally follow the tax event by up to 5 days (ЗДДС чл. 113, ал. 1: invoice
-must be issued no later than 5 days after the tax event, or after receiving
-an advance payment). **Recommended V1 decision:** default
+**D2 — PRODUCT DECISION, bounded by law; not yet implemented.** ЗДДС чл. 25
+defines the tax event itself as the supply of the goods/service (transfer
+of ownership, or completion of the service) — for RepairFlow's repair-order
+fact pattern, the natural candidate is the order's delivery moment
+(`delivered_at` / warranty-return equivalent), not the invoice's own issue
+date, which can legally follow the tax event by up to 5 days (ЗДДС чл. 113,
+ал. 1: invoice must be issued no later than 5 days after the tax event, or
+after receiving an advance payment). This remains a **recommendation for
+the future Issue workflow**, not something the prerequisite slice
+implements — no code today infers or sets `tax_event_date` from the order's
+delivery date, current date, or any other source; every Draft's value stays
+`NULL` until Issue exists. **Recommended V1 decision (unchanged):** default
 `tax_event_date` to the order's delivery date at Issue time, editable by the
 Owner at the moment of issuing (covers the diagnostic-fee-on-a-declined-order
 case, which has no "delivery," and any other edge case) rather than trying
@@ -577,7 +581,7 @@ three are product conveniences, not legal requisites:
 |---|---|---|
 | Invoice numbering is continuous for the life of the company's registration; never reset on a calendar-year boundary. | ППЗДДС numbering provisions; ЗДДС чл. 113/чл. 114 (no gaps, no duplicates); NRA official guidance (nra.bg). | **Done:** `next_invoice_number()` allocates from a fixed, non-year-scoped key (`INVOICE_SEQUENCE_EPOCH`); `next_order_number()` keeps the original year-scoped behavior unchanged. §1. |
 | Invoice number is exactly 10 digits, Arabic numerals only, no letters. | ЗДДС чл. 113/114; ППЗДДС чл. 78; NRA official guidance. | `Invoice.number` (plain `int`) is already the right shape; zero-padding is a render-time format only. §1. |
-| A tax-event date (or, for an advance, the payment-received date) is its own mandatory invoice element, distinct from the issue date. | ЗДДС чл. 114, ал. 1. | `invoices.tax_event_date` is missing from the schema — a real migration is required before Issue. §2. |
+| A tax-event date (or, for an advance, the payment-received date) is its own mandatory invoice element, distinct from the issue date. | ЗДДС чл. 114, ал. 1. | **Done** (migration 0018): `invoices.tax_event_date` (Date, nullable), exposed read-only in `GET /invoices/{id}`. Populating it is still a future Issue-workflow task. §2. |
 | Seller name, address, and ЕИК/БУЛСТАТ are always required; the VAT number is required only when the seller is VAT-registered, and is derived from the ЕИК (`"BG" + EIK`), not independently issued. | ЗДДС чл. 114, ал. 1; чл. 94, ал. 2. | ЕИК needs a new allow-listed `Company.requisites` key + UI field; the VAT number likely needs no stored field of its own. §3. |
 | МОЛ is not a mandatory invoice element. | ЗДДС чл. 114, ал. 1 (not enumerated). | Safe to omit from V1 entirely; no Issue-time gate depends on it. §3. |
 | Phone, email, and IBAN/bank details are not mandatory invoice elements, for either party. | ЗДДС чл. 114, ал. 1 (not enumerated). | Safe to keep off the printed template and out of the required-field gate. §3, §4, §12. |
@@ -643,7 +647,7 @@ writing down) · **deferred** (intentionally out of V1 scope).
 |---|---|---|
 | `Invoice.number` | **Already sufficient** | Plain `int` matches the 10-digit numeric requirement; zero-padding is a render-time format. Its *allocation logic* is a separate gap — see `document_sequences` below. |
 | `Invoice.issued_at` | **Already sufficient** | Confirmed correct semantics (issue timestamp only), no overlap with tax-event date. |
-| `tax_event_date` (missing) | **Migration required** | The one genuine schema gap in this document — not provisioned by migration 0009, unlike every other Etap-4 `invoices` column. §2. |
+| `invoices.tax_event_date` | **Done (prerequisite slice landed)** | Migration 0018 added it: `Date`, nullable, no server default, no backfill — not provisioned by migration 0009, unlike every other Etap-4 `invoices` column. Model field + read-only `GET`/`POST`-detail exposure in `commercial/models.py`/`router.py`; no write path anywhere. §2. |
 | `Invoice.seller` | **Already sufficient (schema)** | Correct JSONB snapshot shape; populating it at Issue depends on `Company.requisites`'s gap below, not on this column. |
 | `Invoice.buyer` | **Already sufficient (schema)** | Same — depends on `Customer.company_requisites`/`is_company`'s (larger) gap below. |
 | `Invoice.vat_mode` | **Already sufficient** | Binary `registered`/`not_registered` matches the V1 product decision; no change needed. |
@@ -685,8 +689,11 @@ should also flag the year-scoping issue found here, since it inherits
    allocates from a non-year-scoped key (`INVOICE_SEQUENCE_EPOCH`);
    `next_order_number()` is unchanged. Landed ahead of Issue itself, as a
    standalone prerequisite slice with its own tests.
-3. A real migration adds `invoices.tax_event_date` (§2) — the one schema
-   change this entire document identifies as necessary.
+3. ~~A real migration adds `invoices.tax_event_date`~~ — **done** (migration
+   0018): nullable `Date` column, model field, and read-only `GET`/POST-
+   detail exposure. Landed as its own prerequisite slice; still `NULL` for
+   every row until a future Issue workflow populates it — D2's "which
+   order-timeline moment" question remains open.
 4. The seller ЕИК field (§3) extends the existing Company Legal Requisites
    allow-list (`COMPANY_REQUISITE_KEYS` in `identity/service.py`) and
    becomes part of the Issue-time completeness check.

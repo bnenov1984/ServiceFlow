@@ -188,11 +188,14 @@ Attributes are business attributes, not columns.
 - **Purpose:** the commercial document for completed work. Part of **Commercial
   Documents & Invoicing** (naming per PO directive — never "Accounting").
 - **Attributes:** invoice number (strictly sequential at issue time, per ЗДДС), issue
-  date, seller requisites (snapshot of Company), buyer requisites (snapshot of
-  Customer), lines (imported from labor lines, part lines, plus manual lines and
-  adjustments), VAT treatment per company registration mode, totals, currency (EUR;
-  currency-abstracted), state, reference to annulled predecessor (corrections),
-  order reference.
+  date, tax-event date (the date the taxable event/advance payment occurred — legally
+  distinct from issue date, ЗДДС чл. 114, ал. 1; schema field landed as its own
+  prerequisite slice, docs/ACCOUNTANT_REVIEW.md §2 — populated by a future Issue
+  workflow, not by any code today), seller requisites (snapshot of Company), buyer
+  requisites (snapshot of Customer), lines (imported from labor lines, part lines,
+  plus manual lines and adjustments), VAT treatment per company registration mode,
+  totals, currency (EUR; currency-abstracted), state, reference to annulled
+  predecessor (corrections), order reference.
 - **Lifecycle:** **Draft → Issued → (Annulled)**. Drafts are editable and unnumbered.
   Issue assigns the next number and freezes the document. Corrections = annul +
   reissue; issued invoices are never edited (legal requirement).

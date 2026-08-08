@@ -150,6 +150,145 @@ def test_get_invoice_detail_includes_lines_and_total(client: TestClient) -> None
     assert len(r.json()["lines"]) == 2
 
 
+# --- tax_event_date (docs/ACCOUNTANT_REVIEW.md §2): read-only exposure ------
+# of a prerequisite field for the future Issue slice. No code anywhere in
+# this module ever sets it — every assertion below either checks it is NULL
+# through the real create/patch flow, or sets it directly at the DB layer
+# (the only way a value can exist today) and checks the API serializes it
+# correctly and independently of issued_at.
+
+
+def test_new_draft_has_null_tax_event_date(client: TestClient) -> None:
+    h = _login(client)
+    oid = _order(client, h)
+
+    body = client.post(f"/api/v1/orders/{oid}/invoices", headers=h).json()
+    assert body["tax_event_date"] is None
+
+
+def test_get_invoice_detail_exposes_null_tax_event_date_for_a_draft(
+    client: TestClient,
+) -> None:
+    h = _login(client)
+    oid = _order(client, h)
+    invoice_id = client.post(f"/api/v1/orders/{oid}/invoices", headers=h).json()["id"]
+
+    r = client.get(f"/api/v1/invoices/{invoice_id}", headers=h)
+    assert r.status_code == 200
+    assert r.json()["tax_event_date"] is None
+
+
+def test_tax_event_date_serializes_as_iso_date_when_set_directly(client: TestClient) -> None:
+    """No code in this slice ever writes tax_event_date — that is the future
+    Issue workflow's job. Setting it directly at the DB layer is the only
+    way to prove the *serialization* shape (exact YYYY-MM-DD) is correct in
+    the meantime."""
+    import datetime as dt
+
+    from sqlalchemy import select
+
+    from business_os.identity.models import User
+    from business_os.shared_kernel.db import bind_tenant_scope, open_session
+    from serviceflow.commercial.models import Invoice
+
+    h = _login(client)
+    oid = _order(client, h)
+    invoice_id = client.post(f"/api/v1/orders/{oid}/invoices", headers=h).json()["id"]
+
+    url = os.environ["SERVICEFLOW_DATABASE_URL"]
+    for db in open_session(url):
+        owner = db.scalar(select(User).where(User.email == "a@a.bg"))
+        assert owner is not None
+        bind_tenant_scope(db, owner.company_id)
+        invoice = db.get(Invoice, invoice_id)
+        assert invoice is not None
+        invoice.tax_event_date = dt.date(2026, 3, 15)
+        db.commit()
+
+    r = client.get(f"/api/v1/invoices/{invoice_id}", headers=h)
+    assert r.status_code == 200
+    assert r.json()["tax_event_date"] == "2026-03-15"
+
+
+def test_issued_at_and_tax_event_date_are_independent(client: TestClient) -> None:
+    """Setting one at the DB layer must never imply or auto-populate the
+    other — they are unrelated columns with no synchronization between
+    them, matching docs/01: issue timestamp vs. taxable-event calendar
+    date are legally distinct concepts."""
+    import datetime as dt
+
+    from sqlalchemy import select
+
+    from business_os.identity.models import User
+    from business_os.shared_kernel.db import bind_tenant_scope, open_session
+    from serviceflow.commercial.models import Invoice
+
+    h = _login(client)
+    oid = _order(client, h)
+    invoice_id = client.post(f"/api/v1/orders/{oid}/invoices", headers=h).json()["id"]
+
+    url = os.environ["SERVICEFLOW_DATABASE_URL"]
+    for db in open_session(url):
+        owner = db.scalar(select(User).where(User.email == "a@a.bg"))
+        assert owner is not None
+        bind_tenant_scope(db, owner.company_id)
+        invoice = db.get(Invoice, invoice_id)
+        assert invoice is not None
+        invoice.tax_event_date = dt.date(2026, 5, 1)
+        db.commit()
+        db.refresh(invoice)
+        # issued_at was never touched — setting tax_event_date alone must
+        # not implicitly populate it.
+        assert invoice.issued_at is None
+        assert invoice.tax_event_date == dt.date(2026, 5, 1)
+
+
+def test_draft_creation_never_infers_tax_event_date(client: TestClient) -> None:
+    """Explicit regression against every plausible inference source named in
+    the task: order creation date, order delivery date, "today", or draft
+    creation timestamp — none of them may leak into tax_event_date."""
+    h = _login(client)
+    oid = _order_with_lines(client, h)
+
+    body = client.post(f"/api/v1/orders/{oid}/invoices", headers=h).json()
+    assert body["tax_event_date"] is None
+
+
+def test_replace_lines_does_not_change_tax_event_date(client: TestClient) -> None:
+    """A directly-set tax_event_date (simulating a value a future Issue
+    workflow might have set) must survive an unrelated draft line-replace
+    call untouched — replace_lines only ever touches invoice_lines and
+    row_version."""
+    import datetime as dt
+
+    from sqlalchemy import select
+
+    from business_os.identity.models import User
+    from business_os.shared_kernel.db import bind_tenant_scope, open_session
+    from serviceflow.commercial.models import Invoice
+
+    h = _login(client)
+    oid = _order_with_lines(client, h)
+    invoice_id = client.post(f"/api/v1/orders/{oid}/invoices", headers=h).json()["id"]
+
+    url = os.environ["SERVICEFLOW_DATABASE_URL"]
+    for db in open_session(url):
+        owner = db.scalar(select(User).where(User.email == "a@a.bg"))
+        assert owner is not None
+        bind_tenant_scope(db, owner.company_id)
+        invoice = db.get(Invoice, invoice_id)
+        assert invoice is not None
+        invoice.tax_event_date = dt.date(2026, 2, 1)
+        db.commit()
+
+    r = client.patch(f"/api/v1/invoices/{invoice_id}", headers=h, json={
+        "lines": [{"description": "Ръчен ред", "qty": 1, "unit_price": "10.00",
+                  "source": "manual"}],
+    })
+    assert r.status_code == 200
+    assert r.json()["tax_event_date"] == "2026-02-01"
+
+
 def test_get_invoice_nonexistent_returns_404(client: TestClient) -> None:
     _login(client)
     fake_id = "00000000-0000-0000-0000-000000000000"

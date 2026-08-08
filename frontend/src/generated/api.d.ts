@@ -84,7 +84,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Companies */
+        /**
+         * List Companies
+         * @description Archived companies are hidden by default (`status=active`); pass
+         *     `status=archived` or `status=all` to see them.
+         */
         get: operations["list_companies_api_v1_platform_admin_companies_get"];
         put?: never;
         /**
@@ -171,6 +175,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/platform-admin/companies/{company_id}/seat-limit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Seat Limit
+         * @description Set a company's seat limit. `null` means unlimited. Idempotent in
+         *     effect but always audited, even when the new value equals the current
+         *     one (mirrors `grant_entitlement`/`revoke_entitlement`, not the
+         *     reasoned-transition shape of subscription lifecycle changes — there is
+         *     no mandatory reason here).
+         */
+        put: operations["set_seat_limit_api_v1_platform_admin_companies__company_id__seat_limit_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform-admin/companies/{company_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Archive Company
+         * @description Archive a company — a logical/soft archive, never a delete. No user,
+         *     session, subscription, entitlement or business-data row is touched.
+         *     Idempotent in effect but always audited, even when the company was
+         *     already archived.
+         */
+        put: operations["archive_company_api_v1_platform_admin_companies__company_id__archive_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform-admin/companies/{company_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Restore Company
+         * @description Restore an archived company. Idempotent, symmetric to
+         *     `archive_company`.
+         */
+        put: operations["restore_company_api_v1_platform_admin_companies__company_id__restore_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -233,6 +305,37 @@ export interface paths {
         put?: never;
         /** Pin Switch */
         post: operations["pin_switch_api_v1_auth_pin_switch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Pin
+         * @description Tenant self-service: set or replace the caller's own PIN. No
+         *     `user_id` in the request — there is nothing here a caller could point
+         *     at someone else's account. Never touched by Vendor provisioning
+         *     (`ProvisionCompanyRequest` has no PIN field, and never will).
+         *
+         *     Not gated by `require_subscription_ok`: the whole `/auth/*` surface is
+         *     identity/session mechanics exempt from the mutation gate (same as
+         *     `logout`/`pin-switch`, enforced by
+         *     `test_identity_auth_mechanics_are_never_gated_by_subscription_state`) —
+         *     a suspended company's owner must still be able to set a PIN and get
+         *     into the app to see why (ADR-009's "all data visible" even suspended),
+         *     the same reasoning that already keeps login/logout/pin-switch open.
+         */
+        post: operations["set_pin_api_v1_auth_pin_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -912,6 +1015,24 @@ export interface paths {
         patch: operations["update_employee_api_v1_users__user_id__patch"];
         trace?: never;
     };
+    "/api/v1/company/requisites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Company Requisites */
+        get: operations["get_company_requisites_api_v1_company_requisites_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Company Requisites */
+        patch: operations["update_company_requisites_api_v1_company_requisites_patch"];
+        trace?: never;
+    };
     "/api/v1/dashboard": {
         parameters: {
             query?: never;
@@ -1008,7 +1129,13 @@ export interface paths {
         };
         /** Get Template */
         get: operations["get_template_api_v1_ps_workflow_templates__template_id__get"];
-        put?: never;
+        /**
+         * Update Template
+         * @description Replace the template's name and ordered stage list. Never touches any
+         *     assignment that already copied stages from this template at creation
+         *     (ADR-PS-005 copy-on-create) — only the template's own vocabulary changes.
+         */
+        put: operations["update_template_api_v1_ps_workflow_templates__template_id__put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1211,6 +1338,26 @@ export interface components {
             /** Returned */
             returned: boolean;
         };
+        /**
+         * ArchiveResponse
+         * @description Mirrors `service.ArchiveResult` field-for-field.
+         */
+        ArchiveResponse: {
+            /**
+             * Company Id
+             * Format: uuid
+             */
+            company_id: string;
+            /** Archived At */
+            archived_at: string | null;
+            /** Changed */
+            changed: boolean;
+            /**
+             * Audit Id
+             * Format: uuid
+             */
+            audit_id: string;
+        };
         /** AssetHitOut */
         AssetHitOut: {
             /**
@@ -1404,6 +1551,8 @@ export interface components {
             name: string;
             /** Business Profile */
             business_profile: string;
+            /** Business Type Label */
+            business_type_label: string;
             /** Active Modules */
             active_modules: string[];
             /** Subscription State */
@@ -1419,11 +1568,31 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Archived At */
+            archived_at: string | null;
             /**
              * Subscription State Changed At
              * Format: date-time
              */
             subscription_state_changed_at: string;
+        };
+        /** CompanyRequisitesOut */
+        CompanyRequisitesOut: {
+            /** Address */
+            address: string | null;
+            /** Phone */
+            phone: string | null;
+            /** Vat Registered */
+            vat_registered: boolean;
+        };
+        /** CompanyRequisitesPatch */
+        CompanyRequisitesPatch: {
+            /** Address */
+            address?: string | null;
+            /** Phone */
+            phone?: string | null;
+            /** Vat Registered */
+            vat_registered?: boolean | null;
         };
         /**
          * CompanySummary
@@ -1443,6 +1612,8 @@ export interface components {
             name: string;
             /** Business Profile */
             business_profile: string;
+            /** Business Type Label */
+            business_type_label: string;
             /** Active Modules */
             active_modules: string[];
             /** Subscription State */
@@ -1458,6 +1629,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Archived At */
+            archived_at: string | null;
         };
         /** ContactRecordIn */
         ContactRecordIn: {
@@ -1837,6 +2010,8 @@ export interface components {
             lines: components["schemas"]["InvoiceLineOut"][];
             /** Draft Total */
             draft_total: number;
+            /** Tax Event Date */
+            tax_event_date: string | null;
         };
         /** InvoiceLineIn */
         InvoiceLineIn: {
@@ -1992,6 +2167,8 @@ export interface components {
             seat_limit: number | null;
             /** Seat Usage */
             seat_usage: number;
+            /** Has Pin */
+            has_pin: boolean;
         };
         /** NextActionCreate */
         NextActionCreate: {
@@ -2415,6 +2592,8 @@ export interface components {
              * @default generic_repair
              */
             business_profile: string;
+            /** Business Type Label */
+            business_type_label: string;
             /** Modules */
             modules?: string[];
         };
@@ -2444,6 +2623,8 @@ export interface components {
             trial_ends_at: string;
             /** Business Profile */
             business_profile: string;
+            /** Business Type Label */
+            business_type_label: string;
             /** Activated Modules */
             activated_modules: string[];
             /**
@@ -2467,6 +2648,36 @@ export interface components {
             orders: components["schemas"]["OrderHitOut"][];
             /** Assets */
             assets: components["schemas"]["AssetHitOut"][];
+        };
+        /** SeatLimitRequest */
+        SeatLimitRequest: {
+            /** Seat Limit */
+            seat_limit: number | null;
+        };
+        /**
+         * SeatLimitResponse
+         * @description Mirrors `service.SeatLimitResult` field-for-field.
+         */
+        SeatLimitResponse: {
+            /**
+             * Company Id
+             * Format: uuid
+             */
+            company_id: string;
+            /** Seat Limit */
+            seat_limit: number | null;
+            /** Changed */
+            changed: boolean;
+            /**
+             * Audit Id
+             * Format: uuid
+             */
+            audit_id: string;
+        };
+        /** SetPinRequest */
+        SetPinRequest: {
+            /** Pin */
+            pin: string;
         };
         /** StageChange */
         StageChange: {
@@ -2629,6 +2840,8 @@ export interface components {
             is_owner: boolean;
             /** Is Active */
             is_active: boolean;
+            /** Has Pin */
+            has_pin: boolean;
         };
         /** ValidationError */
         ValidationError: {
@@ -2806,7 +3019,9 @@ export interface operations {
     };
     list_companies_api_v1_platform_admin_companies_get: {
         parameters: {
-            query?: never;
+            query?: {
+                status?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2820,6 +3035,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CompanySummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -2987,6 +3211,103 @@ export interface operations {
             };
         };
     };
+    set_seat_limit_api_v1_platform_admin_companies__company_id__seat_limit_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                company_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SeatLimitRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeatLimitResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_company_api_v1_platform_admin_companies__company_id__archive_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                company_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_company_api_v1_platform_admin_companies__company_id__restore_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                company_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     login_api_v1_auth_login_post: {
         parameters: {
             query?: never;
@@ -3072,6 +3393,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["PinSwitchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_pin_api_v1_auth_pin_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPinRequest"];
             };
         };
         responses: {
@@ -4876,6 +5230,59 @@ export interface operations {
             };
         };
     };
+    get_company_requisites_api_v1_company_requisites_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyRequisitesOut"];
+                };
+            };
+        };
+    };
+    update_company_requisites_api_v1_company_requisites_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompanyRequisitesPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyRequisitesOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     dashboard_api_v1_dashboard_get: {
         parameters: {
             query?: never;
@@ -5074,6 +5481,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowTemplateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_template_api_v1_ps_workflow_templates__template_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowTemplateCreate"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

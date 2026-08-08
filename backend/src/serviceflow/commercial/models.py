@@ -10,16 +10,20 @@ Invoice itself lands here as a **Draft-only slice**: creation prefilled from
 an order's part/labor lines (via service_orders' public contract, never its
 internal models), listing, detail, and draft line edits. `status` is always
 `"draft"` for every row this slice creates — `number`, `issued_at`,
-`seller`, `buyer`, `net`/`vat`/`gross`, `annuls_invoice_id`, `annul_reason`,
-`pdf_storage_key` all stay unset. Issue (gapless numbering, requisite
-snapshot, immutability), annul/reissue, PDF rendering, and VAT computation
-are explicitly a later slice — the schema already carries their columns
-(docs/08 is frozen) so no future ALTER TABLE is needed, but no code here
-populates or enforces them yet.
+`tax_event_date`, `seller`, `buyer`, `net`/`vat`/`gross`, `annuls_invoice_id`,
+`annul_reason`, `pdf_storage_key` all stay unset. Issue (gapless numbering,
+requisite snapshot, immutability), annul/reissue, PDF rendering, and VAT
+computation are explicitly a later slice — the schema already carries their
+columns (docs/08 is frozen) so no future ALTER TABLE is needed, but no code
+here populates or enforces them yet. `tax_event_date` (migration 0018) is
+the one exception to "no future ALTER TABLE": it was not part of the
+original frozen shape and was added as its own prerequisite slice per
+docs/ACCOUNTANT_REVIEW.md §2 — it is exposed read-only (GET responses) and
+never written by any code in this module.
 """
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -47,6 +51,13 @@ class Invoice(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(default="draft", server_default="draft")
     number: Mapped[int | None] = mapped_column(default=None)
     issued_at: Mapped[datetime | None] = mapped_column(default=None)
+    # Taxable-event (or advance-payment) date — legally distinct from
+    # issued_at (ЗДДС чл. 114, ал. 1; docs/ACCOUNTANT_REVIEW.md §2).
+    # issued_at = when the document was issued; tax_event_date = the
+    # calendar date the underlying supply/payment is dated to. Populated by
+    # a future Issue workflow, never here — no automatic sync between the
+    # two fields.
+    tax_event_date: Mapped[date | None] = mapped_column(default=None)
     seller: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
     buyer: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
     vat_mode: Mapped[str | None] = mapped_column(default=None)

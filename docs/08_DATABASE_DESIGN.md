@@ -86,9 +86,13 @@ gate passes.
 ### commercial (Commercial Documents & Invoicing)
 - **invoices** — order_id, status (draft|issued|annulled), number bigint NULL until
   issue (gapless per company at issue time via document_sequences row lock),
-  issued_at, seller jsonb + buyer jsonb (snapshots — self-contained documents),
-  vat_mode (registered|not_registered), totals (net, vat, gross — stored at issue,
-  frozen), currency, annuls_invoice_id NULL, annul_reason NULL, pdf_storage_key NULL.
+  issued_at, tax_event_date date NULL (migration 0018 — legally distinct from
+  issued_at, ЗДДС чл. 114, ал. 1/docs/ACCOUNTANT_REVIEW.md §2; the one column added
+  after the original frozen shape, since it wasn't part of it; NULL until a future
+  Issue workflow populates it), seller jsonb + buyer jsonb (snapshots — self-contained
+  documents), vat_mode (registered|not_registered), totals (net, vat, gross — stored
+  at issue, frozen), currency, annuls_invoice_id NULL, annul_reason NULL,
+  pdf_storage_key NULL.
 - **invoice_lines** — invoice_id, description, qty, unit_price, vat_rate,
   source (labor|part|manual|adjustment), sort.
 - **payments** — order_id, invoice_id NULL, amount, method (cash|card|bank),

@@ -120,18 +120,42 @@
           "platform-admin"
         ],
         "summary": "List Companies",
+        "description": "Archived companies are hidden by default (`status=active`); pass\n`status=archived` or `status=all` to see them.",
         "operationId": "list_companies_api_v1_platform_admin_companies_get",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(active|archived|all)$",
+              "default": "active",
+              "title": "Status"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/CompanySummary"
                   },
-                  "type": "array",
                   "title": "Response List Companies Api V1 Platform Admin Companies Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -146,14 +170,14 @@
         "description": "The only route that creates a company. See\n`service.provision_company`'s docstring for the atomicity guarantee this\nwraps unchanged.",
         "operationId": "provision_company_api_v1_platform_admin_companies_post",
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ProvisionCompanyRequest"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -384,6 +408,148 @@
         }
       }
     },
+    "/api/v1/platform-admin/companies/{company_id}/seat-limit": {
+      "put": {
+        "tags": [
+          "platform-admin"
+        ],
+        "summary": "Set Seat Limit",
+        "description": "Set a company's seat limit. `null` means unlimited. Idempotent in\neffect but always audited, even when the new value equals the current\none (mirrors `grant_entitlement`/`revoke_entitlement`, not the\nreasoned-transition shape of subscription lifecycle changes — there is\nno mandatory reason here).",
+        "operationId": "set_seat_limit_api_v1_platform_admin_companies__company_id__seat_limit_put",
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Company Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeatLimitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeatLimitResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform-admin/companies/{company_id}/archive": {
+      "put": {
+        "tags": [
+          "platform-admin"
+        ],
+        "summary": "Archive Company",
+        "description": "Archive a company — a logical/soft archive, never a delete. No user,\nsession, subscription, entitlement or business-data row is touched.\nIdempotent in effect but always audited, even when the company was\nalready archived.",
+        "operationId": "archive_company_api_v1_platform_admin_companies__company_id__archive_put",
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Company Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform-admin/companies/{company_id}/restore": {
+      "put": {
+        "tags": [
+          "platform-admin"
+        ],
+        "summary": "Restore Company",
+        "description": "Restore an archived company. Idempotent, symmetric to\n`archive_company`.",
+        "operationId": "restore_company_api_v1_platform_admin_companies__company_id__restore_put",
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Company Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/login": {
       "post": {
         "tags": [
@@ -483,6 +649,48 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/PinSwitchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/pin": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Set Pin",
+        "description": "Tenant self-service: set or replace the caller's own PIN. No\n`user_id` in the request — there is nothing here a caller could point\nat someone else's account. Never touched by Vendor provisioning\n(`ProvisionCompanyRequest` has no PIN field, and never will).\n\nNot gated by `require_subscription_ok`: the whole `/auth/*` surface is\nidentity/session mechanics exempt from the mutation gate (same as\n`logout`/`pin-switch`, enforced by\n`test_identity_auth_mechanics_are_never_gated_by_subscription_state`) —\na suspended company's owner must still be able to set a PIN and get\ninto the app to see why (ADR-009's \"all data visible\" even suspended),\nthe same reasoning that already keeps login/logout/pin-switch open.",
+        "operationId": "set_pin_api_v1_auth_pin_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPinRequest"
               }
             }
           },
@@ -3239,6 +3447,66 @@
         }
       }
     },
+    "/api/v1/company/requisites": {
+      "get": {
+        "tags": [
+          "company"
+        ],
+        "summary": "Get Company Requisites",
+        "operationId": "get_company_requisites_api_v1_company_requisites_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyRequisitesOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "company"
+        ],
+        "summary": "Update Company Requisites",
+        "operationId": "update_company_requisites_api_v1_company_requisites_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompanyRequisitesPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyRequisitesOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/dashboard": {
       "get": {
         "tags": [
@@ -3492,6 +3760,58 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowTemplateOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "ps-catalog"
+        ],
+        "summary": "Update Template",
+        "description": "Replace the template's name and ordered stage list. Never touches any\nassignment that already copied stages from this template at creation\n(ADR-PS-005 copy-on-create) — only the template's own vocabulary changes.",
+        "operationId": "update_template_api_v1_ps_workflow_templates__template_id__put",
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowTemplateCreate"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -4051,6 +4371,45 @@
         ],
         "title": "AccessoryPatch"
       },
+      "ArchiveResponse": {
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Company Id"
+          },
+          "archived_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived At"
+          },
+          "changed": {
+            "type": "boolean",
+            "title": "Changed"
+          },
+          "audit_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Audit Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "company_id",
+          "archived_at",
+          "changed",
+          "audit_id"
+        ],
+        "title": "ArchiveResponse",
+        "description": "Mirrors `service.ArchiveResult` field-for-field."
+      },
       "AssetHitOut": {
         "properties": {
           "id": {
@@ -4472,6 +4831,10 @@
             "type": "string",
             "title": "Business Profile"
           },
+          "business_type_label": {
+            "type": "string",
+            "title": "Business Type Label"
+          },
           "active_modules": {
             "items": {
               "type": "string"
@@ -4515,6 +4878,18 @@
             "format": "date-time",
             "title": "Created At"
           },
+          "archived_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived At"
+          },
           "subscription_state_changed_at": {
             "type": "string",
             "format": "date-time",
@@ -4526,15 +4901,96 @@
           "id",
           "name",
           "business_profile",
+          "business_type_label",
           "active_modules",
           "subscription_state",
           "trial_ends_at",
           "seat_limit",
           "seat_usage",
           "created_at",
+          "archived_at",
           "subscription_state_changed_at"
         ],
         "title": "CompanyDetail"
+      },
+      "CompanyRequisitesOut": {
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "vat_registered": {
+            "type": "boolean",
+            "title": "Vat Registered"
+          }
+        },
+        "type": "object",
+        "required": [
+          "address",
+          "phone",
+          "vat_registered"
+        ],
+        "title": "CompanyRequisitesOut"
+      },
+      "CompanyRequisitesPatch": {
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 30
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "vat_registered": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vat Registered"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CompanyRequisitesPatch"
       },
       "CompanySummary": {
         "properties": {
@@ -4551,6 +5007,10 @@
             "type": "string",
             "title": "Business Profile"
           },
+          "business_type_label": {
+            "type": "string",
+            "title": "Business Type Label"
+          },
           "active_modules": {
             "items": {
               "type": "string"
@@ -4593,6 +5053,18 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "archived_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived At"
           }
         },
         "type": "object",
@@ -4600,12 +5072,14 @@
           "id",
           "name",
           "business_profile",
+          "business_type_label",
           "active_modules",
           "subscription_state",
           "trial_ends_at",
           "seat_limit",
           "seat_usage",
-          "created_at"
+          "created_at",
+          "archived_at"
         ],
         "title": "CompanySummary",
         "description": "Administrative metadata only (ADR-BOS-009 §Vendor data visibility) —\nnever tenant operational data. `seat_usage` closes a gap flagged in the\nCompany Provisioning slice: ADR-BOS-009 lists it as vendor-visible\nmetadata alongside `seat_limit`, deferred only until Tenant Employee\nManagement (docs/business-os/18 §9 phase 7) gave it something to count."
@@ -5628,6 +6102,18 @@
           "draft_total": {
             "type": "number",
             "title": "Draft Total"
+          },
+          "tax_event_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Event Date"
           }
         },
         "type": "object",
@@ -5639,7 +6125,8 @@
           "currency",
           "row_version",
           "lines",
-          "draft_total"
+          "draft_total",
+          "tax_event_date"
         ],
         "title": "InvoiceDetailOut"
       },
@@ -6061,6 +6548,10 @@
           "seat_usage": {
             "type": "integer",
             "title": "Seat Usage"
+          },
+          "has_pin": {
+            "type": "boolean",
+            "title": "Has Pin"
           }
         },
         "type": "object",
@@ -6074,7 +6565,8 @@
           "csrf_token",
           "active_modules",
           "seat_limit",
-          "seat_usage"
+          "seat_usage",
+          "has_pin"
         ],
         "title": "MeResponse"
       },
@@ -7188,6 +7680,12 @@
             "title": "Business Profile",
             "default": "generic_repair"
           },
+          "business_type_label": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Business Type Label"
+          },
           "modules": {
             "items": {
               "type": "string"
@@ -7201,7 +7699,8 @@
           "company_name",
           "owner_name",
           "owner_email",
-          "owner_password"
+          "owner_password",
+          "business_type_label"
         ],
         "title": "ProvisionCompanyRequest"
       },
@@ -7230,6 +7729,10 @@
             "type": "string",
             "title": "Business Profile"
           },
+          "business_type_label": {
+            "type": "string",
+            "title": "Business Type Label"
+          },
           "activated_modules": {
             "items": {
               "type": "string"
@@ -7250,6 +7753,7 @@
           "subscription_state",
           "trial_ends_at",
           "business_profile",
+          "business_type_label",
           "activated_modules",
           "audit_id"
         ],
@@ -7305,6 +7809,80 @@
           "assets"
         ],
         "title": "SearchOut"
+      },
+      "SeatLimitRequest": {
+        "properties": {
+          "seat_limit": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seat Limit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "seat_limit"
+        ],
+        "title": "SeatLimitRequest"
+      },
+      "SeatLimitResponse": {
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Company Id"
+          },
+          "seat_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seat Limit"
+          },
+          "changed": {
+            "type": "boolean",
+            "title": "Changed"
+          },
+          "audit_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Audit Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "company_id",
+          "seat_limit",
+          "changed",
+          "audit_id"
+        ],
+        "title": "SeatLimitResponse",
+        "description": "Mirrors `service.SeatLimitResult` field-for-field."
+      },
+      "SetPinRequest": {
+        "properties": {
+          "pin": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 4,
+            "title": "Pin"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pin"
+        ],
+        "title": "SetPinRequest"
       },
       "StageChange": {
         "properties": {
@@ -7737,6 +8315,10 @@
           "is_active": {
             "type": "boolean",
             "title": "Is Active"
+          },
+          "has_pin": {
+            "type": "boolean",
+            "title": "Has Pin"
           }
         },
         "type": "object",
@@ -7745,7 +8327,8 @@
           "name",
           "email",
           "is_owner",
-          "is_active"
+          "is_active",
+          "has_pin"
         ],
         "title": "UserOut"
       },
