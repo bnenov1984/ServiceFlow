@@ -1,10 +1,13 @@
-/** PartLines (docs/15 §6.5): state chips needed→ordered→received→installed
- * (docs/02 §7 — no inventory, states drive the Чака части flow). */
+/** PartLines (docs/15 §6.5): per-line state selector, direct-select (not
+ * cycling) - needed/ordered/received/installed/removed, no server-side
+ * transition restriction (docs/02 §7 — no inventory, states drive the
+ * Чака части flow). */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useToast } from "../components/Toast";
 import { t } from "../i18n/bg";
-import { api } from "../lib/api";
+import { ApiError, api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
 
 interface PartLineOut {
@@ -16,7 +19,10 @@ interface PartLineOut {
   state: string;
 }
 
-const STATES = ["needed", "ordered", "received", "installed"] as const;
+// All 5 states the domain model accepts (backend/service_orders/lines.py
+// PART_STATES) - the backend has no from->to transition matrix for part
+// lines (unlike order status), so every state is always a valid target.
+const STATES = ["needed", "ordered", "received", "installed", "removed"] as const;
 const STATE_LABEL: Record<string, Parameters<typeof t>[0]> = {
   needed: "order.part_state_needed",
   ordered: "order.part_state_ordered",
@@ -28,7 +34,11 @@ const STATE_LABEL: Record<string, Parameters<typeof t>[0]> = {
 export function PartLinesSection({ orderId }: { orderId: string }) {
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
+  // Tracked per line-id so one row's in-flight mutation never disables or
+  // otherwise affects any other row's selector.
+  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
+  const pushToast = useToast();
   const key = queryKeys.orderPartLines(orderId);
 
   const { data: lines } = useQuery({
@@ -51,12 +61,21 @@ export function PartLinesSection({ orderId }: { orderId: string }) {
     await invalidate();
   };
 
-  const cycleState = async (line: PartLineOut) => {
-    const idx = STATES.indexOf(line.state as (typeof STATES)[number]);
-    const next = STATES[Math.min(idx + 1, STATES.length - 1)];
-    if (next === line.state) return;
-    await api.patch(`/part-lines/${line.id}`, { state: next });
-    await invalidate();
+  const changeState = async (line: PartLineOut, nextState: string) => {
+    if (nextState === line.state || pendingIds.has(line.id)) return;
+    setPendingIds((prev) => new Set(prev).add(line.id));
+    try {
+      await api.patch(`/part-lines/${line.id}`, { state: nextState });
+      await invalidate();
+    } catch (err) {
+      pushToast("error", err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
+    } finally {
+      setPendingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(line.id);
+        return next;
+      });
+    }
   };
 
   return (
@@ -67,15 +86,22 @@ export function PartLinesSection({ orderId }: { orderId: string }) {
       <ul className="mb-3 flex flex-col gap-2">
         {(lines ?? []).map((line) => (
           <li key={line.id} className="flex items-center justify-between gap-2 text-sm">
-            <span className="text-slate-700">{line.name} · {line.unit_price.toFixed(2)} €</span>
-            <button
-              type="button"
-              onClick={() => void cycleState(line)}
-              disabled={line.state === "installed" || line.state === "removed"}
-              className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-200 disabled:opacity-60"
+            <span>
+              <span className="font-medium text-slate-800">{line.name}</span>
+              {" · "}
+              <span className="text-slate-500">{line.unit_price.toFixed(2)} €</span>
+            </span>
+            <select
+              aria-label={`${t("order.part_status_label")} — ${line.name}`}
+              value={line.state}
+              disabled={pendingIds.has(line.id)}
+              onChange={(e) => void changeState(line, e.target.value)}
+              className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60 min-h-touch"
             >
-              {t(STATE_LABEL[line.state] ?? "order.part_state_needed")}
-            </button>
+              {STATES.map((s) => (
+                <option key={s} value={s}>{t(STATE_LABEL[s])}</option>
+              ))}
+            </select>
           </li>
         ))}
         {lines?.length === 0 && <p className="text-sm text-slate-400">{t("order.part_lines_none")}</p>}

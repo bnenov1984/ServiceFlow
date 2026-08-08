@@ -260,6 +260,7 @@ export const bg = {
   "order.part_lines": "Части",
   "order.part_lines_none": "Няма добавени части.",
   "order.part_name_placeholder": "Име на частта…",
+  "order.part_status_label": "Статус на частта",
   "order.part_state_needed": "Нужна",
   "order.part_state_ordered": "Поръчана",
   "order.part_state_received": "Получена",
