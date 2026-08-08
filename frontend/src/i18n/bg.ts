@@ -177,6 +177,7 @@ export const bg = {
   "intake.photos_failed": "{count} снимки не бяха качени.",
 
   // --- order detail (docs/15 §6.5-6.6) ---
+  "order.back_to_orders": "← Поръчки",
   "order.customer": "Клиент",
   "order.asset": "Актив",
   "order.complaint": "Оплакване",

@@ -6,7 +6,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { StatusPill } from "../components/StatusPill";
@@ -190,6 +190,9 @@ export function OrderHeader({ orderId, number, statusCode, archived }: OrderHead
 
   return (
     <div className="mb-4 flex flex-wrap items-center gap-3">
+      <Link to="/orders" className="text-sm font-medium text-blue-700 hover:underline">
+        {t("order.back_to_orders")}
+      </Link>
       <h1 className="text-2xl font-bold text-slate-900">№ {number}</h1>
       <StatusPill code={statusCode} />
 
