@@ -38,6 +38,10 @@ interface OrderDetailOut {
   estimated_total: number;
   paid_amount: number;
   balance: number;
+  // Order-completion timestamp — the frozen client-side default source for
+  // InvoiceCard's tax_event_date suggestion (docs/ACCOUNTANT_REVIEW.md D1:
+  // a convenience default only, never sent unedited/unseen).
+  delivered_at: string | null;
 }
 
 interface CustomerOut {
@@ -140,7 +144,7 @@ export function OrderPage() {
             paidAmount={order.paid_amount}
             balance={order.balance}
           />
-          <InvoiceCard orderId={order.id} />
+          <InvoiceCard orderId={order.id} deliveredAt={order.delivered_at} />
         </div>
 
         <div className="flex flex-col gap-4">

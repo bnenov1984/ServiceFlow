@@ -1,22 +1,22 @@
 /**
- * InvoiceCard (docs/01 §Invoice — Draft slice only): shows whether the order
- * already has a draft invoice, lets a user create one (prefilled from the
- * order's part/labor lines server-side), and edit it inline. Totals are
- * backend-authoritative (draft_total, BR-3) — this component never sums the
- * invoice total itself, only a per-line qty×price preview (not "the total").
- *
- * Issue stays disabled here too, mirroring MoneyCard's existing „Издай
- * фактура" placeholder (docs/15 grayed-nav treatment) — no fake number, no
- * client-side PDF, i18n tooltip explains it's not available yet.
+ * InvoiceCard (docs/01 §Invoice): shows whether the order already has an
+ * invoice, lets a user create/edit a draft (prefilled from the order's
+ * part/labor lines server-side), and — Phase A (docs/ACCOUNTANT_REVIEW.md
+ * 'RepairFlow Invoice V1 Freeze' §5) — lets the Owner issue it. Draft totals
+ * are backend-authoritative (draft_total, BR-3); once issued, net/vat/gross
+ * from the Issue response are the only authoritative totals — this component
+ * never recomputes either.
  */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { useAuth } from "../auth/AuthContext";
 import { useToast } from "../components/Toast";
 import { Skeleton } from "../components/States";
 import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
+import { InvoiceIssueDialog, type IssueErrorInfo } from "./InvoiceIssueDialog";
 
 interface InvoiceOut {
   id: string;
@@ -36,9 +36,28 @@ interface InvoiceLineOut {
   source: string;
 }
 
+interface SellerSnapshot {
+  name: string;
+  address: string;
+  eik: string;
+  vat_registered: boolean;
+}
+
+interface BuyerSnapshot {
+  name: string;
+}
+
 interface InvoiceDetailOut extends InvoiceOut {
   lines: InvoiceLineOut[];
   draft_total: number;
+  tax_event_date: string | null;
+  issued_at: string | null;
+  seller: SellerSnapshot | null;
+  buyer: BuyerSnapshot | null;
+  vat_mode: string | null;
+  net: number | null;
+  vat: number | null;
+  gross: number | null;
 }
 
 interface LineDraft {
@@ -64,16 +83,35 @@ function toLineDraft(line: InvoiceLineOut): LineDraft {
   };
 }
 
-export function InvoiceCard({ orderId }: { orderId: string }) {
+function todayLocalISODate(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/** Client-side convenience default only — the user sees and can edit it
+ * before confirming (docs/ACCOUNTANT_REVIEW.md D1: never backend-derived,
+ * and never silently sent unedited). Sliced directly from the ISO string,
+ * never routed through a Date object: delivered_at is a UTC timestamp, and
+ * parsing+reformatting it through local Date arithmetic risks rendering the
+ * wrong calendar day near a local midnight boundary. */
+function defaultTaxEventDate(deliveredAt: string | null): string {
+  return deliveredAt ? deliveredAt.slice(0, 10) : todayLocalISODate();
+}
+
+export function InvoiceCard({
+  orderId, deliveredAt,
+}: { orderId: string; deliveredAt: string | null }) {
   const [open, setOpen] = useState(false);
 
-  const { data: drafts, isLoading } = useQuery({
-    queryKey: queryKeys.orderInvoiceDrafts(orderId),
-    queryFn: () =>
-      api.get<InvoiceOut[]>(`/invoices?order_id=${orderId}&status=draft`),
+  const { data: invoices, isLoading } = useQuery({
+    queryKey: queryKeys.orderInvoices(orderId),
+    queryFn: () => api.get<InvoiceOut[]>(`/invoices?order_id=${orderId}`),
   });
 
-  const draft = drafts?.[0] ?? null;
+  const invoice = invoices?.[0] ?? null;
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
@@ -83,9 +121,11 @@ export function InvoiceCard({ orderId }: { orderId: string }) {
 
       {isLoading && <Skeleton className="h-6 w-32" />}
 
-      {!isLoading && !draft && <InvoiceCreateButton orderId={orderId} onCreated={() => setOpen(true)} />}
+      {!isLoading && !invoice && (
+        <InvoiceCreateButton orderId={orderId} onCreated={() => setOpen(true)} />
+      )}
 
-      {!isLoading && draft && (
+      {!isLoading && invoice?.status === "draft" && (
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
@@ -101,13 +141,16 @@ export function InvoiceCard({ orderId }: { orderId: string }) {
           </div>
           {open && (
             <InvoiceDraftEditor
-              invoiceId={draft.id}
+              invoiceId={invoice.id}
               orderId={orderId}
+              deliveredAt={deliveredAt}
               onClose={() => setOpen(false)}
             />
           )}
         </div>
       )}
+
+      {!isLoading && invoice?.status === "issued" && <IssuedInvoiceView invoiceId={invoice.id} />}
     </div>
   );
 }
@@ -124,7 +167,7 @@ function InvoiceCreateButton({
     setError(null);
     try {
       await api.post(`/orders/${orderId}/invoices`);
-      await queryClient.invalidateQueries({ queryKey: queryKeys.orderInvoiceDrafts(orderId) });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orderInvoices(orderId) });
       onCreated();
     } catch (err) {
       setError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
@@ -150,8 +193,9 @@ function InvoiceCreateButton({
 }
 
 function InvoiceDraftEditor({
-  invoiceId, orderId, onClose,
-}: { invoiceId: string; orderId: string; onClose: () => void }) {
+  invoiceId, orderId, deliveredAt, onClose,
+}: { invoiceId: string; orderId: string; deliveredAt: string | null; onClose: () => void }) {
+  const { me } = useAuth();
   const queryClient = useQueryClient();
   const pushToast = useToast();
   const [lines, setLines] = useState<LineDraft[] | null>(null);
@@ -161,6 +205,10 @@ function InvoiceDraftEditor({
   const [newSource, setNewSource] = useState<"manual" | "adjustment">("manual");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [issueOpen, setIssueOpen] = useState(false);
+  const [issuing, setIssuing] = useState(false);
+  const [issueError, setIssueError] = useState<IssueErrorInfo | null>(null);
 
   const { data: invoice, isLoading } = useQuery({
     queryKey: queryKeys.invoice(invoiceId),
@@ -215,7 +263,7 @@ function InvoiceDraftEditor({
       });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.invoice(invoiceId) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.orderInvoiceDrafts(orderId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.orderInvoices(orderId) }),
       ]);
       pushToast("success", t("order.invoice_saved"));
     } catch (err) {
@@ -225,9 +273,52 @@ function InvoiceDraftEditor({
     }
   };
 
+  const submitIssue = async (taxEventDate: string) => {
+    if (issuing) return; // guards against a duplicate submit while pending
+    setIssuing(true);
+    setIssueError(null);
+    try {
+      const issued = await api.post<InvoiceDetailOut>(`/invoices/${invoiceId}/issue`, {
+        tax_event_date: taxEventDate,
+      });
+      // Seed both affected caches directly from the response — no extra GET.
+      queryClient.setQueryData(queryKeys.invoice(invoiceId), issued);
+      queryClient.setQueryData<InvoiceOut[]>(queryKeys.orderInvoices(orderId), (prev) =>
+        prev
+          ? prev.map((inv) =>
+              inv.id === invoiceId ? { ...inv, status: issued.status, number: issued.number } : inv,
+            )
+          : prev,
+      );
+      // Genuinely affected but not locally derivable — Issue publishes a new
+      // invoice_issued event server-side; never fabricate it client-side.
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orderTimeline(orderId) });
+      setIssueOpen(false);
+      pushToast("success", t("order.invoice_issued_success"));
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.messageKey === "errors.invoices.not_draft") {
+          // Someone else issued it concurrently — reflect the real state
+          // (which the list-cache patch above did not anticipate) rather
+          // than argue with a stale local draft.
+          await queryClient.invalidateQueries({ queryKey: queryKeys.orderInvoices(orderId) });
+          setIssueOpen(false);
+          return;
+        }
+        setIssueError({ message: t(err.messageKey, err.params), key: err.messageKey });
+      } else {
+        setIssueError({ message: t("errors.internal"), key: "" });
+      }
+    } finally {
+      setIssuing(false);
+    }
+  };
+
   if (isLoading || !invoice || lines === null) {
     return <Skeleton className="h-24" />;
   }
+
+  const isEmpty = lines.length === 0;
 
   return (
     <div className="flex flex-col gap-3 border-t border-slate-100 pt-3">
@@ -343,15 +434,123 @@ function InvoiceDraftEditor({
         >
           {t("common.close")}
         </button>
-        <button
-          type="button"
-          disabled
-          title={t("nav.coming_soon")}
-          className="ml-auto cursor-not-allowed rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-300 min-h-touch"
-        >
-          {t("order.invoice_button")}
-        </button>
+        {me?.is_owner && (
+          <button
+            type="button"
+            disabled={isEmpty}
+            title={isEmpty ? t("order.invoice_issue_empty_hint") : undefined}
+            onClick={() => setIssueOpen(true)}
+            className="ml-auto rounded-lg border border-blue-600 px-3 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300 min-h-touch"
+          >
+            {t("order.invoice_button")}
+          </button>
+        )}
       </div>
+
+      {issueOpen && (
+        <InvoiceIssueDialog
+          open={issueOpen}
+          onClose={() => { setIssueOpen(false); setIssueError(null); }}
+          onConfirm={(date) => void submitIssue(date)}
+          submitting={issuing}
+          error={issueError}
+          draftTotal={invoice.draft_total}
+          defaultTaxEventDate={defaultTaxEventDate(deliveredAt)}
+        />
+      )}
+    </div>
+  );
+}
+
+function IssuedInvoiceView({ invoiceId }: { invoiceId: string }) {
+  const { data: invoice, isLoading } = useQuery({
+    queryKey: queryKeys.invoice(invoiceId),
+    queryFn: () => api.get<InvoiceDetailOut>(`/invoices/${invoiceId}`),
+  });
+
+  if (isLoading || !invoice) {
+    return <Skeleton className="h-32" />;
+  }
+
+  const number = invoice.number !== null ? String(invoice.number).padStart(10, "0") : "";
+
+  return (
+    <div className="flex flex-col gap-3 border-t border-slate-100 pt-3">
+      <div className="flex items-center justify-between">
+        <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700">
+          {t("order.invoice_status_issued")}
+        </span>
+        <span className="text-sm font-semibold tabular-nums text-slate-900">
+          {t("order.invoice_issued_number")} {number}
+        </span>
+      </div>
+
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+        <div>
+          <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            {t("order.invoice_issued_at")}
+          </dt>
+          <dd className="mt-0.5 text-slate-900">
+            {invoice.issued_at ? new Date(invoice.issued_at).toLocaleString("bg-BG") : "—"}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            {t("order.invoice_issue_tax_event_date")}
+          </dt>
+          <dd className="mt-0.5 text-slate-900">{invoice.tax_event_date ?? "—"}</dd>
+        </div>
+      </dl>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <h4 className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            {t("order.invoice_seller")}
+          </h4>
+          {invoice.seller && (
+            <div className="mt-1 text-sm text-slate-700">
+              <p>{invoice.seller.name}</p>
+              <p>{invoice.seller.address}</p>
+              <p>{invoice.seller.eik}</p>
+            </div>
+          )}
+        </div>
+        <div>
+          <h4 className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            {t("order.invoice_buyer")}
+          </h4>
+          {invoice.buyer && <p className="mt-1 text-sm text-slate-700">{invoice.buyer.name}</p>}
+        </div>
+      </div>
+
+      <ul className="flex flex-col gap-1 text-sm">
+        {invoice.lines.map((line) => (
+          <li key={line.id} className="flex items-center justify-between gap-2">
+            <span className="flex-1 text-slate-700">
+              {line.description} × {line.qty}
+            </span>
+            <span className="tabular-nums text-slate-500">{line.unit_price.toFixed(2)} €</span>
+            <span className="w-20 text-right tabular-nums text-slate-900">
+              {(line.qty * line.unit_price).toFixed(2)} €
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      <dl className="flex flex-col gap-1 border-t border-slate-100 pt-2 text-sm">
+        <div className="flex justify-between">
+          <dt className="text-slate-500">{t("order.invoice_net")}</dt>
+          <dd className="tabular-nums text-slate-900">{(invoice.net ?? 0).toFixed(2)} €</dd>
+        </div>
+        <div className="flex justify-between">
+          <dt className="text-slate-500">{t("order.invoice_vat_not_charged")}</dt>
+          <dd className="tabular-nums text-slate-900">{(invoice.vat ?? 0).toFixed(2)} €</dd>
+        </div>
+        <div className="flex justify-between text-base font-bold">
+          <dt className="text-slate-700">{t("order.invoice_gross")}</dt>
+          <dd className="tabular-nums text-slate-900">{(invoice.gross ?? 0).toFixed(2)} €</dd>
+        </div>
+      </dl>
     </div>
   );
 }

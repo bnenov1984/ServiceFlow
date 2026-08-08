@@ -18,8 +18,8 @@ describe("MoneyCard", () => {
     expect(screen.getByText("-30.00 €")).toBeInTheDocument();
   });
 
-  it("keeps the invoice button disabled — Invoice is not part of this slice", () => {
+  it("does not render its own Invoice action — InvoiceCard owns Issue", () => {
     render(<MoneyCard estimatedTotal={0} paidAmount={0} balance={0} />);
-    expect(screen.getByRole("button", { name: "Издай фактура" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Издай фактура" })).not.toBeInTheDocument();
   });
 });

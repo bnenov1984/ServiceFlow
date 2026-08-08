@@ -1,9 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../components/Toast";
+import { queryKeys } from "../lib/queryKeys";
 import { ApiError, api } from "../lib/api";
 import { InvoiceCard } from "./InvoiceCard";
 
@@ -12,16 +14,25 @@ vi.mock("../lib/api", async (importOriginal) => {
   return { ...actual, api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() } };
 });
 
+const mockUseAuth = vi.fn();
+vi.mock("../auth/AuthContext", () => ({
+  useAuth: () => mockUseAuth(),
+}));
+
 const orderId = "order-1";
 
-function renderCard() {
+function renderCard(deliveredAt: string | null = null, isOwner = true) {
+  mockUseAuth.mockReturnValue({ me: { is_owner: isOwner } });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const Wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>
-      <ToastProvider>{children}</ToastProvider>
+      <ToastProvider>
+        <MemoryRouter>{children}</MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>
   );
-  return render(<InvoiceCard orderId={orderId} />, { wrapper: Wrapper });
+  const view = render(<InvoiceCard orderId={orderId} deliveredAt={deliveredAt} />, { wrapper: Wrapper });
+  return { ...view, client };
 }
 
 const draftListItem = {
@@ -29,14 +40,92 @@ const draftListItem = {
   currency: "EUR", row_version: 1,
 };
 
-const draftDetail = {
+const baseDraftDetail = {
   ...draftListItem,
   lines: [
     { id: "l1", description: "Дисплей", qty: 1, unit_price: 100, vat_rate: null, source: "part" },
     { id: "l2", description: "Смяна на дисплей", qty: 1, unit_price: 50, vat_rate: null, source: "labor" },
   ],
   draft_total: 150,
+  tax_event_date: null, issued_at: null, seller: null, buyer: null,
+  vat_mode: null, net: null, vat: null, gross: null,
 };
+
+const draftDetail = baseDraftDetail;
+
+const issuedListItem = { ...draftListItem, status: "issued", number: 1, row_version: 2 };
+
+const issuedDetail = {
+  ...issuedListItem,
+  lines: baseDraftDetail.lines,
+  draft_total: 150,
+  tax_event_date: "2026-03-15",
+  issued_at: "2026-03-15T10:30:00Z",
+  seller: {
+    name: "Сервиз А", address: "гр. София, ул. Примерна 1",
+    eik: "130489869", vat_registered: false,
+  },
+  buyer: { name: "Иван Петров" },
+  vat_mode: "not_registered",
+  net: 150, vat: 0, gross: 150,
+};
+
+function mockDraftFlow(): void {
+  vi.mocked(api.get).mockImplementation((path: string) =>
+    Promise.resolve(path.startsWith("/invoices?") ? [draftListItem] : draftDetail) as never,
+  );
+}
+
+/** Models the real backend across the whole flow, not just the POST: once
+ * Issue succeeds, a GET (e.g. the read-view's own useQuery re-mount/refetch)
+ * must see the real issued state too — otherwise a stale-draft GET mock
+ * would overwrite the response-seeded cache the moment any component
+ * refetches, a test-double gap that doesn't exist against a real backend. */
+function mockIssueSuccess(overrides: Partial<typeof issuedDetail> = {}): void {
+  const finalIssued = { ...issuedDetail, ...overrides };
+  let issued = false;
+  vi.mocked(api.get).mockImplementation((path: string) => {
+    if (path.startsWith("/invoices?")) {
+      return Promise.resolve([issued ? { ...issuedListItem, number: finalIssued.number } : draftListItem]) as never;
+    }
+    return Promise.resolve(issued ? finalIssued : draftDetail) as never;
+  });
+  vi.mocked(api.post).mockImplementation((path: string) => {
+    if (path.endsWith("/issue")) {
+      issued = true;
+      return Promise.resolve(finalIssued) as never;
+    }
+    return Promise.resolve(draftDetail) as never;
+  });
+}
+
+async function openDraft(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  await user.click(await screen.findByRole("button", { name: "Отвори" }));
+  await screen.findByDisplayValue("Дисплей");
+}
+
+async function openIssueDialog(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  await openDraft(user);
+  await user.click(screen.getByRole("button", { name: "Издай фактура" }));
+  await screen.findByRole("heading", { name: "Издаване на фактура" });
+}
+
+/** The dialog's own confirm button, scoped to avoid ambiguity with the
+ * trigger button of the same name that stays in the DOM (unhidden by
+ * jsdom's <dialog> handling) once the dialog is open. */
+function dialogConfirmButton(): HTMLElement {
+  return within(screen.getByRole("dialog")).getByRole("button", { name: "Издай фактура" });
+}
+
+beforeEach(() => {
+  vi.mocked(api.get).mockReset();
+  vi.mocked(api.post).mockReset();
+  vi.mocked(api.patch).mockReset();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("InvoiceCard", () => {
   it("shows the empty state and create button when no draft exists", async () => {
@@ -45,7 +134,7 @@ describe("InvoiceCard", () => {
 
     expect(await screen.findByText("Няма чернова на фактура.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Създай чернова" })).toBeInTheDocument();
-    expect(api.get).toHaveBeenCalledWith(`/invoices?order_id=${orderId}&status=draft`);
+    expect(api.get).toHaveBeenCalledWith(`/invoices?order_id=${orderId}`);
   });
 
   it("creates a draft via POST and opens it", async () => {
@@ -70,9 +159,7 @@ describe("InvoiceCard", () => {
 
   it("shows prefilled part/labor lines with their source preserved when opened", async () => {
     const user = userEvent.setup();
-    vi.mocked(api.get).mockImplementation((path: string) =>
-      Promise.resolve(path.startsWith("/invoices?") ? [draftListItem] : draftDetail) as never,
-    );
+    mockDraftFlow();
     renderCard();
 
     await user.click(await screen.findByRole("button", { name: "Отвори" }));
@@ -105,19 +192,15 @@ describe("InvoiceCard", () => {
     });
     renderCard();
 
-    await user.click(await screen.findByRole("button", { name: "Отвори" }));
-    await screen.findByDisplayValue("Дисплей");
+    await openDraft(user);
 
-    // edit an existing (prefilled) line's description
     const descriptionInputs = screen.getAllByPlaceholderText("Описание…");
     await user.clear(descriptionInputs[0]);
     await user.type(descriptionInputs[0], "Дисплей (нов)");
 
-    // remove the labor line
     const removeButtons = screen.getAllByRole("button", { name: "Премахни ред" });
     await user.click(removeButtons[1]);
 
-    // add a manual line — the last remaining "Описание…" field is the add-form
     const descriptionFields = screen.getAllByPlaceholderText("Описание…");
     const addDescription = descriptionFields[descriptionFields.length - 1];
     await user.type(addDescription, "Транспорт");
@@ -140,13 +223,10 @@ describe("InvoiceCard", () => {
 
   it("keeps saved state on close then reopen (no stale unsaved edits)", async () => {
     const user = userEvent.setup();
-    vi.mocked(api.get).mockImplementation((path: string) =>
-      Promise.resolve(path.startsWith("/invoices?") ? [draftListItem] : draftDetail) as never,
-    );
+    mockDraftFlow();
     renderCard();
 
-    await user.click(await screen.findByRole("button", { name: "Отвори" }));
-    await screen.findByDisplayValue("Дисплей");
+    await openDraft(user);
 
     await user.click(screen.getByRole("button", { name: "Затвори чернова" }));
     expect(screen.queryByDisplayValue("Дисплей")).not.toBeInTheDocument();
@@ -169,18 +249,394 @@ describe("InvoiceCard", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Поръчката е архивирана.");
   });
 
-  it("keeps the issue action disabled with no fake number or PDF", async () => {
+  // --- Draft: Issue action -------------------------------------------
+
+  it("Owner sees a real, enabled Issue action on a non-empty draft", async () => {
     const user = userEvent.setup();
+    mockDraftFlow();
+    renderCard(null, true);
+
+    await openDraft(user);
+    const issueButton = screen.getByRole("button", { name: "Издай фактура" });
+    expect(issueButton).toBeInTheDocument();
+    expect(issueButton).not.toBeDisabled();
+    expect(screen.queryByText(/№\s*\d/)).not.toBeInTheDocument();
+  });
+
+  it("Worker never sees a usable Issue action", async () => {
+    const user = userEvent.setup();
+    mockDraftFlow();
+    renderCard(null, false);
+
+    await openDraft(user);
+    expect(screen.queryByRole("button", { name: "Издай фактура" })).not.toBeInTheDocument();
+  });
+
+  it("disables Issue with an explanation when the draft has no lines", async () => {
+    const user = userEvent.setup();
+    const emptyDetail = { ...draftDetail, lines: [], draft_total: 0 };
     vi.mocked(api.get).mockImplementation((path: string) =>
-      Promise.resolve(path.startsWith("/invoices?") ? [draftListItem] : draftDetail) as never,
+      Promise.resolve(path.startsWith("/invoices?") ? [draftListItem] : emptyDetail) as never,
     );
     renderCard();
 
     await user.click(await screen.findByRole("button", { name: "Отвори" }));
-
     const issueButton = await screen.findByRole("button", { name: "Издай фактура" });
     expect(issueButton).toBeDisabled();
-    expect(screen.queryByText(/№\s*\d/)).not.toBeInTheDocument();
-    expect(document.querySelector('a[href$=".pdf"]')).not.toBeInTheDocument();
+    expect(issueButton).toHaveAttribute("title", "Добавете поне един ред, преди да издадете фактура.");
+  });
+
+  it("opens the confirmation dialog on click", async () => {
+    const user = userEvent.setup();
+    mockDraftFlow();
+    renderCard();
+
+    await openIssueDialog(user);
+    expect(screen.getByText(
+      "След издаването фактурата получава окончателен номер и повече не може да бъде редактирана.",
+    )).toBeInTheDocument();
+  });
+
+  it("shows an editable tax event date field", async () => {
+    const user = userEvent.setup();
+    mockDraftFlow();
+    renderCard("2026-02-10T00:00:00Z");
+
+    await openIssueDialog(user);
+    const dateInput = screen.getByLabelText("Дата на данъчно събитие") as HTMLInputElement;
+    expect(dateInput).toBeInTheDocument();
+    await user.clear(dateInput);
+    await user.type(dateInput, "2026-02-20");
+    expect(dateInput).toHaveValue("2026-02-20");
+  });
+
+  it("defaults the date to the order's delivery date when available", async () => {
+    const user = userEvent.setup();
+    mockDraftFlow();
+    renderCard("2026-02-10T18:45:00Z");
+
+    await openIssueDialog(user);
+    expect(screen.getByLabelText("Дата на данъчно събитие")).toHaveValue("2026-02-10");
+  });
+
+  it("defaults the date to today when no delivery date is available", async () => {
+    const user = userEvent.setup();
+    mockDraftFlow();
+    renderCard(null);
+
+    await openIssueDialog(user);
+
+    const now = new Date();
+    const expected = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-`
+      + String(now.getDate()).padStart(2, "0");
+    expect(screen.getByLabelText("Дата на данъчно събитие")).toHaveValue(expected);
+  });
+
+  it("cancel closes the dialog without calling the API", async () => {
+    const user = userEvent.setup();
+    mockDraftFlow();
+    renderCard();
+
+    await openIssueDialog(user);
+    await user.click(screen.getByRole("button", { name: "Отказ" }));
+
+    expect(screen.queryByLabelText("Дата на данъчно събитие")).not.toBeInTheDocument();
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it("confirm sends exactly { tax_event_date }", async () => {
+    const user = userEvent.setup();
+    mockIssueSuccess();
+    renderCard("2026-02-10T00:00:00Z");
+
+    await openIssueDialog(user);
+    await user.click(dialogConfirmButton());
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+      "/invoices/inv-1/issue", { tax_event_date: "2026-02-10" },
+    ));
+  });
+
+  it("prevents a duplicate submit while a request is pending", async () => {
+    const user = userEvent.setup();
+    mockDraftFlow();
+    let resolvePost: (value: typeof issuedDetail) => void = () => {};
+    vi.mocked(api.post).mockImplementation(
+      () => new Promise((resolve) => { resolvePost = resolve; }) as never,
+    );
+    renderCard("2026-02-10T00:00:00Z");
+
+    await openIssueDialog(user);
+    const confirmButton = dialogConfirmButton();
+    await user.click(confirmButton);
+    await user.click(confirmButton);
+    await user.click(confirmButton);
+
+    expect(api.post).toHaveBeenCalledTimes(1);
+    resolvePost(issuedDetail);
+  });
+
+  // --- Success: issued read-only view ---------------------------------
+
+  it("switches to a read-only issued view after a successful Issue", async () => {
+    const user = userEvent.setup();
+    mockIssueSuccess();
+    renderCard("2026-02-10T00:00:00Z");
+
+    await openIssueDialog(user);
+    await user.click(dialogConfirmButton());
+
+    expect(await screen.findByText("Издадена")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Дисплей")).not.toBeInTheDocument();
+  });
+
+  it("displays the exact 10-digit issued number with leading zeros", async () => {
+    const user = userEvent.setup();
+    mockIssueSuccess();
+    renderCard("2026-02-10T00:00:00Z");
+
+    await openIssueDialog(user);
+    await user.click(dialogConfirmButton());
+
+    expect(await screen.findByText("Фактура № 0000000001")).toBeInTheDocument();
+  });
+
+  it("displays issued_at and tax_event_date without a day shift", async () => {
+    const user = userEvent.setup();
+    mockIssueSuccess();
+    renderCard("2026-02-10T00:00:00Z");
+
+    await openIssueDialog(user);
+    await user.click(dialogConfirmButton());
+
+    await screen.findByText("Фактура № 0000000001");
+    expect(screen.getByText("2026-03-15")).toBeInTheDocument(); // tax_event_date, raw, no shift
+    expect(screen.getByText(new Date(issuedDetail.issued_at).toLocaleString("bg-BG"))).toBeInTheDocument();
+  });
+
+  it("displays the frozen seller snapshot", async () => {
+    const user = userEvent.setup();
+    mockIssueSuccess();
+    renderCard("2026-02-10T00:00:00Z");
+
+    await openIssueDialog(user);
+    await user.click(dialogConfirmButton());
+
+    await screen.findByText("Фактура № 0000000001");
+    expect(screen.getByText("Сервиз А")).toBeInTheDocument();
+    expect(screen.getByText("гр. София, ул. Примерна 1")).toBeInTheDocument();
+    expect(screen.getByText("130489869")).toBeInTheDocument();
+  });
+
+  it("displays the frozen buyer snapshot", async () => {
+    const user = userEvent.setup();
+    mockIssueSuccess();
+    renderCard("2026-02-10T00:00:00Z");
+
+    await openIssueDialog(user);
+    await user.click(dialogConfirmButton());
+
+    await screen.findByText("Фактура № 0000000001");
+    expect(screen.getByText("Иван Петров")).toBeInTheDocument();
+  });
+
+  it("shows net/vat/gross from the Issue response, not recomputed", async () => {
+    const user = userEvent.setup();
+    mockIssueSuccess({ net: 149.5, vat: 0, gross: 149.5 });
+    renderCard("2026-02-10T00:00:00Z");
+
+    await openIssueDialog(user);
+    await user.click(dialogConfirmButton());
+
+    await screen.findByText("Фактура № 0000000001");
+    expect(screen.getAllByText("149.50 €")).toHaveLength(2); // net row + gross row
+    expect(screen.getByText("ДДС: не се начислява")).toBeInTheDocument();
+  });
+
+  it("removes every line-editing control once issued", async () => {
+    const user = userEvent.setup();
+    mockIssueSuccess();
+    renderCard("2026-02-10T00:00:00Z");
+
+    await openIssueDialog(user);
+    await user.click(dialogConfirmButton());
+
+    await screen.findByText("Фактура № 0000000001");
+    expect(screen.queryByRole("button", { name: "Премахни ред" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Добави" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Запази" })).not.toBeInTheDocument();
+  });
+
+  it("removes the Issue action once issued", async () => {
+    const user = userEvent.setup();
+    mockIssueSuccess();
+    renderCard("2026-02-10T00:00:00Z");
+
+    await openIssueDialog(user);
+    await user.click(dialogConfirmButton());
+
+    await screen.findByText("Фактура № 0000000001");
+    expect(screen.queryByRole("button", { name: "Издай фактура" })).not.toBeInTheDocument();
+  });
+
+  it("invalidates the order timeline query after a successful Issue", async () => {
+    const user = userEvent.setup();
+    mockIssueSuccess();
+    const { client } = renderCard("2026-02-10T00:00:00Z");
+    client.setQueryData(queryKeys.orderTimeline(orderId), []);
+    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+
+    await openIssueDialog(user);
+    await user.click(dialogConfirmButton());
+    await screen.findByText("Фактура № 0000000001");
+
+    expect(invalidateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: queryKeys.orderTimeline(orderId) }),
+    );
+  });
+
+  // --- Errors -----------------------------------------------------------
+
+  it("shows an actionable message with a settings link on seller_incomplete", async () => {
+    const user = userEvent.setup();
+    mockDraftFlow();
+    vi.mocked(api.post).mockRejectedValue(
+      new ApiError(409, "invoice_error", "errors.invoices.seller_incomplete"),
+    );
+    renderCard();
+
+    await openIssueDialog(user);
+    await user.click(dialogConfirmButton());
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Попълнете фирмените реквизити (адрес и ЕИК) преди издаване на фактура.",
+    );
+    expect(screen.getByRole("link", { name: "Настройки → Фирма" })).toHaveAttribute(
+      "href", "/settings/company",
+    );
+  });
+
+  it("shows the Phase-A limitation message for a VAT-registered seller", async () => {
+    const user = userEvent.setup();
+    mockDraftFlow();
+    vi.mocked(api.post).mockRejectedValue(
+      new ApiError(409, "invoice_error", "errors.invoices.seller_vat_unsupported"),
+    );
+    renderCard();
+
+    await openIssueDialog(user);
+    await user.click(dialogConfirmButton());
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Издаването на фактури от фирми, регистрирани по ДДС, все още не се поддържа.",
+    );
+  });
+
+  it("shows the Phase-A limitation message for a company buyer", async () => {
+    const user = userEvent.setup();
+    mockDraftFlow();
+    vi.mocked(api.post).mockRejectedValue(
+      new ApiError(409, "invoice_error", "errors.invoices.company_buyer_unsupported"),
+    );
+    renderCard();
+
+    await openIssueDialog(user);
+    await user.click(dialogConfirmButton());
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Фактури към фирми клиенти все още не се поддържат в тази версия.",
+    );
+  });
+
+  it("renders a subscription-blocked failure with the standard message", async () => {
+    const user = userEvent.setup();
+    mockDraftFlow();
+    vi.mocked(api.post).mockRejectedValue(
+      new ApiError(402, "subscription_not_active", "errors.subscription.mutations_blocked"),
+    );
+    renderCard();
+
+    await openIssueDialog(user);
+    await user.click(dialogConfirmButton());
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Промени не са позволени — абонаментът на компанията не е активен.",
+    );
+  });
+
+  it("never exposes a raw error body for an unexpected failure", async () => {
+    const user = userEvent.setup();
+    mockDraftFlow();
+    vi.mocked(api.post).mockRejectedValue(new Error("ECONNRESET: raw internal detail"));
+    renderCard();
+
+    await openIssueDialog(user);
+    await user.click(dialogConfirmButton());
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).not.toContain("ECONNRESET");
+  });
+
+  it("keeps the dialog open on failure, preserving the selected date", async () => {
+    const user = userEvent.setup();
+    mockDraftFlow();
+    vi.mocked(api.post).mockRejectedValue(
+      new ApiError(409, "invoice_error", "errors.invoices.seller_incomplete"),
+    );
+    renderCard("2026-02-10T00:00:00Z");
+
+    await openIssueDialog(user);
+    const dateInput = screen.getByLabelText("Дата на данъчно събитие") as HTMLInputElement;
+    await user.clear(dateInput);
+    await user.type(dateInput, "2026-02-25");
+    await user.click(dialogConfirmButton());
+
+    await screen.findByRole("alert");
+    expect(screen.getByLabelText("Дата на данъчно събитие")).toHaveValue("2026-02-25");
+  });
+
+  it("allows retry after a failure", async () => {
+    const user = userEvent.setup();
+    mockIssueSuccess();
+    vi.mocked(api.post).mockReset();
+    vi.mocked(api.post)
+      .mockRejectedValueOnce(new ApiError(409, "invoice_error", "errors.invoices.seller_incomplete"))
+      .mockImplementationOnce(() => {
+        vi.mocked(api.get).mockImplementation((path: string) =>
+          Promise.resolve(path.startsWith("/invoices?") ? [issuedListItem] : issuedDetail) as never,
+        );
+        return Promise.resolve(issuedDetail) as never;
+      });
+    renderCard("2026-02-10T00:00:00Z");
+
+    await openIssueDialog(user);
+    await user.click(dialogConfirmButton());
+    await screen.findByRole("alert");
+
+    await user.click(dialogConfirmButton());
+
+    expect(await screen.findByText("Фактура № 0000000001")).toBeInTheDocument();
+    expect(api.post).toHaveBeenCalledTimes(2);
+  });
+
+  it("on not_draft (concurrent Issue elsewhere), refreshes to the real current state", async () => {
+    const user = userEvent.setup();
+    let issuedElsewhere = false;
+    vi.mocked(api.get).mockImplementation((path: string) => {
+      if (path.startsWith("/invoices?")) {
+        return Promise.resolve(issuedElsewhere ? [issuedListItem] : [draftListItem]) as never;
+      }
+      return Promise.resolve(issuedElsewhere ? issuedDetail : draftDetail) as never;
+    });
+    vi.mocked(api.post).mockImplementation(() => {
+      issuedElsewhere = true;
+      return Promise.reject(new ApiError(409, "invoice_error", "errors.invoices.not_draft"));
+    });
+    renderCard("2026-02-10T00:00:00Z");
+
+    await openIssueDialog(user);
+    await user.click(dialogConfirmButton());
+
+    expect(await screen.findByText("Фактура № 0000000001")).toBeInTheDocument();
   });
 });

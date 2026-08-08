@@ -1,7 +1,8 @@
 /** MoneyCard (docs/15 §6.5): parts+labor computed total (the same
  * lines.order_totals the backend derives paid_amount/balance from — docs/01
- * §Payment, BR-3); „Фактура" disabled per the approved grayed-nav treatment
- * (Etap 4). */
+ * §Payment, BR-3). Invoice actions live in InvoiceCard, not here — this card
+ * is payments/totals only (Phase-A Invoice Issue moved the one real Issue
+ * action there). */
 
 import { t } from "../i18n/bg";
 
@@ -33,14 +34,6 @@ export function MoneyCard({
           <dd className="tabular-nums text-slate-900">{balance.toFixed(2)} €</dd>
         </div>
       </dl>
-      <button
-        type="button"
-        disabled
-        title={t("nav.coming_soon")}
-        className="cursor-not-allowed rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-300 min-h-touch"
-      >
-        {t("order.invoice_button")}
-      </button>
     </div>
   );
 }
