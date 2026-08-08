@@ -8,8 +8,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 import serviceflow.timeline.service  # noqa: F401 — registers the timeline subscriber
+from business_os.identity.router import company_router, users_router
 from business_os.identity.router import router as auth_router
-from business_os.identity.router import users_router
 from business_os.platform.health import router as health_router
 from business_os.platform_admin.router import router as platform_admin_router
 from business_os.shared_kernel import correlation
@@ -115,6 +115,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(attachments_router, prefix="/api/v1", tags=["attachments"])
     app.include_router(contacts_router, prefix="/api/v1", tags=["contacts"])
     app.include_router(users_router, prefix="/api/v1/users", tags=["users"])
+    app.include_router(company_router, prefix="/api/v1/company", tags=["company"])
     app.include_router(dashboard_router, prefix="/api/v1", tags=["dashboard"])
     app.include_router(search_router, prefix="/api/v1", tags=["search"])
     app.include_router(ps_clients_router, prefix="/api/v1/ps", tags=["ps-clients"])

@@ -11,6 +11,7 @@ import { EmptyState, ErrorState, Skeleton } from "../components/States";
 import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
+import { SettingsNav } from "./SettingsNav";
 
 interface Employee {
   id: string;
@@ -54,6 +55,7 @@ export function EmployeesPage() {
   if (!me?.is_owner) {
     return (
       <section>
+        <SettingsNav />
         <ErrorState text={t("employees.access_denied")} />
       </section>
     );
@@ -137,6 +139,7 @@ export function EmployeesPage() {
 
   return (
     <section>
+      <SettingsNav />
       <h1 className="mb-4 text-xl font-semibold text-slate-900">{t("employees.title")}</h1>
 
       <p className="mb-4 text-sm text-slate-600">

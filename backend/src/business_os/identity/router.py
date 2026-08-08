@@ -9,7 +9,7 @@ vendor-set seat limit (ADR-BOS-009 ownership matrix).
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy.orm import Session
 
 from business_os.identity import service
@@ -22,11 +22,15 @@ from business_os.identity.deps import (
     require_owner,
     require_subscription_ok,
 )
-from business_os.identity.models import AuthSession, User
+from business_os.identity.models import AuthSession, Company, User
 from serviceflow.config import get_settings
 
 router = APIRouter()
 users_router = APIRouter()
+# Owner-only for both read and write (mirrors users_router / EmployeesPage's
+# existing "no access" posture for non-owners, not just read-only) — company
+# legal/accounting details are at least as sensitive as the employee list.
+company_router = APIRouter(dependencies=[Depends(require_owner)])
 
 
 class UserOut(BaseModel):
@@ -107,6 +111,50 @@ def update_employee(user_id: uuid.UUID, body: EmployeePatch, db: DbDep,
             "code": "employee_error", "message_key": e.message_key, "params": {},
         }) from e
     return _user_out(employee)
+
+
+class CompanyRequisitesPatch(BaseModel):
+    # extra="forbid" is the allow-list enforcement point: only these three
+    # fields can ever reach service.update_company_requisites — there is no
+    # way to submit an arbitrary JSON key through this contract.
+    model_config = ConfigDict(extra="forbid")
+
+    address: str | None = Field(default=None, max_length=500)
+    phone: str | None = Field(default=None, max_length=30)
+    vat_registered: bool | None = None
+
+
+class CompanyRequisitesOut(BaseModel):
+    address: str | None
+    phone: str | None
+    vat_registered: bool
+
+
+def _company_requisites_out(company: Company) -> CompanyRequisitesOut:
+    requisites = company.requisites or {}
+    return CompanyRequisitesOut(
+        address=requisites.get("address"), phone=requisites.get("phone"),
+        vat_registered=company.vat_registered,
+    )
+
+
+@company_router.get("/requisites")
+def get_company_requisites(db: DbDep, tenant: TenantDep) -> CompanyRequisitesOut:
+    company = service.get_company(db, tenant.company_id)
+    assert company is not None
+    return _company_requisites_out(company)
+
+
+@company_router.patch(
+    "/requisites",
+    dependencies=[Depends(require_csrf), Depends(require_subscription_ok)],
+)
+def update_company_requisites(
+    body: CompanyRequisitesPatch, db: DbDep, tenant: TenantDep,
+) -> CompanyRequisitesOut:
+    fields = body.model_dump(exclude_unset=True)
+    company = service.update_company_requisites(db, tenant.company_id, tenant.user_id, fields)
+    return _company_requisites_out(company)
 
 
 class LoginRequest(BaseModel):

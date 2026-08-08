@@ -34,4 +34,5 @@ export const queryKeys = {
   vendorCompaniesList: (status: string) => ["vendor", "companies", status] as const,
   vendorCompany: (id: string) => ["vendor", "company", id] as const,
   employees: (includeInactive: boolean) => ["employees", includeInactive] as const,
+  companyRequisites: ["company", "requisites"] as const,
 };

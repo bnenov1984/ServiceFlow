@@ -99,6 +99,23 @@ def test_invalid_type_rejected(client: TestClient) -> None:
     assert r.status_code == 400
 
 
+def test_protocol_pdf_reflects_company_requisites_set_via_settings(client: TestClient) -> None:
+    """The protocol PDF has always read `company.requisites.get("address"/
+    "phone")` (service_orders/router.py), but until the Company Legal
+    Requisites slice, nothing could ever set them - every company's
+    protocol rendered blank there. Proves the two stay wired together."""
+    h = _login(client)
+    client.patch("/api/v1/company/requisites", headers=h,
+                json={"address": "гр. София, бул. Тестов 5", "phone": "021234567"})
+    oid = _order_with_accessories(client, h)
+
+    r = client.get(f"/api/v1/orders/{oid}/protocol.pdf")
+    assert r.status_code == 200
+    text = _extract_pdf_text(r.content)
+    assert "гр. София, бул. Тестов 5" in text
+    assert "021234567" in text
+
+
 def test_protocol_is_tenant_isolated(client: TestClient) -> None:
     h_a = _login(client, "Сервиз А", "a@a.bg")
     oid = _order_with_accessories(client, h_a)

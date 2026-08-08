@@ -14,6 +14,7 @@ import { OrderPage } from "./order/OrderPage";
 import { OrdersPage } from "./orders/OrdersPage";
 import { PsPage } from "./ps/PsPage";
 import { WorkflowTemplatesPage } from "./ps/WorkflowTemplatesPage";
+import { CompanyRequisitesPage } from "./settings/CompanyRequisitesPage";
 import { EmployeesPage } from "./settings/EmployeesPage";
 import { AppChooserPage, NoActiveAppsPage } from "./shell/AppChooser";
 import { AppShell } from "./shell/AppShell";
@@ -99,6 +100,7 @@ export function App() {
         <Route path="ps" element={<PsPage />} />
         <Route path="ps/workflow-templates" element={<WorkflowTemplatesPage />} />
         <Route path="settings/employees" element={<EmployeesPage />} />
+        <Route path="settings/company" element={<CompanyRequisitesPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
 

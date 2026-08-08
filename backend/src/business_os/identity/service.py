@@ -220,6 +220,51 @@ def list_companies(db: Session, status: str = "active") -> list[Company]:
     return list(db.scalars(stmt))
 
 
+# --- Company legal requisites (invoice-readiness prerequisite slice;
+# docs/ACCOUNTANT_REVIEW.md §4 R1/§2 T1) -------------------------------
+#
+# `companies.requisites` is schemaless JSONB and `companies.vat_registered`
+# has no write path anywhere in the app today (audited: neither is ever set
+# outside this module). The full legal field set an issued invoice will
+# need (ЕИК, ДДС №, МОЛ, IBAN...) is an explicitly open accountant question
+# (R1) — inventing it here would be exactly what that document exists to
+# prevent. `address` and `phone` are the only two requisites keys any code
+# in the repo actually consumes today (the intake protocol PDF,
+# `service_orders/router.py`'s `requisites.get("address"/"phone")`), so
+# they are the only ones this V1 slice exposes. Extending the set later is
+# additive (new allow-listed keys), not a schema change.
+COMPANY_REQUISITE_KEYS = ("address", "phone")
+
+
+def update_company_requisites(
+    db: Session, company_id: uuid.UUID, actor_user_id: uuid.UUID,
+    fields: dict[str, Any],
+) -> Company:
+    """Owner-only (route-enforced). `fields` comes from the router's
+    `CompanyRequisitesPatch` (Pydantic `extra="forbid"`, only `address`,
+    `phone`, `vat_registered` declared) via `model_dump(exclude_unset=True)`
+    — this function additionally filters to `COMPANY_REQUISITE_KEYS` before
+    writing into the JSONB blob, so even a future caller passing a raw dict
+    can never smuggle an arbitrary key into `requisites`. Reassigns the
+    whole dict (never mutates in place) so SQLAlchemy's change tracking
+    picks it up, matching `Customer.company_requisites = None` elsewhere."""
+    company = get_company(db, company_id)
+    assert company is not None
+
+    requisite_updates = {k: v for k, v in fields.items() if k in COMPANY_REQUISITE_KEYS}
+    if requisite_updates:
+        company.requisites = {**company.requisites, **requisite_updates}
+    if "vat_registered" in fields:
+        company.vat_registered = fields["vat_registered"]
+
+    audit_detail = dict(requisite_updates)
+    if "vat_registered" in fields:
+        audit_detail["vat_registered"] = fields["vat_registered"]
+    _audit(db, company_id, actor_user_id, "company_requisites_updated", audit_detail)
+    db.commit()
+    return company
+
+
 def is_module_active(db: Session, company_id: uuid.UUID, module_key: str) -> bool:
     """Module activation (BOS-06), stored as `active_modules` inside the existing
     `companies.settings` JSONB — no dedicated table (BOS-02's Settings precedent:

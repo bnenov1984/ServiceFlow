@@ -588,6 +588,15 @@ export const bg = {
   "errors.employees.seat_limit_reached": "Достигнат е лимитът на местата за тази компания.",
   "errors.employees.last_owner_protected": "Компанията трябва да има поне един активен собственик.",
   "errors.employees.not_found": "Няма такъв служител.",
+  "settings.nav_employees": "Служители",
+  "settings.nav_company": "Фирма",
+  "company.requisites_title": "Данни за фирмата",
+  "company.requisites_hint": "Тези данни се използват в протокола за приемане и ще се използват при издаване на фактури.",
+  "company.field_address": "Адрес",
+  "company.field_phone": "Телефон",
+  "company.field_vat_registered": "Регистрация по ЗДДС",
+  "company.save_action": "Запази",
+  "company.saved": "Данните за фирмата са запазени.",
 
   "errors.provisioning.company_not_found": "Няма такава компания.",
 } as const;
