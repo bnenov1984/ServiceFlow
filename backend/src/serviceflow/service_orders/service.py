@@ -7,10 +7,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from business_os.shared_kernel.db import TenantContext, scoped
 from business_os.shared_kernel.events import DomainEvent, publish
+from business_os.shared_kernel.ids import new_id
 from serviceflow.service_orders import statuses
 from serviceflow.service_orders.models import Diagnosis, DocumentSequence, ServiceOrder
 
@@ -28,26 +30,30 @@ def _now() -> datetime:
 
 
 def next_number(db: Session, ctx: TenantContext, kind: str = "order") -> str:
-    """Per-company yearly sequence. Row lock serializes concurrent intakes."""
+    """Per-company yearly sequence (docs/08's frozen gaplessness point; hardened
+    per ADR-BOS-005). A single INSERT ... ON CONFLICT DO UPDATE is atomic in
+    Postgres: unlike a SELECT-then-INSERT pair, there is no window where two
+    concurrent first-allocations for the same (company_id, kind, year) can both
+    observe "no row" and both attempt the insert. The loser blocks on the
+    unique index (uq_document_sequences_key) until the winner's transaction
+    resolves, then applies its own increment on top instead of raising
+    IntegrityError — so no number is ever repeated, lost, or skipped, and
+    already-existing rows keep the same until-commit row lock a SELECT ...
+    FOR UPDATE would have held."""
     year = _now().year
-    seq = db.scalar(
-        select(DocumentSequence)
-        .where(DocumentSequence.company_id == ctx.company_id,
-               DocumentSequence.kind == kind, DocumentSequence.year == year)
-        .with_for_update()
-    )
-    if seq is None:
-        seq = DocumentSequence(company_id=ctx.company_id, kind=kind, year=year, current=0)
-        db.add(seq)
-        db.flush()
-        seq = db.scalar(
-            select(DocumentSequence)
-            .where(DocumentSequence.id == seq.id)
-            .with_for_update()
+    stmt = (
+        pg_insert(DocumentSequence)
+        .values(id=new_id(), company_id=ctx.company_id, kind=kind, year=year, current=1)
+        .on_conflict_do_update(
+            index_elements=[
+                DocumentSequence.company_id, DocumentSequence.kind, DocumentSequence.year,
+            ],
+            set_={"current": DocumentSequence.current + 1},
         )
-        assert seq is not None
-    seq.current += 1
-    return f"{year}-{seq.current:05d}"
+        .returning(DocumentSequence.current)
+    )
+    current = db.execute(stmt).scalar_one()
+    return f"{year}-{current:05d}"
 
 
 def _event(db: Session, ctx: TenantContext, order: ServiceOrder, type_: str,
