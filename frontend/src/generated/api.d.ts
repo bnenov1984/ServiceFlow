@@ -828,6 +828,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/invoices/{invoice_id}/invoice.pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Invoice Pdf
+         * @description Read-only: no mutation, no number allocation, no timeline event, no
+         *     commit — generated fresh from the frozen Invoice/InvoiceLine snapshot on
+         *     every request (see commercial/pdf.py's module docstring). Route path
+         *     matches docs/09_API_SPECIFICATION.md's frozen surface and the sibling
+         *     `/orders/{id}/protocol.pdf` naming convention, not a bare `/pdf`.
+         */
+        get: operations["get_invoice_pdf_api_v1_invoices__invoice_id__invoice_pdf_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tasks": {
         parameters: {
             query?: never;
@@ -4739,6 +4763,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InvoiceDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_invoice_pdf_api_v1_invoices__invoice_id__invoice_pdf_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invoice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "application/pdf": unknown;
                 };
             };
             /** @description Validation Error */

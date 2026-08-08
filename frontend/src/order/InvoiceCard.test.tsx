@@ -479,6 +479,42 @@ describe("InvoiceCard", () => {
     expect(screen.queryByRole("button", { name: "Издай фактура" })).not.toBeInTheDocument();
   });
 
+  // --- PDF action ---------------------------------------------------
+
+  it("shows no PDF action for a draft invoice", async () => {
+    const user = userEvent.setup();
+    mockDraftFlow();
+    renderCard();
+
+    await openDraft(user);
+    expect(screen.queryByRole("button", { name: "PDF" })).not.toBeInTheDocument();
+  });
+
+  it("shows a PDF action once issued", async () => {
+    const user = userEvent.setup();
+    mockIssueSuccess();
+    renderCard("2026-02-10T00:00:00Z");
+
+    await openIssueDialog(user);
+    await user.click(dialogConfirmButton());
+
+    expect(await screen.findByRole("button", { name: "PDF" })).toBeInTheDocument();
+  });
+
+  it("PDF action opens the correct invoice PDF endpoint", async () => {
+    const user = userEvent.setup();
+    mockIssueSuccess();
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    renderCard("2026-02-10T00:00:00Z");
+
+    await openIssueDialog(user);
+    await user.click(dialogConfirmButton());
+    await user.click(await screen.findByRole("button", { name: "PDF" }));
+
+    expect(openSpy).toHaveBeenCalledWith("/api/v1/invoices/inv-1/invoice.pdf", "_blank");
+    openSpy.mockRestore();
+  });
+
   it("invalidates the order timeline query after a successful Issue", async () => {
     const user = userEvent.setup();
     mockIssueSuccess();

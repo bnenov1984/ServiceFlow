@@ -2657,6 +2657,49 @@
         }
       }
     },
+    "/api/v1/invoices/{invoice_id}/invoice.pdf": {
+      "get": {
+        "tags": [
+          "commercial"
+        ],
+        "summary": "Get Invoice Pdf",
+        "description": "Read-only: no mutation, no number allocation, no timeline event, no\ncommit — generated fresh from the frozen Invoice/InvoiceLine snapshot on\nevery request (see commercial/pdf.py's module docstring). Route path\nmatches docs/09_API_SPECIFICATION.md's frozen surface and the sibling\n`/orders/{id}/protocol.pdf` naming convention, not a bare `/pdf`.",
+        "operationId": "get_invoice_pdf_api_v1_invoices__invoice_id__invoice_pdf_get",
+        "parameters": [
+          {
+            "name": "invoice_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Invoice Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "application/pdf": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/tasks": {
       "get": {
         "tags": [

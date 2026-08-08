@@ -6,20 +6,20 @@ immutability, no VAT rules. `payments.invoice_id` was nullable with no FK
 until `invoices` existed (migration 0008's docstring promised the future
 Invoice migration would add it) — migration 0009 fulfills that.
 
-Invoice itself lands here as a **Draft-only slice**: creation prefilled from
-an order's part/labor lines (via service_orders' public contract, never its
-internal models), listing, detail, and draft line edits. `status` is always
-`"draft"` for every row this slice creates — `number`, `issued_at`,
-`tax_event_date`, `seller`, `buyer`, `net`/`vat`/`gross`, `annuls_invoice_id`,
-`annul_reason`, `pdf_storage_key` all stay unset. Issue (gapless numbering,
-requisite snapshot, immutability), annul/reissue, PDF rendering, and VAT
-computation are explicitly a later slice — the schema already carries their
-columns (docs/08 is frozen) so no future ALTER TABLE is needed, but no code
-here populates or enforces them yet. `tax_event_date` (migration 0018) is
-the one exception to "no future ALTER TABLE": it was not part of the
-original frozen shape and was added as its own prerequisite slice per
-docs/ACCOUNTANT_REVIEW.md §2 — it is exposed read-only (GET responses) and
-never written by any code in this module.
+Invoice creation is prefilled from an order's part/labor lines (via
+service_orders' public contract, never its internal models); drafts are
+freely line-editable. Issue (Phase A only — non-VAT-registered seller,
+individual buyer, docs/ACCOUNTANT_REVIEW.md 'RepairFlow Invoice V1 Freeze'
+§5) atomically assigns `number`/`issued_at`/`tax_event_date`/`seller`/
+`buyer`/`net`/`vat`/`gross` and freezes the row (`commercial/service.py`'s
+`issue()`); `commercial/pdf.py` renders that frozen snapshot on demand.
+`annuls_invoice_id`/`annul_reason`/`pdf_storage_key` stay unset — annul/
+reissue is still a later slice, and `pdf_storage_key` is unused because the
+PDF is generated fresh per request rather than persisted to storage (the
+schema already carries the column, docs/08 is frozen, but nothing writes
+it yet). `tax_event_date` (migration 0018) was not part of the original
+frozen shape and was added as its own prerequisite slice per
+docs/ACCOUNTANT_REVIEW.md §2.
 """
 
 import uuid

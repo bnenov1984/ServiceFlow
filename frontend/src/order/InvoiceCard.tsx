@@ -480,9 +480,18 @@ function IssuedInvoiceView({ invoiceId }: { invoiceId: string }) {
         <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700">
           {t("order.invoice_status_issued")}
         </span>
-        <span className="text-sm font-semibold tabular-nums text-slate-900">
-          {t("order.invoice_issued_number")} {number}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-semibold tabular-nums text-slate-900">
+            {t("order.invoice_issued_number")} {number}
+          </span>
+          <button
+            type="button"
+            onClick={() => window.open(`/api/v1/invoices/${invoiceId}/invoice.pdf`, "_blank")}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50 min-h-touch"
+          >
+            {t("order.invoice_pdf")}
+          </button>
+        </div>
       </div>
 
       <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">

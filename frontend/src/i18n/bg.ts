@@ -139,6 +139,7 @@ export const bg = {
   "errors.invoices.seller_vat_unsupported": "Издаването на фактури от фирми, регистрирани по ДДС, все още не се поддържа.",
   "errors.invoices.company_buyer_unsupported": "Фактури към фирми клиенти все още не се поддържат в тази версия.",
   "errors.invoices.vat_state_invalid": "Тази чернова съдържа ред с ДДС ставка, което текущата версия не поддържа.",
+  "errors.invoices.not_issued": "PDF има само издадена фактура.",
 
   // --- intake (docs/15 §6.4) ---
   "intake.title": "Нова поръчка",
@@ -234,6 +235,7 @@ export const bg = {
   "order.invoice_net": "Данъчна основа",
   "order.invoice_vat_not_charged": "ДДС: не се начислява",
   "order.invoice_gross": "Общо",
+  "order.invoice_pdf": "PDF",
   "order.invoice_issued_success": "Фактурата е издадена.",
   "order.event_invoice_issued": "Фактурата е издадена",
   "order.confirm": "Потвърди",

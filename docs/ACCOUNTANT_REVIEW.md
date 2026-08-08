@@ -564,14 +564,25 @@ integrity of content, and legibility**, achievable through business
 controls (a "reliable audit trail"), not necessarily a cryptographic
 signature.
 
-**PROFESSIONAL REVIEW REQUIRED (control adequacy).** Whether RepairFlow's
-planned implementation — server-generated PDF, `invoices` rows immutable
-once `status="issued"`, `pdf_storage_key` pointing at a stored artifact —
-constitutes an adequate "reliable audit trail" is a controls-adequacy
-judgment the law states as a goal without prescribing the specific
-technical means; worth a specific confirmation once the PDF-generation
-design exists, not a blocking question for the schema/product-scope work
-happening now.
+**Landed (Phase A only):** `GET /invoices/{id}/invoice.pdf`
+(`commercial/pdf.py`) renders an issued invoice's PDF on demand, directly
+and exclusively from the frozen `Invoice`/`InvoiceLine` snapshot — never
+from live `Company`/`Customer` data, so a PDF printed months later still
+shows the seller/buyer identity exactly as it was at Issue time even if
+those records have since changed (regression-tested). Generated fresh on
+every request rather than persisted: `pdf_storage_key` remains unwritten by
+this slice, since "no mutation, no commit" was an explicit requirement —
+whether a persisted, storage-backed artifact is needed instead is an open
+follow-up, not decided here.
+
+**PROFESSIONAL REVIEW REQUIRED (control adequacy) — still open.** Whether
+this implementation — server-generated PDF, `invoices` rows immutable once
+`status="issued"`, regenerated on demand rather than stored — constitutes
+an adequate "reliable audit trail" is a controls-adequacy judgment the law
+states as a goal without prescribing the specific technical means. The
+PDF-generation design now exists (above), so this question is ready for
+that specific confirmation; it is **not** self-certified as answered by
+landing the feature.
 
 **Stamp/seal:** not found as a legal requirement anywhere in the sources
 consulted, consistent with the removal of even the signature requirement in
@@ -686,6 +697,10 @@ failure after allocation but before commit restores the sequence.
 | `tax_event_date` supplied explicitly in the Issue request body. | Any backend inference of `tax_event_date` from order/delivery/payment dates — explicitly rejected as a design choice (not just deferred), to keep the legal decision a visible human confirmation moment. |
 | Owner-only authorization. | The docs/02 §12 "Worker: toggle" behavior — `worker_can_issue_invoices` does not exist in code and OQ-W1 remains an open confirm-question there; Owner-only is a safe subset that can only be widened later, never narrowed. |
 | Repeated Issue on a non-draft (already-issued or annulled) invoice → `409 errors.invoices.not_draft`. | Idempotent re-return of the already-issued representation — rejected in favor of a clear, deterministic error. |
+
+**Also landed (Phase A only):** `GET /invoices/{id}/invoice.pdf` — see §11
+for the exact PDF design and its still-open control-adequacy question.
+Draft invoices have no PDF (`409 errors.invoices.not_issued`).
 
 **Still open, unaffected by this scoping freeze:** VAT rounding algorithm
 (§6, PROFESSIONAL REVIEW REQUIRED) and buyer VAT-number handling (§4, OPEN)

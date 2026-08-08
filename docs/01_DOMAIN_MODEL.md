@@ -203,6 +203,11 @@ Attributes are business attributes, not columns.
   non-VAT-registered seller, individual buyer only — a VAT-registered seller or a
   company buyer is explicitly rejected, not silently mishandled. Annul/reissue,
   VAT-registered-seller Issue, and company-buyer Issue remain future slices.
+  **Phase A PDF implemented** (`GET /invoices/{id}/invoice.pdf`,
+  docs/ACCOUNTANT_REVIEW.md §11): every issued Phase-A invoice has a printable/
+  downloadable PDF representation, generated on demand from the frozen
+  Invoice/InvoiceLine snapshot — later edits to Company/Customer master data
+  never alter a previously issued invoice's PDF. Drafts have no PDF.
 - **Invariants:** numbering has no gaps and no reuse; requisite snapshots make the
   document self-contained even if company/customer data later changes; invoices are
   **optional per order** (B2C walk-ins often need none) and possible on Отказана

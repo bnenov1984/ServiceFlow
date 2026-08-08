@@ -3,10 +3,12 @@
 
 Money totals stay derived, never stored (BR-3): paid_amount and balance are
 computed here, not persisted. Invoice draft creation/editing is this file's
-second part; `issue()` is the third — annul/reissue, PDF and VAT-registered-
-seller/company-buyer support are still a later slice (see
-commercial/models.py docstring and docs/ACCOUNTANT_REVIEW.md's 'RepairFlow
-Invoice V1 Freeze' §5, Phase-A scope)."""
+second part; `issue()` is the third; `get_issued()` (the PDF endpoint's
+fetch-and-status-check, commercial/pdf.py does the actual rendering) is the
+fourth — annul/reissue and VAT-registered-seller/company-buyer support are
+still a later slice (see commercial/models.py docstring and
+docs/ACCOUNTANT_REVIEW.md's 'RepairFlow Invoice V1 Freeze' §5, Phase-A
+scope)."""
 
 import uuid
 from datetime import UTC, date, datetime
@@ -101,6 +103,21 @@ def create_draft(db: Session, ctx: TenantContext, order_id: uuid.UUID) -> Invoic
 
 def get(db: Session, ctx: TenantContext, invoice_id: uuid.UUID) -> Invoice | None:
     return db.scalar(scoped(select(Invoice), Invoice, ctx).where(Invoice.id == invoice_id))
+
+
+def get_issued(db: Session, ctx: TenantContext, invoice_id: uuid.UUID) -> Invoice:
+    """The sanctioned way to fetch an invoice for issued-only, read-only use
+    (the PDF endpoint). 404 if missing/wrong-tenant — `get()` already scopes
+    that; 409 if it exists but is still a draft, so no "draft legal
+    invoice" can ever be produced. Raises rather than returning `None` since
+    every caller of this function has nothing useful left to do with a
+    non-issued result."""
+    invoice = get(db, ctx, invoice_id)
+    if invoice is None:
+        raise InvoiceError("errors.invoices.not_found", status=404)
+    if invoice.status != "issued":
+        raise InvoiceError("errors.invoices.not_issued", status=409)
+    return invoice
 
 
 def list_invoices(db: Session, ctx: TenantContext, *, status: str | None = None,

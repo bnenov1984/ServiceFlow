@@ -6,21 +6,22 @@ OrderDetailOut carries only the derived paid_amount/balance summary, not a raw
 payments list, matching how Task/Attachment/ContactRecord are exposed via
 their own endpoints rather than embedded.
 
-Invoice is a Draft-then-Issue slice here: POST creates a draft prefilled
-from the order's lines (via service_orders' public contract — never its
-internal models), GET lists/reads, PATCH replaces the line set (drafts
-only, docs/09 lists no separate invoice_lines sub-resource, unlike
+Invoice is a Draft-then-Issue-then-PDF slice here: POST creates a draft
+prefilled from the order's lines (via service_orders' public contract —
+never its internal models), GET lists/reads, PATCH replaces the line set
+(drafts only, docs/09 lists no separate invoice_lines sub-resource, unlike
 part-lines/labor-lines), POST .../issue transitions draft -> issued
 (Phase A only — non-VAT-registered seller, individual buyer; see
-commercial/service.py's `issue()`). No annul/reissue/PDF endpoints and no
-`?q=` search yet (see commercial/models.py's module docstring)."""
+commercial/service.py's `issue()`), GET .../invoice.pdf renders the issued
+document (Phase A only; see commercial/pdf.py). No annul/reissue endpoints
+and no `?q=` search yet (see commercial/models.py's module docstring)."""
 
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from business_os.identity.deps import (
@@ -31,6 +32,7 @@ from business_os.identity.deps import (
     require_repairflow_active,
     require_subscription_ok,
 )
+from serviceflow.commercial import pdf as invoice_pdf
 from serviceflow.commercial import service
 from serviceflow.commercial.models import Invoice, InvoiceLine, Payment
 from serviceflow.service_orders import contracts as orders_contracts
@@ -265,3 +267,32 @@ def issue_invoice(invoice_id: uuid.UUID, body: IssueRequest, db: TenantDbDep,
     except service.InvoiceError as e:
         raise _invoice_error(e) from e
     return _invoice_detail(db, tenant, invoice)
+
+
+@router.get(
+    "/invoices/{invoice_id}/invoice.pdf",
+    # FastAPI can't infer a binary media type from -> Response alone (it
+    # would otherwise document 200 as application/json, wrong for every
+    # byte of this response) — the sibling /orders/{id}/protocol.pdf
+    # predates this annotation and still has that stale declaration; not
+    # fixed here since it's a separate, already-shipped endpoint.
+    responses={200: {"content": {"application/pdf": {}}}},
+)
+def get_invoice_pdf(invoice_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep) -> Response:
+    """Read-only: no mutation, no number allocation, no timeline event, no
+    commit — generated fresh from the frozen Invoice/InvoiceLine snapshot on
+    every request (see commercial/pdf.py's module docstring). Route path
+    matches docs/09_API_SPECIFICATION.md's frozen surface and the sibling
+    `/orders/{id}/protocol.pdf` naming convention, not a bare `/pdf`."""
+    try:
+        invoice = service.get_issued(db, tenant, invoice_id)
+    except service.InvoiceError as e:
+        raise _invoice_error(e) from e
+    lines = service.list_lines(db, tenant, invoice.id)
+    pdf_bytes = invoice_pdf.generate_invoice_pdf(invoice_pdf.to_pdf_data(invoice, lines))
+    assert invoice.number is not None  # guaranteed by get_issued()'s status=="issued" check
+    filename = f"invoice-{invoice.number:010d}.pdf"
+    return Response(
+        content=pdf_bytes, media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
