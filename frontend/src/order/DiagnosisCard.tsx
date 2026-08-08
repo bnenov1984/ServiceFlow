@@ -139,13 +139,33 @@ export function DiagnosisCard({
         </div>
       ) : (
         diagnosis && (
-          <div className="flex flex-col gap-1 text-sm text-slate-700">
-            {diagnosis.observed && <p><b>{t("order.diagnosis_observed")}:</b> {diagnosis.observed}</p>}
-            {diagnosis.cause && <p><b>{t("order.diagnosis_cause")}:</b> {diagnosis.cause}</p>}
-            {diagnosis.recommendation && <p><b>{t("order.diagnosis_recommendation")}:</b> {diagnosis.recommendation}</p>}
-            {diagnosis.estimated_cost !== null && (
-              <p><b>{t("order.diagnosis_cost")}:</b> {diagnosis.estimated_cost.toFixed(2)} €</p>
-            )}
+          <div className="flex flex-col gap-2 text-sm text-slate-700">
+            <dl className="flex flex-col gap-2">
+              {diagnosis.observed && (
+                <div>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{t("order.diagnosis_observed")}</dt>
+                  <dd className="mt-0.5">{diagnosis.observed}</dd>
+                </div>
+              )}
+              {diagnosis.cause && (
+                <div>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{t("order.diagnosis_cause")}</dt>
+                  <dd className="mt-0.5">{diagnosis.cause}</dd>
+                </div>
+              )}
+              {diagnosis.recommendation && (
+                <div>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{t("order.diagnosis_recommendation")}</dt>
+                  <dd className="mt-0.5">{diagnosis.recommendation}</dd>
+                </div>
+              )}
+              {diagnosis.estimated_cost !== null && (
+                <div>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{t("order.diagnosis_cost")}</dt>
+                  <dd className="mt-0.5">{diagnosis.estimated_cost.toFixed(2)} €</dd>
+                </div>
+              )}
+            </dl>
             {diagnosis.approval && (
               <p className="mt-1 rounded bg-green-50 px-2 py-1 text-green-800">
                 {t("order.diagnosis_approved_note")}

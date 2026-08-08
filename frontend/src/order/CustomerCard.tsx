@@ -20,7 +20,7 @@ export function CustomerCard({
       <Link to={`/customers/${customerId}`} className="font-medium text-blue-700 hover:underline">
         {name}
       </Link>
-      <p>
+      <p className="mt-1">
         <a href={`tel:${phone}`} className="text-sm text-slate-500 hover:underline">
           {phone}
         </a>

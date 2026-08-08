@@ -44,6 +44,90 @@ type PendingAction =
   | { kind: "archive" }
   | null;
 
+/** Compact "Промени статус" trigger + dropdown, replacing what used to be
+ * every allowed transition rendered as its own always-visible button (up to
+ * 9 from "received" alone - 1 normal next step, 5 skip-ahead "warn"
+ * transitions, 3 abandon-the-order terminal-failure ones - all with equal
+ * visual weight next to the status pill). Same bespoke open/absolute-list
+ * idiom as AppShell's AppSwitcher/AccountMenu - no new dependency, no
+ * generic Dropdown component. `transitions` and the caller's own owner-only
+ * filtering are unchanged; only how they're presented changes. */
+function StatusTransitionMenu({
+  transitions,
+  onSelect,
+}: {
+  transitions: { code: string; verdict: "ok" | "warn" }[];
+  onSelect: (code: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  if (transitions.length === 0) return null;
+
+  const normal = transitions.filter(({ code }) => !TERMINAL_FAILURE_CODES.has(code));
+  const failure = transitions.filter(({ code }) => TERMINAL_FAILURE_CODES.has(code));
+
+  const pick = (code: string) => {
+    setOpen(false);
+    onSelect(code);
+  };
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 min-h-touch"
+      >
+        {t("order.change_status_action")} <span aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <ul
+          role="menu"
+          className="absolute left-0 top-full z-40 mt-1 w-56 rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+        >
+          {normal.map(({ code, verdict }) => (
+            <li key={code} role="none">
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => pick(code)}
+                aria-label={
+                  verdict === "warn"
+                    ? `${statusName(code)} — ${t("order.transition_skip_hint")}`
+                    : undefined
+                }
+                className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 min-h-touch"
+              >
+                {verdict === "warn" && <span aria-hidden="true">⚠</span>}
+                {statusName(code)}
+              </button>
+            </li>
+          ))}
+          {failure.length > 0 && (
+            <>
+              <li role="none" className="my-1 border-t border-slate-100" />
+              {failure.map(({ code }) => (
+                <li key={code} role="none">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => pick(code)}
+                    className="block w-full px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50 min-h-touch"
+                  >
+                    {statusName(code)}
+                  </button>
+                </li>
+              ))}
+            </>
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export function OrderHeader({ orderId, number, statusCode, archived }: OrderHeaderProps) {
   const { me } = useAuth();
   const queryClient = useQueryClient();
@@ -197,18 +281,7 @@ export function OrderHeader({ orderId, number, statusCode, archived }: OrderHead
       <StatusPill code={statusCode} />
 
       {!archived && !orderIsTerminal && (
-        <div className="flex flex-wrap gap-2">
-          {buttons.map(({ code }) => (
-            <button
-              key={code}
-              type="button"
-              onClick={() => requestTransition(code)}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 min-h-touch"
-            >
-              {statusName(code)}
-            </button>
-          ))}
-        </div>
+        <StatusTransitionMenu transitions={buttons} onSelect={requestTransition} />
       )}
 
       <button

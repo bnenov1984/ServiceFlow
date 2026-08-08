@@ -221,6 +221,8 @@ export const bg = {
   "order.reason_title": "Причина за промяната",
   "order.status_changed": "Статусът е променен.",
   "order.warning_skip": "Прескочихте стъпки в процеса.",
+  "order.change_status_action": "Промени статус",
+  "order.transition_skip_hint": "Прескача стъпки в процеса.",
   "order.print_protocol": "Печат протокол",
   "order.unlock": "Отключи",
   "order.unlock_title": "Отключване на поръчката",
