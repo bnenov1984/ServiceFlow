@@ -14,14 +14,28 @@ part-lines/labor-lines), POST .../issue transitions draft -> issued
 (Phase A only — non-VAT-registered seller, individual buyer; see
 commercial/service.py's `issue()`), GET .../invoice.pdf renders the issued
 document (Phase A only; see commercial/pdf.py). No annul/reissue endpoints
-and no `?q=` search yet (see commercial/models.py's module docstring)."""
+and no `?q=` search yet (see commercial/models.py's module docstring).
+
+GET /invoices doubles as the central invoice list (frontend's /invoices
+workspace, docs/01 §Invoice): `InvoiceListItemOut` enriches each row with
+order_number/customer_name/total via bounded batch lookups
+(service_orders.contracts.get_order_summaries,
+customers.contracts.get_customer_summaries, commercial.service.draft_totals)
+— never one query per row. customer_name is intentionally dual-sourced: an
+issued row's buyer identity is the invoice's own frozen `buyer` snapshot
+(never live Customer data, even if malformed — docs/ACCOUNTANT_REVIEW.md);
+a draft row has no snapshot yet, so it falls back to the live Customer name
+via its order. `total` is the frozen `gross` once an invoice carries one
+(issued, and any future annulled row), otherwise the live sum of its current
+lines (draft) — one field, not two, but never a Draft total presented as a
+legal one."""
 
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from business_os.identity.deps import (
@@ -35,6 +49,7 @@ from business_os.identity.deps import (
 from serviceflow.commercial import pdf as invoice_pdf
 from serviceflow.commercial import service
 from serviceflow.commercial.models import Invoice, InvoiceLine, Payment
+from serviceflow.customers import contracts as customers_contracts
 from serviceflow.service_orders import contracts as orders_contracts
 
 router = APIRouter(dependencies=[Depends(require_repairflow_active)])
@@ -216,12 +231,74 @@ def create_invoice_draft(order_id: uuid.UUID, db: TenantDbDep,
     return _invoice_detail(db, tenant, invoice)
 
 
+class InvoiceListItemOut(BaseModel):
+    id: uuid.UUID
+    order_id: uuid.UUID
+    # Human order number (e.g. "2026-00001"), not this endpoint's own concern
+    # to compute — sourced via service_orders.contracts.get_order_summaries.
+    order_number: str
+    status: str
+    number: int | None
+    currency: str
+    # Dual-sourced by design — see this module's docstring for the full
+    # rationale: frozen Invoice.buyer snapshot once issued, live Customer
+    # name while still a draft. Never both, never guessed.
+    customer_name: str
+    issued_at: datetime | None
+    tax_event_date: date | None
+    # Frozen `gross` once the invoice carries one (issued, or any future
+    # annulled row); otherwise the live sum of the draft's current lines.
+    # One field, not a redundant issued/draft pair — see module docstring.
+    total: float
+    row_version: int
+
+
+def _customer_name_for(
+    invoice: Invoice,
+    orders: dict[uuid.UUID, orders_contracts.OrderSummary],
+    customers: dict[uuid.UUID, customers_contracts.CustomerSummary],
+) -> str:
+    if invoice.buyer is not None:
+        # Frozen legal snapshot (Issue-time) — never live Customer data, even
+        # for a legacy/malformed snapshot missing "name" (falls back to "",
+        # the same "missing enrichment data" convention list_orders already
+        # uses, rather than reaching for live Customer to paper over it).
+        return str(invoice.buyer.get("name") or "")
+    order = orders.get(invoice.order_id)
+    customer = customers.get(order.customer_id) if order else None
+    return customer.name if customer else ""
+
+
 @router.get("/invoices")
-def list_invoices(db: TenantDbDep, tenant: TenantDep, status: str | None = None,
-                  order_id: uuid.UUID | None = None) -> list[InvoiceOut]:
+def list_invoices(
+    db: TenantDbDep, tenant: TenantDep, status: str | None = None,
+    order_id: uuid.UUID | None = None,
+    limit: Annotated[int, Query(gt=0, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[InvoiceListItemOut]:
+    invoices = service.list_invoices(
+        db, tenant, status=status, order_id=order_id, limit=limit, offset=offset,
+    )
+    orders = orders_contracts.get_order_summaries(db, tenant, (i.order_id for i in invoices))
+    # Only Draft rows ever need a live customer lookup — issued rows resolve
+    # customer_name entirely from their own frozen buyer snapshot, above.
+    draft_customer_ids = {
+        orders[i.order_id].customer_id for i in invoices
+        if i.buyer is None and i.order_id in orders
+    }
+    customers = customers_contracts.get_customer_summaries(db, tenant, draft_customer_ids)
+    totals = service.draft_totals(db, tenant, (i.id for i in invoices if i.gross is None))
     return [
-        InvoiceOut.of(i)
-        for i in service.list_invoices(db, tenant, status=status, order_id=order_id)
+        InvoiceListItemOut(
+            id=i.id, order_id=i.order_id,
+            order_number=orders[i.order_id].number if i.order_id in orders else "",
+            status=i.status, number=i.number, currency=i.currency,
+            customer_name=_customer_name_for(i, orders, customers),
+            issued_at=i.issued_at, tax_event_date=i.tax_event_date,
+            total=float(i.gross) if i.gross is not None else float(totals.get(i.id, Decimal("0"))),
+            row_version=i.row_version,
+        )
+        for i in invoices
     ]
 
 

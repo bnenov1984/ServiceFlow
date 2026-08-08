@@ -133,6 +133,16 @@ adds the `fk_payments_invoice_id_invoices` constraint migration #8 deferred.
 ownership (`document_sequences` — still the one Open item, BOS-05 §1),
 accountant review, VAT modes, immutability, PDF, annul/reissue.
 
+**Central invoice workspace ("Фактури") ✅ landed 09.08.2026.** RepairFlow's
+`/invoices` nav item, previously grayed, is now a real page: `GET /invoices`
+gained `limit`/`offset` (query-level pagination, default 50) and a richer
+`InvoiceListItemOut` per row (order_number, customer_name, total), batch-
+enriched via new `service_orders.contracts.get_order_summaries` and
+`customers.contracts.get_customer_summaries` — no per-row query. A history/
+list view only; invoices are still created exclusively from a Service
+Order's own Invoice section, and there is still no standalone invoice-detail
+page — "Отвори" reuses the existing `/orders/{id}` + InvoiceCard.
+
 ## Етап 5 — Hardening & Pilot
 
 Security hardening по преработения 11 (internet-facing: rate limiting навсякъде,

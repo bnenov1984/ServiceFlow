@@ -40,6 +40,7 @@ function renderShell(initialPath: string, activeModules: string[], isOwner = tru
           <Route element={<AppShell />}>
             <Route index element={<div>REPAIRFLOW_DASHBOARD</div>} />
             <Route path="orders/new" element={<div>NEW_ORDER_PAGE</div>} />
+            <Route path="invoices" element={<div>INVOICES_PAGE</div>} />
             <Route path="ps" element={<div>PROPERTYFLOW_PAGE</div>} />
           </Route>
         </Routes>
@@ -187,5 +188,36 @@ describe("Business OS shell: Настройки nav item (Tenant Employee Manage
     const desktopNav = screen.getByRole("navigation", { name: "RepairFlow navigation" });
     expect(within(desktopNav).queryByRole("link", { name: "Настройки" })).not.toBeInTheDocument();
     expect(within(desktopNav).getByText("Настройки")).toHaveAttribute("aria-disabled");
+  });
+});
+
+describe("Business OS shell: Фактури nav item (central invoice workspace)", () => {
+  it("is a real link to /invoices for an Owner", () => {
+    renderShell("/", ["repairflow"], true);
+    const desktopNav = screen.getByRole("navigation", { name: "RepairFlow navigation" });
+    const link = within(desktopNav).getByRole("link", { name: "Фактури" });
+    expect(link).toHaveAttribute("href", "/invoices");
+  });
+
+  it("is a real, clickable link for a Worker too — invoice reads are not Owner-only", () => {
+    renderShell("/", ["repairflow"], false);
+    const desktopNav = screen.getByRole("navigation", { name: "RepairFlow navigation" });
+    const link = within(desktopNav).getByRole("link", { name: "Фактури" });
+    expect(link).toHaveAttribute("href", "/invoices");
+    expect(link).not.toHaveAttribute("aria-disabled");
+  });
+
+  it("navigates to the invoices page on click", async () => {
+    const user = userEvent.setup();
+    renderShell("/", ["repairflow"], true);
+    const desktopNav = screen.getByRole("navigation", { name: "RepairFlow navigation" });
+    await user.click(within(desktopNav).getByRole("link", { name: "Фактури" }));
+    expect(await screen.findByText("INVOICES_PAGE")).toBeInTheDocument();
+  });
+
+  it("does not render Фактури at all on a PropertyFlow-only nav", () => {
+    renderShell("/ps", ["professional-services"]);
+    const desktopNav = screen.getByRole("navigation", { name: "PropertyFlow navigation" });
+    expect(within(desktopNav).queryByText("Фактури")).not.toBeInTheDocument();
   });
 });

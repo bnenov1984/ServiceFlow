@@ -5,12 +5,15 @@ Money totals stay derived, never stored (BR-3): paid_amount and balance are
 computed here, not persisted. Invoice draft creation/editing is this file's
 second part; `issue()` is the third; `get_issued()` (the PDF endpoint's
 fetch-and-status-check, commercial/pdf.py does the actual rendering) is the
-fourth — annul/reissue and VAT-registered-seller/company-buyer support are
-still a later slice (see commercial/models.py docstring and
-docs/ACCOUNTANT_REVIEW.md's 'RepairFlow Invoice V1 Freeze' §5, Phase-A
-scope)."""
+fourth; `list_invoices()`'s pagination + `draft_totals()` (batch, one query
+per page regardless of row count) back the central invoice list
+(commercial/router.py's `list_invoices` endpoint) as the fifth — annul/reissue
+and VAT-registered-seller/company-buyer support are still a later slice (see
+commercial/models.py docstring and docs/ACCOUNTANT_REVIEW.md's 'RepairFlow
+Invoice V1 Freeze' §5, Phase-A scope)."""
 
 import uuid
+from collections.abc import Iterable
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
@@ -121,13 +124,39 @@ def get_issued(db: Session, ctx: TenantContext, invoice_id: uuid.UUID) -> Invoic
 
 
 def list_invoices(db: Session, ctx: TenantContext, *, status: str | None = None,
-                  order_id: uuid.UUID | None = None) -> list[Invoice]:
+                  order_id: uuid.UUID | None = None, limit: int = 50,
+                  offset: int = 0) -> list[Invoice]:
+    """Newest-first, paginated at the query level (never load-then-slice in
+    Python) — the central invoice list's (GET /invoices) primary query.
+    `Invoice.id` is a secondary sort key purely to make paging deterministic
+    across requests when two rows share the same `created_at` (UUIDv7 ids are
+    themselves time-ordered, so this never contradicts the primary key)."""
     stmt = scoped(select(Invoice), Invoice, ctx)
     if status:
         stmt = stmt.where(Invoice.status == status)
     if order_id:
         stmt = stmt.where(Invoice.order_id == order_id)
-    return list(db.scalars(stmt.order_by(Invoice.created_at.desc())))
+    stmt = stmt.order_by(Invoice.created_at.desc(), Invoice.id.desc()).limit(limit).offset(offset)
+    return list(db.scalars(stmt))
+
+
+def draft_totals(db: Session, ctx: TenantContext,
+                 invoice_ids: Iterable[uuid.UUID]) -> dict[uuid.UUID, Decimal]:
+    """Batch counterpart to draft_total() — one query for a whole page of
+    draft rows, not one per row (the central invoice list's list-friendly
+    `total` field, commercial/router.py's list_invoices)."""
+    ids = set(invoice_ids)
+    if not ids:
+        return {}
+    totals: dict[uuid.UUID, Decimal] = dict.fromkeys(ids, Decimal("0"))
+    rows = db.execute(
+        scoped(select(InvoiceLine.invoice_id, InvoiceLine.qty, InvoiceLine.unit_price),
+              InvoiceLine, ctx)
+        .where(InvoiceLine.invoice_id.in_(ids))
+    )
+    for invoice_id, qty, unit_price in rows:
+        totals[invoice_id] += qty * unit_price
+    return totals
 
 
 def list_lines(db: Session, ctx: TenantContext, invoice_id: uuid.UUID) -> list[InvoiceLine]:

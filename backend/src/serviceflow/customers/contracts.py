@@ -11,6 +11,7 @@ Documents & Invoicing") — it must go through this surface, never
 """
 
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -43,3 +44,17 @@ def get_customer_summary(db: Session, ctx: TenantContext,
         id=customer.id, name=customer.name, is_company=customer.is_company,
         company_requisites=customer.company_requisites,
     )
+
+
+def get_customer_summaries(db: Session, ctx: TenantContext,
+                           customer_ids: Iterable[uuid.UUID]) -> dict[uuid.UUID, CustomerSummary]:
+    """Batch counterpart to get_customer_summary — one query, not N. First
+    consumer: commercial's central invoice list (GET /invoices), which needs
+    the *live* customer name for Draft rows only — an issued row's
+    customer_name comes from the invoice's own frozen buyer snapshot instead,
+    never from here (see commercial/router.py's list_invoices)."""
+    return {
+        cid: CustomerSummary(id=c.id, name=c.name, is_company=c.is_company,
+                             company_requisites=c.company_requisites)
+        for cid, c in _service.get_many(db, ctx, customer_ids).items()
+    }

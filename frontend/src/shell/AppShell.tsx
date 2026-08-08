@@ -367,6 +367,9 @@ export function AppShell() {
               <NavLink to="/customers" className={({ isActive }) => navClass(isActive)}>
                 {t("nav.customers")}
               </NavLink>
+              <NavLink to="/invoices" className={({ isActive }) => navClass(isActive)}>
+                {t("nav.invoices")}
+              </NavLink>
             </>
           )}
           {currentApp?.id === "propertyflow" && (
@@ -374,7 +377,6 @@ export function AppShell() {
               {t("nav.dashboard")}
             </NavLink>
           )}
-          <GrayedNavItem label={t("nav.invoices")} />
           {me?.is_owner ? (
             <NavLink to="/settings/employees" className={({ isActive }) => navClass(isActive)}>
               {t("nav.settings")}

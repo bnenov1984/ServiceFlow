@@ -37,6 +37,11 @@ tooltip „Очаквайте скоро" (they exist in nav per frozen 10 §1; 
 change the approved navigation, graying them keeps the promise visible). PO may
 veto to hide instead.
 
+**Фактури landed** (central invoice workspace, `/invoices`): a real `NavLink`
+now, for both Owner and Worker (invoice reads are not Owner-gated) — the
+grayed-placeholder note above describes the Етап-2 starting state, not the
+current one. **Настройки** stays grayed for a Worker (Owner-only), unchanged.
+
 ## 3. Design tokens (Tailwind theme)
 
 Single source: `frontend/src/theme.ts` → consumed by `tailwind.config`.

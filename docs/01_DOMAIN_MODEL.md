@@ -208,6 +208,17 @@ Attributes are business attributes, not columns.
   downloadable PDF representation, generated on demand from the frozen
   Invoice/InvoiceLine snapshot — later edits to Company/Customer master data
   never alter a previously issued invoice's PDF. Drafts have no PDF.
+  **Central invoice workspace implemented** (`/invoices`, RepairFlow nav item
+  "Фактури" — a history/list view, not a new creation entry point; invoices
+  are still created only from a Service Order's own Invoice section): GET
+  /invoices' list response batch-enriches each row with order_number/
+  customer_name/total. customer_name is dual-sourced by design — an issued
+  row's buyer identity is the invoice's own frozen `buyer` snapshot (never
+  live Customer data, even for a malformed/legacy snapshot); a draft row has
+  no snapshot yet, so it falls back to the live Customer name. `total` is
+  the frozen `gross` once an invoice carries one, otherwise the live sum of
+  the draft's current lines — one field, two semantics, documented rather
+  than hidden behind a single ambiguous name.
 - **Invariants:** numbering has no gaps and no reuse; requisite snapshots make the
   document self-contained even if company/customer data later changes; invoices are
   **optional per order** (B2C walk-ins often need none) and possible on Отказана

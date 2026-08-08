@@ -56,7 +56,10 @@ start; the generated OpenAPI schema becomes the machine-readable source of truth
 
 ### Commercial documents
 - POST /orders/{id}/invoices — draft prefilled from lines
-- GET /invoices?status|q · GET /invoices/{id} · PATCH /invoices/{id} — drafts only
+- GET /invoices?status|q|limit|offset — the central "Фактури" workspace's list
+  (limit/offset landed; q search still future); each row batch-enriched with
+  order_number/customer_name/total, never one query per row · GET /invoices/{id}
+  · PATCH /invoices/{id} — drafts only
 - POST /invoices/{id}/issue — assigns gapless number (Owner or toggle, 02 §12)
 - POST /invoices/{id}/annul — {reason}; POST /invoices/{id}/reissue — new draft copy
 - GET /invoices/{id}/invoice.pdf

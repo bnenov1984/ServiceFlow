@@ -228,6 +228,10 @@ export const bg = {
   "order.invoice_issue_tax_event_date": "Дата на данъчно събитие",
   "order.invoice_issue_settings_link": "Настройки → Фирма",
   "order.invoice_status_issued": "Издадена",
+  // No annul workflow exists in the UI yet (backend-only enum value) — kept
+  // so the central invoice list (invoices/InvoicesPage.tsx) can still render
+  // a real row sensibly instead of falling back to a raw status string.
+  "order.invoice_status_annulled": "Анулирана",
   "order.invoice_issued_number": "Фактура №",
   "order.invoice_issued_at": "Издадена на",
   "order.invoice_seller": "Продавач",
@@ -362,6 +366,22 @@ export const bg = {
   "dashboard.widget_today_tasks": "Днешни задачи",
   "dashboard.widget_call_tasks": "Обади се",
   "dashboard.empty": "Няма нищо спешно. Спокоен ден 👌",
+
+  // --- invoices (central "Фактури" workspace — history view, not a new
+  // invoice-creation entry point; invoices are still created from an order) ---
+  "invoices.column_number": "Номер",
+  "invoices.column_customer": "Клиент",
+  "invoices.column_order": "Поръчка",
+  "invoices.column_date": "Дата",
+  "invoices.column_status": "Статус",
+  "invoices.column_total": "Общо",
+  "invoices.column_actions": "Действия",
+  "invoices.filter_all": "Всички",
+  "invoices.filter_draft": "Чернови",
+  "invoices.filter_issued": "Издадени",
+  "invoices.empty": "Все още няма фактури.",
+  "invoices.empty_hint": "Фактурите се създават от поръчките.",
+  "invoices.load_more": "Зареди още",
 
   // --- customers (docs/15 §6.7) ---
   "customers.search_placeholder": "Търсене по име или телефон…",

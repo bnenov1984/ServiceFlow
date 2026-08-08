@@ -32,6 +32,7 @@ mechanically blocks.
 """
 
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Protocol
@@ -68,6 +69,18 @@ def get_order_summary(db: Session, ctx: TenantContext,
         id=order.id, number=order.number, customer_id=order.customer_id,
         asset_id=order.asset_id, archived=order.archived_at is not None,
     )
+
+
+def get_order_summaries(db: Session, ctx: TenantContext,
+                        order_ids: Iterable[uuid.UUID]) -> dict[uuid.UUID, OrderSummary]:
+    """Batch counterpart to get_order_summary — one query, not N. First
+    consumer: commercial's central invoice list (GET /invoices), which needs
+    each row's order_number without a per-invoice lookup."""
+    return {
+        oid: OrderSummary(id=o.id, number=o.number, customer_id=o.customer_id,
+                          asset_id=o.asset_id, archived=o.archived_at is not None)
+        for oid, o in _service.get_many(db, ctx, order_ids).items()
+    }
 
 
 def get_order_total(db: Session, ctx: TenantContext, order_id: uuid.UUID) -> Decimal:

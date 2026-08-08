@@ -2480,6 +2480,29 @@
               ],
               "title": "Order Id"
             }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "exclusiveMinimum": 0,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
           }
         ],
         "responses": {
@@ -2490,7 +2513,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/InvoiceOut"
+                    "$ref": "#/components/schemas/InvoiceListItemOut"
                   },
                   "title": "Response List Invoices Api V1 Invoices Get"
                 }
@@ -6464,7 +6487,7 @@
         ],
         "title": "InvoiceLineOut"
       },
-      "InvoiceOut": {
+      "InvoiceListItemOut": {
         "properties": {
           "id": {
             "type": "string",
@@ -6475,6 +6498,10 @@
             "type": "string",
             "format": "uuid",
             "title": "Order Id"
+          },
+          "order_number": {
+            "type": "string",
+            "title": "Order Number"
           },
           "status": {
             "type": "string",
@@ -6495,6 +6522,38 @@
             "type": "string",
             "title": "Currency"
           },
+          "customer_name": {
+            "type": "string",
+            "title": "Customer Name"
+          },
+          "issued_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issued At"
+          },
+          "tax_event_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Event Date"
+          },
+          "total": {
+            "type": "number",
+            "title": "Total"
+          },
           "row_version": {
             "type": "integer",
             "title": "Row Version"
@@ -6504,12 +6563,17 @@
         "required": [
           "id",
           "order_id",
+          "order_number",
           "status",
           "number",
           "currency",
+          "customer_name",
+          "issued_at",
+          "tax_event_date",
+          "total",
           "row_version"
         ],
-        "title": "InvoiceOut"
+        "title": "InvoiceListItemOut"
       },
       "InvoicePatchIn": {
         "properties": {

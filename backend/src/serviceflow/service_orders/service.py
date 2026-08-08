@@ -133,6 +133,19 @@ def get(db: Session, ctx: TenantContext, order_id: uuid.UUID) -> ServiceOrder | 
     )
 
 
+def get_many(db: Session, ctx: TenantContext,
+            order_ids: Iterable[uuid.UUID]) -> dict[uuid.UUID, ServiceOrder]:
+    """Batch counterpart to get() — one query, not N (same idiom as
+    customers.service.get_many/assets.service.get_many)."""
+    ids = set(order_ids)
+    if not ids:
+        return {}
+    rows = db.scalars(
+        scoped(select(ServiceOrder), ServiceOrder, ctx).where(ServiceOrder.id.in_(ids))
+    )
+    return {o.id: o for o in rows}
+
+
 def list_orders(db: Session, ctx: TenantContext, *, state: str = "open",
                 status_code: str | None = None, technician_id: uuid.UUID | None = None,
                 customer_id: uuid.UUID | None = None,

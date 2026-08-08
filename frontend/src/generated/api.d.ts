@@ -2118,8 +2118,8 @@ export interface components {
             /** Source */
             source: string;
         };
-        /** InvoiceOut */
-        InvoiceOut: {
+        /** InvoiceListItemOut */
+        InvoiceListItemOut: {
             /**
              * Id
              * Format: uuid
@@ -2130,12 +2130,22 @@ export interface components {
              * Format: uuid
              */
             order_id: string;
+            /** Order Number */
+            order_number: string;
             /** Status */
             status: string;
             /** Number */
             number: number | null;
             /** Currency */
             currency: string;
+            /** Customer Name */
+            customer_name: string;
+            /** Issued At */
+            issued_at: string | null;
+            /** Tax Event Date */
+            tax_event_date: string | null;
+            /** Total */
+            total: number;
             /** Row Version */
             row_version: number;
         };
@@ -4648,6 +4658,8 @@ export interface operations {
             query?: {
                 status?: string | null;
                 order_id?: string | null;
+                limit?: number;
+                offset?: number;
             };
             header?: never;
             path?: never;
@@ -4661,7 +4673,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["InvoiceOut"][];
+                    "application/json": components["schemas"]["InvoiceListItemOut"][];
                 };
             };
             /** @description Validation Error */
