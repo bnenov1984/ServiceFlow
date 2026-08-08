@@ -29,18 +29,39 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-def next_number(db: Session, ctx: TenantContext, kind: str = "order") -> str:
-    """Per-company yearly sequence (docs/08's frozen gaplessness point; hardened
-    per ADR-BOS-005). A single INSERT ... ON CONFLICT DO UPDATE is atomic in
-    Postgres: unlike a SELECT-then-INSERT pair, there is no window where two
-    concurrent first-allocations for the same (company_id, kind, year) can both
-    observe "no row" and both attempt the insert. The loser blocks on the
-    unique index (uq_document_sequences_key) until the winner's transaction
-    resolves, then applies its own increment on top instead of raising
-    IntegrityError — so no number is ever repeated, lost, or skipped, and
-    already-existing rows keep the same until-commit row lock a SELECT ...
-    FOR UPDATE would have held."""
-    year = _now().year
+# Invoice numbering must be continuous across calendar years — legally
+# required, not a product choice (docs/ACCOUNTANT_REVIEW.md §1: ППЗДДС/ЗДДС
+# "без пропуски и дублиране" — no gaps, no duplicates, ever, for the life of
+# the company's registration; confirmed directly against NRA's own published
+# guidance). `document_sequences.year` stays NOT NULL — no migration — but
+# for kind="invoice" it is never a calendar year: it is reinterpreted as a
+# *series/epoch* number. Epoch 0 is the company's one and only invoice
+# series for as long as the product exists; Bulgarian practice only starts a
+# new series after the entire 10-digit range is exhausted, and only after a
+# written notice to NRA (docs/ACCOUNTANT_REVIEW.md §1) — a rare, deliberate,
+# out-of-band event, never something calendar time triggers on its own. The
+# only sanctioned way to allocate an invoice number is next_invoice_number()
+# below — it is the sole place this constant is used, so the convention
+# cannot be silently misused as a real year by another call site.
+INVOICE_SEQUENCE_EPOCH = 0
+
+
+def allocate_sequence(db: Session, ctx: TenantContext, *, kind: str, year: int) -> int:
+    """Atomic per-(company, kind, year) counter (docs/08's frozen gaplessness
+    point; hardened per ADR-BOS-005). A single INSERT ... ON CONFLICT DO
+    UPDATE is atomic in Postgres: unlike a SELECT-then-INSERT pair, there is
+    no window where two concurrent first-allocations for the same key can
+    both observe "no row" and both attempt the insert. The loser blocks on
+    the unique index (uq_document_sequences_key) until the winner's
+    transaction resolves, then applies its own increment on top instead of
+    raising IntegrityError — so no number is ever repeated, lost, or
+    skipped, and already-existing rows keep the same until-commit row lock a
+    SELECT ... FOR UPDATE would have held.
+
+    Returns the raw allocated counter — no document-specific formatting.
+    `kind` and `year` are both required (no defaults) so a caller can never
+    accidentally fall back to an unintended sequence; see next_order_number
+    and next_invoice_number for the two sanctioned call shapes."""
     stmt = (
         pg_insert(DocumentSequence)
         .values(id=new_id(), company_id=ctx.company_id, kind=kind, year=year, current=1)
@@ -52,8 +73,27 @@ def next_number(db: Session, ctx: TenantContext, kind: str = "order") -> str:
         )
         .returning(DocumentSequence.current)
     )
-    current = db.execute(stmt).scalar_one()
+    return db.execute(stmt).scalar_one()
+
+
+def next_order_number(db: Session, ctx: TenantContext) -> str:
+    """Per-company yearly order sequence (docs/08), "{year}-{00001}" —
+    resets every calendar year by design. Orders carry no numbering-
+    continuity legal requirement (unlike invoices, see next_invoice_number),
+    so the year-scoped key is correct and unchanged here."""
+    year = _now().year
+    current = allocate_sequence(db, ctx, kind="order", year=year)
     return f"{year}-{current:05d}"
+
+
+def next_invoice_number(db: Session, ctx: TenantContext) -> str:
+    """Per-company invoice sequence, continuous across calendar years
+    (see INVOICE_SEQUENCE_EPOCH above — legally required, not a product
+    choice). Ten Arabic digits, zero-padded, no year prefix and no dash —
+    the ЗДДС чл. 113/114 / ППЗДДС чл. 78 format
+    (docs/ACCOUNTANT_REVIEW.md §1)."""
+    current = allocate_sequence(db, ctx, kind="invoice", year=INVOICE_SEQUENCE_EPOCH)
+    return f"{current:010d}"
 
 
 def _event(db: Session, ctx: TenantContext, order: ServiceOrder, type_: str,
@@ -69,7 +109,7 @@ def create(db: Session, ctx: TenantContext, *, customer_id: uuid.UUID,
            promised_on: Any = None, technician_id: uuid.UUID | None = None,
            origin_order_id: uuid.UUID | None = None) -> ServiceOrder:
     order = ServiceOrder(
-        company_id=ctx.company_id, number=next_number(db, ctx),
+        company_id=ctx.company_id, number=next_order_number(db, ctx),
         customer_id=customer_id, asset_id=asset_id, complaint=complaint,
         status_code="received", priority=priority, promised_on=promised_on,
         technician_id=technician_id, origin_order_id=origin_order_id,
