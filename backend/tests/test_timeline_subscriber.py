@@ -44,6 +44,69 @@ def test_event_with_no_subject_is_still_ignored() -> None:
     os.environ.get("SERVICEFLOW_TEST_DATABASE_URL") is None,
     reason="SERVICEFLOW_TEST_DATABASE_URL not set",
 )
+def test_invoice_issued_is_accepted_and_writes_timeline_entry_on_order(
+    client: TestClient,
+) -> None:
+    """invoice_issued was added to KNOWN_EVENT_TYPES ahead of the future
+    Issue endpoint that will publish it (no such endpoint exists yet, so the
+    event is constructed and dispatched directly here, exactly like the
+    prerequisite slice's own scope: prove the subscriber is now *capable* of
+    accepting it, not that anything publishes it in production yet).
+    subject_id must be the order id (TimelineEvent.order_id's FK target),
+    matching every other invoice/payment-shaped event's own convention —
+    never invoice_id."""
+    import uuid as uuid_mod
+
+    from business_os.identity.service import seed_company
+    from business_os.shared_kernel.db import bind_tenant_scope, open_session
+    from business_os.shared_kernel.events import publish
+    from serviceflow.timeline.models import TimelineEvent
+
+    company_id = None
+    owner_id = None
+    for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
+        company = seed_company(db, "Сервиз Издадени Фактури", "Owner", "inv-tl@tl.bg",
+                               "парола-123")
+        company_id = company.id
+
+    me = client.post("/api/v1/auth/login",
+                     json={"email": "inv-tl@tl.bg", "password": "парола-123"}).json()
+    owner_id = me["user_id"]
+    h = {"X-CSRF-Token": str(me["csrf_token"])}
+    cid = client.post("/api/v1/customers", headers=h,
+                      json={"name": "Иван", "phone": "0888111222"}).json()["id"]
+    aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
+        "asset_type_code": "phone", "field_values": {"brand": "Apple"},
+    }).json()["id"]
+    oid = client.post("/api/v1/orders", headers=h, json={
+        "customer_id": cid, "asset_id": aid, "complaint": "x",
+    }).json()["id"]
+
+    invoice_id = uuid_mod.uuid4()
+    for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
+        assert company_id is not None
+        bind_tenant_scope(db, company_id)
+        publish(db, DomainEvent(
+            type="invoice_issued", company_id=company_id, actor_user_id=uuid_mod.UUID(owner_id),
+            subject_id=uuid_mod.UUID(oid),
+            data={"invoice_id": str(invoice_id), "invoice_number": "0000000001"},
+        ))
+        db.commit()
+
+    for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
+        assert company_id is not None
+        bind_tenant_scope(db, company_id)
+        event = db.query(TimelineEvent).filter_by(
+            order_id=uuid_mod.UUID(oid), event_type="invoice_issued",
+        ).first()
+        assert event is not None
+        assert event.data == {"invoice_id": str(invoice_id), "invoice_number": "0000000001"}
+
+
+@pytest.mark.skipif(
+    os.environ.get("SERVICEFLOW_TEST_DATABASE_URL") is None,
+    reason="SERVICEFLOW_TEST_DATABASE_URL not set",
+)
 def test_known_serviceflow_event_still_writes_timeline_entry(client: TestClient) -> None:
     """A real, known ServiceFlow event type still reaches TimelineEvent -
     the allowlist restricts, it does not silently break the existing path."""

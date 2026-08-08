@@ -9,9 +9,12 @@ needs injected from elsewhere:
 
 - **Outbound** (functions another module calls): `get_order_summary`,
   `get_order_total`, `get_order_lines` (the last one added for Invoice draft
-  prefill — docs/09 "draft prefilled from lines"). Commercial reads order
-  data through these only — never `service_orders.models`/`.service`/
-  `.lines` directly.
+  prefill — docs/09 "draft prefilled from lines"), `get_next_invoice_number`
+  (ADR-BOS-005: `document_sequences` stays owned by `service_orders`;
+  `commercial` calls out for a number exactly like it already calls out for
+  order totals/lines — same direction, same module, no new shape). Commercial
+  reads order data through these only — never `service_orders.models`/
+  `.service`/`.lines` directly.
 - **Inbound port** (`PaymentSummaryProvider`): service_orders needs
   paid_amount/balance to enrich GET /orders/{id}, but that data is owned by
   `commercial`. Rather than importing commercial (which would recreate the
@@ -102,6 +105,18 @@ def get_order_lines(db: Session, ctx: TenantContext,
         for line in _lines.list_labor_lines(db, ctx, order_id)
     ]
     return parts + labor
+
+
+def get_next_invoice_number(db: Session, ctx: TenantContext) -> str:
+    """The sanctioned way for `commercial` to obtain the next invoice number
+    (ADR-BOS-005) — a thin delegation to the already-tested
+    `_service.next_invoice_number()`, never reimplemented here. No new
+    locking, no new transaction: this function does not commit, matching
+    `next_invoice_number`/`allocate_sequence`'s own contract of leaving
+    commit ownership entirely to the caller, so a future Issue transaction
+    can call this mid-transaction and have the allocation roll back with
+    everything else on failure."""
+    return _service.next_invoice_number(db, ctx)
 
 
 @dataclass(frozen=True)

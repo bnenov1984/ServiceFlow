@@ -422,3 +422,68 @@ def test_concurrent_invoice_allocation_is_safe_and_produces_no_duplicate(
     assert {number_a, result} == {"0000000001", "0000000002"}
 
     session_a.close()
+
+
+# --- service_orders.contracts.get_next_invoice_number(): the sanctioned way
+# for `commercial` to reach invoice numbering (ADR-BOS-005) ------------------
+
+
+def test_contract_delegates_to_the_same_numbering_semantics(client: TestClient) -> None:
+    """The contract function must be a thin delegation, not a reimplementation
+    — proven by interleaving calls through both the contract and the direct
+    service function on the same company and asserting one continuous,
+    correctly-formatted sequence, exactly as if only next_invoice_number()
+    had been called throughout."""
+    from business_os.shared_kernel.db import TenantContext, open_session
+    from serviceflow.service_orders import contracts, service
+
+    url = os.environ["SERVICEFLOW_DATABASE_URL"]
+    company_id = _seed_company(url, "Договор Фактури ЕООД", "contract-inv@race.bg")
+    ctx = TenantContext(company_id=company_id, user_id=uuid.uuid4(), is_owner=True)
+
+    for db in open_session(url):
+        via_service = service.next_invoice_number(db, ctx)
+        via_contract = contracts.get_next_invoice_number(db, ctx)
+        db.commit()
+
+    assert via_service == "0000000001"
+    assert via_contract == "0000000002"
+    assert len(via_contract) == 10
+    assert via_contract.isdigit()
+
+
+def test_contract_call_does_not_commit_independently(client: TestClient) -> None:
+    """Transaction ownership must stay with the caller (the future Issue
+    transaction needs the allocation to roll back with everything else on
+    failure) — proven by calling the contract function, then rolling back
+    instead of committing, and confirming no sequence row was persisted."""
+    from business_os.shared_kernel.db import TenantContext
+    from serviceflow.service_orders import contracts
+    from serviceflow.service_orders.models import DocumentSequence
+
+    url = os.environ["SERVICEFLOW_DATABASE_URL"]
+    company_id = _seed_company(url, "Отказан Контракт ЕООД", "rollback-inv@race.bg")
+    ctx = TenantContext(company_id=company_id, user_id=uuid.uuid4(), is_owner=True)
+
+    session = _new_session(url)
+    try:
+        number = contracts.get_next_invoice_number(session, ctx)
+        assert number == "0000000001"
+        session.rollback()
+    finally:
+        session.close()
+
+    verify_session = _new_session(url)
+    try:
+        rows = verify_session.scalars(
+            select(DocumentSequence).where(
+                DocumentSequence.company_id == company_id,
+                DocumentSequence.kind == "invoice",
+            )
+        ).all()
+        assert rows == [], (
+            "get_next_invoice_number committed on its own — a rollback after "
+            "calling it must leave no trace, exactly like next_invoice_number()"
+        )
+    finally:
+        verify_session.close()

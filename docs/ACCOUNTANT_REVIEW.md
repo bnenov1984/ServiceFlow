@@ -659,6 +659,30 @@ three are product conveniences, not legal requisites:
 | Payment-to-invoice reconciliation (linking specific `Payment` rows to a specific issued `Invoice` beyond the order level). | `Payment.invoice_id` already exists as a nullable FK — the column is already there, unused; no schema gap, purely a later feature-completeness item. May follow Issue/PDF. §12. |
 | True 0%-rated supplies (as opposed to "not charged because unregistered"). | Already representable via the `vat_mode`/`vat_rate` convention documented in §6 (explicit `0.00` vs. `NULL`) once that convention is written down; no schema change needed when this is eventually built. §6. |
 
+### 5. Phase-A Invoice Issue — approved product scope (not yet implemented)
+
+**Product scope decision, not a legal conclusion.** Following the read-only
+Issue architectural audit, the PO approved a deliberately narrow first
+implementation slice for the future `POST /invoices/{id}/issue` endpoint.
+This is a **scoping freeze only** — nothing below marks any of §6's VAT-
+rounding question or §4's buyer VAT-number gap as resolved, and no Issue
+code exists yet (still true as of this entry: only the small prerequisite
+plumbing — `service_orders.contracts.get_next_invoice_number`, the
+`invoice_issued` timeline-allowlist entry, this documentation — has landed).
+
+| Phase-A Issue supports | Phase-A Issue explicitly does NOT support |
+|---|---|
+| Seller: `Company.vat_registered == False` only. | Seller: `Company.vat_registered == True` — blocked on §6's still-open VAT-rounding professional-review question, not attempted in Phase A. |
+| Buyer: `Customer.is_company == False` (individual) only. | Buyer: `Customer.is_company == True` (any company buyer) — `Customer` has no VAT-registration signal today, so the system cannot tell a non-VAT-registered company buyer apart from a VAT-registered one. Phase A does not guess; it excludes every company buyer until buyer VAT-registration/VAT-number handling (§4's open point) is explicitly resolved. |
+| `tax_event_date` supplied explicitly in the Issue request body. | Any backend inference of `tax_event_date` from order/delivery/payment dates — explicitly rejected as a design choice (not just deferred), to keep the legal decision a visible human confirmation moment. |
+| Owner-only authorization. | The docs/02 §12 "Worker: toggle" behavior — `worker_can_issue_invoices` does not exist in code and OQ-W1 remains an open confirm-question there; Owner-only is a safe subset that can only be widened later, never narrowed. |
+| Repeated Issue on a non-draft (already-issued or annulled) invoice → `409 errors.invoices.not_draft`. | Idempotent re-return of the already-issued representation — rejected in favor of a clear, deterministic error. |
+
+**Still open, unaffected by this scoping freeze:** VAT rounding algorithm
+(§6, PROFESSIONAL REVIEW REQUIRED) and buyer VAT-number handling (§4, OPEN)
+remain exactly as unresolved as before this entry — Phase A works around
+both by excluding the cases that would require them, not by answering them.
+
 ---
 
 ## Current Implementation Gap Matrix

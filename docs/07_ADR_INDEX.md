@@ -26,6 +26,18 @@ this ADR set) · Date: 10.07.2026
 | [ADR-017](adr/ADR-017-cloud-deployment-cd.md) | Cloud deployment (EU host, Docker, managed PG) + CD; supersedes 002/005/014 for SaaS | 14 (pivot) |
 | [ADR-018](adr/ADR-018-subscription-billing.md) | SaaS subscriptions: trial, one monthly plan, provider port, webhook inbox; supersedes 009 | 14 (pivot) |
 
+## Business OS ADRs (Phase 1+, layered on the freeze above)
+
+Not part of the 10.07.2026 ADR-001…018 freeze — these are later Business OS
+phase decisions (`docs/business-os/`), referenced inline throughout that
+subtree but not yet collected into a single index anywhere. Listed here only
+as each is found missing; the rest of the `ADR-BOS-*` series is not yet
+indexed.
+
+| ADR | Decision | Source |
+|---|---|---|
+| [ADR-BOS-005](adr/ADR-BOS-005-invoice-numbering-ownership.md) | `document_sequences` (order + invoice numbering) stays owned by `service_orders`; `commercial` calls out via `service_orders.contracts.get_next_invoice_number` | docs/business-os/09 Q2, 05 §1 |
+
 **Pivot amendment 11.07.2026 ([14_WEB_FIRST_PIVOT.md](14_WEB_FIRST_PIVOT.md)):**
 web-first SaaS is the primary edition; the local edition is parked (ADR-002/005/
 009/014 marked superseded-or-parked; ADR-004/007 amended). Domain, workflow,
