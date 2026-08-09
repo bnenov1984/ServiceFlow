@@ -1,9 +1,10 @@
 """Issued Invoice PDF (docs/ACCOUNTANT_REVIEW.md 'RepairFlow Invoice V1
-Freeze' §5/§11 and §4 B1): GET /invoices/{id}/invoice.pdf. Read-only —
+Freeze' §5/§11, §4 B1, §6): GET /invoices/{id}/invoice.pdf. Read-only —
 generated fresh from the frozen Invoice/InvoiceLine snapshot on every
 request, never from live Company/Customer data. Covers individual and
-domestic company (VAT-registered or not) buyers. See commercial/pdf.py's
-module docstring for the exact rationale."""
+domestic company (VAT-registered or not) buyers, and a seller that is
+non-VAT-registered or VAT-registered at the single standard rate. See
+commercial/pdf.py's module docstring for the exact rationale."""
 
 import os
 
@@ -34,6 +35,12 @@ def _login(client: TestClient, company: str = "Сервиз А",
 def _ready_seller(client: TestClient, h: dict[str, str], eik: str = VALID_EIK) -> None:
     resp = client.patch("/api/v1/company/requisites", headers=h,
                         json={"address": "гр. София, ул. Примерна 1", "eik": eik})
+    assert resp.status_code == 200, resp.text
+
+
+def _ready_vat_seller(client: TestClient, h: dict[str, str], eik: str = VALID_EIK) -> None:
+    _ready_seller(client, h, eik)
+    resp = client.patch("/api/v1/company/requisites", headers=h, json={"vat_registered": True})
     assert resp.status_code == 200, resp.text
 
 
@@ -237,6 +244,20 @@ def test_non_vat_wording_rendered(client: TestClient) -> None:
     assert "0%" not in text
 
 
+def test_vat_registered_seller_pdf_renders_vat_number_and_amount(client: TestClient) -> None:
+    h = _login(client)
+    _ready_vat_seller(client, h)
+    invoice_id = _issued_invoice(client, h)
+
+    r = client.get(f"/api/v1/invoices/{invoice_id}/invoice.pdf", headers=h)
+    text = _extract_pdf_text(r.content)
+    assert f"ДДС №: BG{VALID_EIK}" in text
+    assert "ДДС 20%:" in text
+    assert "30.00" in text  # 150.00 net * 0.20
+    assert "180.00" in text  # gross
+    assert "ДДС: не се начислява" not in text
+
+
 def test_cyrillic_survives_extraction(client: TestClient) -> None:
     h = _login(client)
     _ready_seller(client, h)
@@ -379,6 +400,29 @@ def test_company_buyer_pdf_frozen_after_customer_edit(client: TestClient) -> Non
     assert after_edit == original
     assert "Друго Име ООД" not in after_edit
     assert "BG175074752" not in after_edit
+
+
+def test_vat_registered_seller_pdf_frozen_after_requisites_edit(client: TestClient) -> None:
+    h = _login(client)
+    _ready_vat_seller(client, h)
+    invoice_id = _issued_invoice(client, h)
+
+    original = _extract_pdf_text(
+        client.get(f"/api/v1/invoices/{invoice_id}/invoice.pdf", headers=h).content,
+    )
+    assert f"ДДС №: BG{VALID_EIK}" in original
+    assert "30.00" in original
+
+    # Flip vat_registered off and change the ЕИК after Issue.
+    client.patch("/api/v1/company/requisites", headers=h,
+                json={"address": "гр. Варна, друг адрес", "eik": "175074752",
+                     "vat_registered": False})
+
+    after_edit = _extract_pdf_text(
+        client.get(f"/api/v1/invoices/{invoice_id}/invoice.pdf", headers=h).content,
+    )
+    assert after_edit == original
+    assert "175074752" not in after_edit
 
 
 # --- Pagination / robustness -------------------------------------------

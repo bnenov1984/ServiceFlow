@@ -25,6 +25,7 @@ export interface SellerSnapshot {
   address: string;
   eik: string;
   vat_registered: boolean;
+  vat_number?: string;
 }
 
 export interface BuyerSnapshot {

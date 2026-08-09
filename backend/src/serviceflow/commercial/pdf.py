@@ -1,9 +1,10 @@
 """Issued Invoice PDF (docs/ACCOUNTANT_REVIEW.md §11: server-generated,
 no signature/stamp required — LAW-CONFIRMED not required, same basis the
-intake protocol already relies on). Non-VAT-registered seller only; buyer
-may be an individual or a domestic company, VAT-registered or not
-(docs/ACCOUNTANT_REVIEW.md 'RepairFlow Invoice V1 Freeze' §5 / §4 B1) — the
-caller (commercial/service.py's `get_issued`) is responsible for confirming
+intake protocol already relies on). Seller may be non-VAT-registered or
+VAT-registered at the single standard rate; buyer may be an individual or a
+domestic company, VAT-registered or not (docs/ACCOUNTANT_REVIEW.md
+'RepairFlow Invoice V1 Freeze' §5 / §4 B1 / §6) — the caller
+(commercial/service.py's `get_issued`) is responsible for confirming
 `status == "issued"` before this module is ever reached; nothing here
 re-derives or trusts anything else about invoice state.
 
@@ -71,6 +72,7 @@ class InvoicePdfData:
     seller_name: str
     seller_address: str
     seller_eik: str
+    seller_vat_number: str | None
     buyer_name: str
     buyer_address: str | None
     buyer_eik: str | None
@@ -107,6 +109,7 @@ def to_pdf_data(invoice: Invoice, lines: list[InvoiceLine]) -> InvoicePdfData:
         seller_name=str(invoice.seller.get("name", "")),
         seller_address=str(invoice.seller.get("address", "")),
         seller_eik=str(invoice.seller.get("eik", "")),
+        seller_vat_number=invoice.seller.get("vat_number"),
         buyer_name=str(invoice.buyer.get("name", "")),
         buyer_address=invoice.buyer.get("address"),
         buyer_eik=invoice.buyer.get("eik"),
@@ -159,6 +162,8 @@ def generate_invoice_pdf(data: InvoicePdfData) -> bytes:
     pdf.cell(0, 6, data.seller_name, new_x="LMARGIN", new_y="NEXT")
     pdf.cell(0, 6, f"Адрес: {data.seller_address}", new_x="LMARGIN", new_y="NEXT")
     pdf.cell(0, 6, f"ЕИК: {data.seller_eik}", new_x="LMARGIN", new_y="NEXT")
+    if data.seller_vat_number is not None:
+        pdf.cell(0, 6, f"ДДС №: {data.seller_vat_number}", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(3)
 
     _section("ПОЛУЧАТЕЛ")
@@ -200,14 +205,19 @@ def generate_invoice_pdf(data: InvoicePdfData) -> bytes:
         pdf.cell(65, 7, label, align="R")
         pdf.cell(35, 7, value, align="R", new_x="LMARGIN", new_y="NEXT")
 
-    # "ДДС: не се начислява" is the exact courtesy wording already frozen
-    # in docs/ACCOUNTANT_REVIEW.md §6 (T3/V4) for a non-VAT-registered
-    # seller — not a statutory legal-basis citation (§6 explicitly says
-    # none is required under the 2026 SME regime), and not "VAT 0%" (a
-    # 0%-rated supply is a legally different, unrelated case, deferred
-    # from V1 entirely).
     _totals_line("Данъчна основа:", _money(data.net, data.currency))
-    _totals_line("ДДС: не се начислява", _money(data.vat, data.currency))
+    if data.seller_vat_number is not None:
+        # Registered seller, single standard rate (docs/ACCOUNTANT_REVIEW.md
+        # §6) — the real computed VAT amount, not the non-charged courtesy row.
+        _totals_line("ДДС 20%:", _money(data.vat, data.currency))
+    else:
+        # "ДДС: не се начислява" is the exact courtesy wording already frozen
+        # in docs/ACCOUNTANT_REVIEW.md §6 (T3/V4) for a non-VAT-registered
+        # seller — not a statutory legal-basis citation (§6 explicitly says
+        # none is required under the 2026 SME regime), and not "VAT 0%" (a
+        # 0%-rated supply is a legally different, unrelated case, deferred
+        # from V1 entirely).
+        _totals_line("ДДС: не се начислява", _money(data.vat, data.currency))
     _totals_line("Общо:", _money(data.gross, data.currency), bold=True)
 
     out = pdf.output()

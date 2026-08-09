@@ -8,10 +8,14 @@ fetch-and-status-check, commercial/pdf.py does the actual rendering) is the
 fourth; `list_invoices()`'s pagination + `draft_totals()` (batch, one query
 per page regardless of row count) back the central invoice list
 (commercial/router.py's `list_invoices` endpoint) as the fifth. Buyer support
-now covers individuals and domestic company buyers (VAT-registered or not,
-docs/ACCOUNTANT_REVIEW.md §4 B1) — see `_buyer_snapshot()`. The seller side
-remains non-VAT-registered only (`errors.invoices.seller_vat_unsupported`);
-VAT-registered-seller support, annul/reissue, and cross-border B2B are still
+covers individuals and domestic company buyers (VAT-registered or not,
+docs/ACCOUNTANT_REVIEW.md §4 B1) — see `_buyer_snapshot()`. Seller support
+covers non-VAT-registered companies (`vat_mode="not_registered"`, `vat=0`)
+and VAT-registered companies at the single standard rate (`vat_mode=
+"registered"`, `STANDARD_VAT_RATE` — docs/ACCOUNTANT_REVIEW.md §6, VAT
+rounding recorded there as an implemented product decision pending
+professional confirmation). Annul/reissue, cross-border B2B, mixed VAT
+rates, reverse charge, 0%-rated supplies, and credit/debit notes are still
 later slices (see commercial/models.py docstring and
 docs/ACCOUNTANT_REVIEW.md's 'RepairFlow Invoice V1 Freeze' §5, Phase-A
 scope)."""
@@ -19,7 +23,7 @@ scope)."""
 import uuid
 from collections.abc import Iterable
 from datetime import UTC, date, datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from sqlalchemy import delete, select
@@ -29,6 +33,7 @@ from business_os.identity import contracts as identity_contracts
 from business_os.shared_kernel.db import TenantContext, scoped
 from business_os.shared_kernel.events import DomainEvent, publish
 from business_os.shared_kernel.normalize import (
+    derive_seller_vat_number,
     is_valid_eik,
     is_valid_vat_number,
     normalize_eik,
@@ -37,6 +42,12 @@ from business_os.shared_kernel.normalize import (
 from serviceflow.commercial.models import Invoice, InvoiceLine, Payment
 from serviceflow.customers import contracts as customers_contracts
 from serviceflow.service_orders import contracts as orders_contracts
+
+# Bulgaria's standard VAT rate (ЗДДС чл. 66) — the only rate V1 supports;
+# no reduced rate/mixed rates/0%-rated supplies (docs/ACCOUNTANT_REVIEW.md
+# §6). Numeric(5,2)-shaped to match InvoiceLine.vat_rate's column precision.
+STANDARD_VAT_RATE = Decimal("20.00")
+_CENT = Decimal("0.01")
 
 
 class InvoiceError(Exception):
@@ -292,8 +303,7 @@ def issue(db: Session, ctx: TenantContext, invoice_id: uuid.UUID,
     seller_eik = normalize_eik(seller_eik_raw) if seller_eik_raw else None
     if not company.name or not seller_address or not seller_eik or not is_valid_eik(seller_eik):
         raise InvoiceError("errors.invoices.seller_incomplete")
-    if company.vat_registered:
-        raise InvoiceError("errors.invoices.seller_vat_unsupported")
+    seller_vat_registered = company.vat_registered
 
     order = orders_contracts.get_order_summary(db, ctx, invoice.order_id)
     assert order is not None  # invoice.order_id is a real FK; scoped() already proved same-tenant
@@ -303,24 +313,55 @@ def issue(db: Session, ctx: TenantContext, invoice_id: uuid.UUID,
 
     assert invoice.currency == "EUR"  # the only value any write path has ever set (server_default)
 
-    if any(line.vat_rate is not None for line in lines):
-        raise InvoiceError("errors.invoices.vat_state_invalid")
+    # Buyer VAT status never affects this: the seller's own registration is
+    # the only thing that determines whether VAT is charged at all. Only the
+    # single standard rate is supported — a NULL (unset) or already-20.00
+    # line is fine when the seller is registered; anything else means a
+    # mixed/unsupported rate was set directly (never reachable through the
+    # normal UI, which exposes no vat_rate input), so it is rejected exactly
+    # like the non-VAT-registered path always rejected any non-NULL rate.
+    if seller_vat_registered:
+        if any(line.vat_rate not in (None, STANDARD_VAT_RATE) for line in lines):
+            raise InvoiceError("errors.invoices.vat_state_invalid")
+    else:
+        if any(line.vat_rate is not None for line in lines):
+            raise InvoiceError("errors.invoices.vat_state_invalid")
 
     net = sum((line.qty * line.unit_price for line in lines), Decimal("0"))
-    vat = Decimal("0.00")
-    gross = net
+    if seller_vat_registered:
+        # One rounding operation on the aggregate total, not per line then
+        # summed (docs/ACCOUNTANT_REVIEW.md §6 — recorded there as an
+        # implemented product decision pending professional confirmation).
+        vat = (net * STANDARD_VAT_RATE / Decimal("100")).quantize(_CENT, rounding=ROUND_HALF_UP)
+        gross = net + vat
+        vat_mode = "registered"
+        seller_vat_number = derive_seller_vat_number(seller_eik)
+    else:
+        vat = Decimal("0.00")
+        gross = net
+        vat_mode = "not_registered"
+        seller_vat_number = None
 
     formatted_number = orders_contracts.get_next_invoice_number(db, ctx)
+
+    # Freeze each line's own tax treatment alongside the invoice-level
+    # totals — an issued line's vat_rate is Issue's output, not the draft's
+    # input (mirrors how seller/buyer snapshots are independent JSON, never
+    # references into live data).
+    for line in lines:
+        line.vat_rate = STANDARD_VAT_RATE if seller_vat_registered else None
 
     # Independent, immutable JSON values — never a reference into
     # Company.requisites/Customer.company_requisites, so a later edit to
     # either can never retroactively change an issued document.
     invoice.seller = {
         "name": company.name, "address": seller_address, "eik": seller_eik,
-        "vat_registered": False,
+        "vat_registered": seller_vat_registered,
     }
+    if seller_vat_registered:
+        invoice.seller["vat_number"] = seller_vat_number
     invoice.buyer = buyer_snapshot
-    invoice.vat_mode = "not_registered"
+    invoice.vat_mode = vat_mode
     invoice.net = net
     invoice.vat = vat
     invoice.gross = gross

@@ -1,10 +1,10 @@
 """Invoice Issue (docs/ACCOUNTANT_REVIEW.md 'RepairFlow Invoice V1 Freeze'
-§5 / §4 B1): POST /invoices/{id}/issue. Supports ONLY a non-VAT-registered
-seller; the buyer may be an individual or a domestic company (VAT-registered
-or not) — everything else (VAT-registered seller, incomplete/unknown-VAT-
-status company buyer) must fail deterministically before number allocation.
-See commercial/service.py's `issue()` for the exact transaction algorithm
-this exercises."""
+§5 / §4 B1 / §6): POST /invoices/{id}/issue. The seller may be non-VAT-
+registered or VAT-registered at the single standard 20% rate; the buyer may
+be an individual or a domestic company (VAT-registered or not) — everything
+else (mixed VAT rates, incomplete/unknown-VAT-status company buyer) must
+fail deterministically before number allocation. See commercial/service.py's
+`issue()` for the exact transaction algorithm this exercises."""
 
 import os
 import threading
@@ -40,6 +40,13 @@ def _ready_seller(client: TestClient, h: dict[str, str], eik: str = VALID_EIK) -
     shape (address + eik, vat_registered left at its False default)."""
     resp = client.patch("/api/v1/company/requisites", headers=h,
                         json={"address": "гр. София, ул. Примерна 1", "eik": eik})
+    assert resp.status_code == 200, resp.text
+
+
+def _ready_vat_seller(client: TestClient, h: dict[str, str], eik: str = VALID_EIK) -> None:
+    """Same as _ready_seller, plus vat_registered=True."""
+    _ready_seller(client, h, eik)
+    resp = client.patch("/api/v1/company/requisites", headers=h, json={"vat_registered": True})
     assert resp.status_code == 200, resp.text
 
 
@@ -321,6 +328,79 @@ def test_vat_registered_company_buyer_vat_number_normalized(client: TestClient) 
     assert resp.json()["buyer"]["vat_number"] == "BG130489869"
 
 
+def test_vat_registered_seller_issues_successfully_with_exact_calculation(
+    client: TestClient,
+) -> None:
+    """Frozen V1 rule (docs/ACCOUNTANT_REVIEW.md §6): net = Σ(qty×unit_price),
+    one VAT calculation on the invoice total (never per-line), vat_mode
+    "registered", seller snapshot carries the derived "BG"+ЕИК VAT number,
+    every line's vat_rate frozen to the single standard 20.00 rate."""
+    h = _login(client)
+    _ready_vat_seller(client, h)
+    oid = _order_with_lines(client, h, customer_name="Иван Петров")
+    invoice_id = _draft(client, h, oid)
+
+    resp = _issue(client, h, invoice_id)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+
+    assert body["vat_mode"] == "registered"
+    assert body["seller"] == {
+        "name": "Сервиз А", "address": "гр. София, ул. Примерна 1",
+        "eik": VALID_EIK, "vat_registered": True, "vat_number": f"BG{VALID_EIK}",
+    }
+    assert body["net"] == 150.0
+    assert body["vat"] == 30.0  # 150 * 0.20, no rounding ambiguity
+    assert body["gross"] == 180.0
+    for line in body["lines"]:
+        assert line["vat_rate"] == 20.0
+
+    detail = client.get(f"/api/v1/invoices/{invoice_id}", headers=h).json()
+    assert detail["seller"] == body["seller"]
+    assert detail["vat"] == 30.0
+
+
+def test_vat_registered_seller_vat_amount_rounds_half_up(client: TestClient) -> None:
+    """10.03 * 0.20 = 2.006 -> ROUND_HALF_UP to 2 decimal places = 2.01,
+    proving the exact frozen formula
+    (net * Decimal("0.20")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    is what actually runs, not e.g. plain float rounding or truncation."""
+    h = _login(client)
+    _ready_vat_seller(client, h)
+    oid = _order(client, h)
+    client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
+               json={"name": "Част", "qty": 1, "unit_cost": "5", "unit_price": "10.03"})
+    invoice_id = _draft(client, h, oid)
+
+    resp = _issue(client, h, invoice_id)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["net"] == 10.03
+    assert body["vat"] == 2.01
+    assert body["gross"] == 12.04
+
+
+def test_vat_registered_seller_calculation_unaffected_by_vat_registered_buyer(
+    client: TestClient,
+) -> None:
+    """A VAT-registered buyer never changes the seller's own calculation —
+    same 20%-of-net result as the individual-buyer happy path above."""
+    h = _login(client)
+    _ready_vat_seller(client, h)
+    oid = _order_with_lines(client, h, customer_name="ДДС Клиент ЕООД", is_company=True,
+                            vat_registered=True, vat_number="BG130489869")
+    invoice_id = _draft(client, h, oid)
+
+    resp = _issue(client, h, invoice_id)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["vat_mode"] == "registered"
+    assert body["net"] == 150.0
+    assert body["vat"] == 30.0
+    assert body["gross"] == 180.0
+    assert body["buyer"]["vat_registered"] is True  # buyer is VAT-registered too
+
+
 # --- Validation ----------------------------------------------------------
 
 
@@ -370,16 +450,25 @@ def test_seller_missing_eik_rejected(client: TestClient) -> None:
     assert resp.json()["detail"]["message_key"] == "errors.invoices.seller_incomplete"
 
 
-def test_vat_registered_seller_rejected(client: TestClient) -> None:
+def test_vat_registered_seller_mixed_rate_line_rejected(client: TestClient) -> None:
+    """Only the single standard rate is supported: a line with a rate that
+    is neither NULL nor exactly 20.00 (never reachable through the normal
+    UI, which exposes no vat_rate input) is rejected as a mixed/unsupported
+    VAT state — same error and same reasoning that already rejected any
+    non-NULL rate for a non-VAT-registered seller."""
     h = _login(client)
-    _ready_seller(client, h)
-    client.patch("/api/v1/company/requisites", headers=h, json={"vat_registered": True})
+    _ready_vat_seller(client, h)
     oid = _order_with_lines(client, h)
     invoice_id = _draft(client, h, oid)
+    resp = client.patch(f"/api/v1/invoices/{invoice_id}", headers=h, json={
+        "lines": [{"description": "Ред с друга ставка", "qty": 1, "unit_price": "10.00",
+                  "vat_rate": "9", "source": "manual"}],
+    })
+    assert resp.status_code == 200
 
     resp = _issue(client, h, invoice_id)
     assert resp.status_code == 409
-    assert resp.json()["detail"]["message_key"] == "errors.invoices.seller_vat_unsupported"
+    assert resp.json()["detail"]["message_key"] == "errors.invoices.vat_state_invalid"
 
 
 def test_company_buyer_vat_status_unknown_rejected(client: TestClient) -> None:
@@ -464,24 +553,6 @@ def test_company_buyer_vat_registered_invalid_vat_number_format_rejected(
     resp = _issue(client, h, invoice_id)
     assert resp.status_code == 409
     assert resp.json()["detail"]["message_key"] == "errors.invoices.buyer_vat_number_invalid"
-
-
-def test_vat_registered_seller_still_rejected_with_valid_company_buyer(
-    client: TestClient,
-) -> None:
-    """The buyer's VAT-registration status must never influence the
-    seller-side gate: even a fully valid, VAT-registered company buyer does
-    not unlock a VAT-registered seller."""
-    h = _login(client)
-    _ready_seller(client, h)
-    client.patch("/api/v1/company/requisites", headers=h, json={"vat_registered": True})
-    oid = _order_with_lines(client, h, is_company=True, vat_registered=True,
-                            vat_number="BG130489869")
-    invoice_id = _draft(client, h, oid)
-
-    resp = _issue(client, h, invoice_id)
-    assert resp.status_code == 409
-    assert resp.json()["detail"]["message_key"] == "errors.invoices.seller_vat_unsupported"
 
 
 def test_non_null_line_vat_rate_rejected(client: TestClient) -> None:
@@ -675,6 +746,33 @@ def test_company_buyer_vat_number_invalid_failure_consumes_no_number(
     cid = _customer_id_for_order(oid)
     _set_company_requisites_directly(cid, {"vat_number": None})
     invoice_id = _draft(client, h, oid)
+
+    resp = _issue(client, h, invoice_id)
+    assert resp.status_code == 409
+
+    for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
+        owner = db.scalar(select(User).where(User.email == "a@a.bg"))
+        assert owner is not None
+        assert _sequence_current(owner.company_id) is None
+    assert _timeline_events(oid) == []
+
+
+def test_vat_registered_seller_mixed_rate_failure_consumes_no_number(
+    client: TestClient,
+) -> None:
+    from sqlalchemy import select
+
+    from business_os.identity.models import User
+    from business_os.shared_kernel.db import open_session
+
+    h = _login(client)
+    _ready_vat_seller(client, h)
+    oid = _order_with_lines(client, h)
+    invoice_id = _draft(client, h, oid)
+    client.patch(f"/api/v1/invoices/{invoice_id}", headers=h, json={
+        "lines": [{"description": "Ред с друга ставка", "qty": 1, "unit_price": "10.00",
+                  "vat_rate": "9", "source": "manual"}],
+    })
 
     resp = _issue(client, h, invoice_id)
     assert resp.status_code == 409
@@ -1019,7 +1117,34 @@ def test_seller_snapshot_survives_later_company_edit(client: TestClient) -> None
 
     seller_after_edit = client.get(f"/api/v1/invoices/{invoice_id}", headers=h).json()["seller"]
     assert seller_after_edit == original_seller
-    assert seller_after_edit["eik"] == VALID_EIK  # the frozen value, not the new one
+
+
+def test_vat_registered_seller_snapshot_survives_later_requisites_edit(
+    client: TestClient,
+) -> None:
+    h = _login(client)
+    _ready_vat_seller(client, h)
+    oid = _order_with_lines(client, h)
+    invoice_id = _draft(client, h, oid)
+    _issue(client, h, invoice_id)
+
+    original = client.get(f"/api/v1/invoices/{invoice_id}", headers=h).json()
+    original_seller = original["seller"]
+    assert original_seller == {
+        "name": "Сервиз А", "address": "гр. София, ул. Примерна 1",
+        "eik": VALID_EIK, "vat_registered": True, "vat_number": f"BG{VALID_EIK}",
+    }
+
+    # Flip vat_registered off and change the ЕИК after Issue.
+    client.patch("/api/v1/company/requisites", headers=h,
+                json={"address": "гр. Варна, друг адрес", "eik": "175074752",
+                     "vat_registered": False})
+
+    after_edit = client.get(f"/api/v1/invoices/{invoice_id}", headers=h).json()
+    assert after_edit["seller"] == original_seller
+    assert after_edit["vat_mode"] == "registered"
+    assert after_edit["vat"] == original["vat"]
+    assert after_edit["gross"] == original["gross"]
 
 
 def test_buyer_snapshot_survives_later_customer_edit(client: TestClient) -> None:

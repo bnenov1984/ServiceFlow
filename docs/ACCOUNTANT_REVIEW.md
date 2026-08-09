@@ -110,7 +110,7 @@ The original 26 items, each classified as exactly one of:
 | R4 | Seller IBAN/bank details required | **LAW-CONFIRMED** | Not a чл. 114 mandatory element — optional business convenience. See §12. |
 | R5 | Full Issue-time required-field list | **PRODUCT DECISION** (bounded by R1–R2) | Once R1/R2 are implemented, this is "which of the law-confirmed fields gate the Issue action" — a product completeness-check design, not a new legal question. |
 | V7 | Is registered/not-registered a sufficient VAT-mode model | **PRODUCT DECISION** | Law recognizes more regimes (see 2026 SME regime, §6), but for a domestic repair shop the binary model is sufficient; special regimes are DEFERRED. |
-| V1 | VAT rounding, per-line vs. total | **PROFESSIONAL REVIEW REQUIRED** | No unambiguous statutory algorithm found. See §6. |
+| V1 | VAT rounding, per-line vs. total | **IMPLEMENTED PRODUCT DECISION, PENDING PROFESSIONAL CONFIRMATION** | No unambiguous statutory algorithm found. Frozen V1 rule now implemented: one calculation on the invoice total, `ROUND_HALF_UP`, 2dp. See §6. |
 | V2 | Tax calculation order (net → VAT → gross) | **LAW-CONFIRMED** | VAT is defined as a rate applied to данъчна основа (net); gross is derivative. ЗДДС чл. 26/чл. 67. |
 | V3 | Meaning of a null `vat_rate` | **PRODUCT DECISION** (bounded by law) | Law distinguishes 0%-rated from not-charged (different legal bases) — RepairFlow decides how `NULL` vs an explicit rate encodes that. See §6. |
 | T3/V4 | Exact wording for non-VAT-registered sellers | **LAW-CONFIRMED** (2026 rule) / **PRODUCT DECISION** (whether to print anyway) | From 1.1.2026, SME-regime non-registered sellers need **not** state a legal basis at all (new ЗДДС чл. 114, ал. 7, т. 1). Printing a plain-language note anyway is a product choice, not a legal necessity. |
@@ -327,13 +327,15 @@ same atomicity guarantee the seller-side checks already had):
   `errors.invoices.buyer_incomplete` instead.
 
 **The buyer's VAT-registration status never changes the seller's VAT
-calculation.** The seller-side gate (`Company.vat_registered == False`
-only, `errors.invoices.seller_vat_unsupported` otherwise) is completely
-unaffected by buyer type — `vat_mode` stays `"not_registered"`, `vat = 0`,
-`gross = net`, regardless of whether the buyer is an individual, a
-non-VAT company, or a VAT-registered company. VAT-registered-seller
-support, VAT calculation, reverse charge, and cross-border B2B remain out
-of scope and are **not** implemented by this slice — see §6/§7 above.
+calculation.** The seller's own `Company.vat_registered` flag is the only
+thing that determines whether VAT is charged, and at what amount — see §6
+for the now-implemented VAT-registered-seller calculation/rounding rule.
+This is completely unaffected by buyer type: a non-VAT-registered seller
+keeps `vat_mode = "not_registered"`, `vat = 0`, `gross = net`; a
+VAT-registered seller keeps `vat_mode = "registered"` and the same
+20%-of-net calculation, regardless of whether the buyer is an individual, a
+non-VAT company, or a VAT-registered company. Mixed VAT rates, reverse
+charge, and cross-border B2B remain out of scope — see §6/§7 above.
 `Invoice.buyer` is a frozen snapshot exactly as for individuals: later
 edits to the Customer row (name, address, ЕИК, VAT status, VAT number)
 never retroactively change an already-issued invoice's buyer identity, its
@@ -423,20 +425,28 @@ rate applied to the данъчна основа (tax base/net amount, ЗДДС �
 is base + VAT — there is no alternative order to choose between; this part
 of V2 is not a product decision at all, it's how VAT is defined.
 
-**V1 (rounding, per-line vs. total) — PROFESSIONAL REVIEW REQUIRED.** No
-unambiguous statutory algorithm was found specifying whether VAT must be
-computed and rounded per invoice line then summed, or computed once on the
-invoice's aggregate net total. This is exactly the kind of
-implementation-level accounting-policy question the task asked to flag
-rather than resolve by assumption — different Bulgarian accounting software
-packages are not consistent with each other here in practice, which is
-itself evidence there's no single mandated algorithm. **Recommended simplest
-safe V1 decision (not a legal conclusion):** round once, on the invoice
-total, to 2 decimal places (`Numeric(10,2)`, matching the existing
-`net`/`vat`/`gross` column precision) — simpler to implement and audit than
-per-line rounding-then-summing, and defensible as a common, non-aggressive
-choice, but this should be the specific thing put in front of the
-accountant, not assumed settled by this document.
+**V1 (rounding, per-line vs. total) — IMPLEMENTED PRODUCT DECISION, PENDING
+PROFESSIONAL CONFIRMATION.** No unambiguous statutory algorithm was found
+specifying whether VAT must be computed and rounded per invoice line then
+summed, or computed once on the invoice's aggregate net total — different
+Bulgarian accounting software packages are not consistent with each other
+here in practice, which is itself evidence there's no single mandated
+algorithm. **Frozen V1 rule, now implemented in `commercial/service.py`'s
+`issue()`:**
+
+```
+net = Σ(qty × unit_price)                                    # exact, 2dp
+vat = (net × 0.20).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+gross = net + vat
+```
+
+One VAT calculation on the invoice's aggregate net total — never per-line
+computed-then-summed. Precision is 2 decimal places (`Numeric(10,2)`,
+matching the existing `net`/`vat`/`gross` column precision); rounding mode
+is standard arithmetic rounding (`ROUND_HALF_UP`). This is the specific
+thing that should still be put in front of the accountant — building
+against it was not blocked on that confirmation, but the rule is not yet a
+legal conclusion, only the frozen V1 product default.
 
 **V3 (null `vat_rate`) — PRODUCT DECISION, bounded by law.** Law
 distinguishes two genuinely different things that a "no VAT shown" line
@@ -746,8 +756,8 @@ failure after allocation but before commit restores the sequence.
 
 | Phase-A Issue supports | Phase-A Issue explicitly does NOT support |
 |---|---|
-| Seller: `Company.vat_registered == False` only. | Seller: `Company.vat_registered == True` — blocked on §6's still-open VAT-rounding professional-review question, not attempted in Phase A. |
-| Buyer: individual, or a domestic company with `vat_registered == False`, or a domestic company with `vat_registered == True` and a valid `vat_number` (B2B/company-buyer Invoice Issue slice, 09.08.2026 — see §4 B1 for the exact validation/snapshot rules). | Buyer: a domestic company with `vat_registered == None` (VAT status not yet established) — rejected with `errors.invoices.buyer_vat_status_unknown` before number allocation. Cross-border/foreign buyers and any buyer-side VAT calculation (the buyer being VAT-registered never makes the — still non-VAT-registered — seller charge VAT) remain out of scope. |
+| Seller: `Company.vat_registered == False`, or `Company.vat_registered == True` at the single standard 20% rate (VAT-registered-seller Invoice Issue slice, 09.08.2026 — see §6 for the exact frozen calculation/rounding rule). | Seller: mixed VAT rates on one invoice, a reduced/other rate, 0%-rated supplies, or reverse charge — all out of scope, `InvoiceLine.vat_rate` is always either `NULL` (not-registered) or exactly `20.00` (registered), enforced at Issue. |
+| Buyer: individual, or a domestic company with `vat_registered == False`, or a domestic company with `vat_registered == True` and a valid `vat_number` (B2B/company-buyer Invoice Issue slice, 09.08.2026 — see §4 B1 for the exact validation/snapshot rules). | Buyer: a domestic company with `vat_registered == None` (VAT status not yet established) — rejected with `errors.invoices.buyer_vat_status_unknown` before number allocation. Cross-border/foreign buyers remain out of scope. The buyer's own VAT status never affects the calculation — a VAT-registered seller charges the same 20% regardless of buyer type, and a non-VAT-registered seller still charges nothing regardless of buyer type. |
 | `tax_event_date` supplied explicitly in the Issue request body. | Any backend inference of `tax_event_date` from order/delivery/payment dates — explicitly rejected as a design choice (not just deferred), to keep the legal decision a visible human confirmation moment. |
 | Owner-only authorization. | The docs/02 §12 "Worker: toggle" behavior — `worker_can_issue_invoices` does not exist in code and OQ-W1 remains an open confirm-question there; Owner-only is a safe subset that can only be widened later, never narrowed. |
 | Repeated Issue on a non-draft (already-issued or annulled) invoice → `409 errors.invoices.not_draft`. | Idempotent re-return of the already-issued representation — rejected in favor of a clear, deterministic error. |
@@ -758,12 +768,15 @@ individual/non-VAT-company/VAT-registered-company buyer shapes as the
 Issued Invoice UI, from the frozen `Invoice.buyer` snapshot only. Draft
 invoices have no PDF (`409 errors.invoices.not_issued`).
 
-**Still open, unaffected by this scoping freeze:** VAT rounding algorithm
-(§6, PROFESSIONAL REVIEW REQUIRED) remains exactly as unresolved as before
-this entry. Buyer VAT-number handling (§4) is now **implemented** per the
-product decision recorded there (self-reported `vat_registered`, no
-registry verification) — Phase A still works around the VAT-rounding
-question by keeping the seller non-VAT-registered only.
+**Still open, unaffected by this scoping freeze:** the VAT rounding rule
+(§6) is now implemented as the frozen V1 product default but remains
+formally **pending professional confirmation** — building against it was
+not blocked on that confirmation, per the PO's own instruction, but it is
+not yet a legal sign-off. Buyer VAT-number handling (§4) is
+**implemented** per the product decision recorded there (self-reported
+`vat_registered`, no registry verification) — same self-reported posture,
+no automatic registry/NRA/VIES lookup, applies to the seller's own
+`vat_registered` flag.
 
 ---
 
@@ -785,15 +798,15 @@ writing down) · **deferred** (intentionally out of V1 scope).
 | `Invoice.seller` | **Already sufficient (schema)** | Correct JSONB snapshot shape; populating it at Issue depends on `Company.requisites`'s gap below, not on this column. |
 | `Invoice.buyer` | **Done** | JSONB shape needed no schema change; `commercial/service.py`'s `issue()` now populates it for all three supported buyer shapes (individual, non-VAT company, VAT-registered company) via `_buyer_snapshot()`. §4. |
 | `Invoice.vat_mode` | **Already sufficient** | Binary `registered`/`not_registered` matches the V1 product decision; no change needed. |
-| `Invoice.net` | **Already sufficient (schema) / documentation semantics change required (algorithm)** | `Numeric(10,2)` is the right shape; the rounding algorithm that populates it is the open V1 professional-review item (§6), not a column problem. |
-| `Invoice.vat` | **Already sufficient (schema) / documentation semantics change required (algorithm)** | Same as `net`. |
-| `Invoice.gross` | **Already sufficient (schema) / documentation semantics change required (algorithm)** | Same as `net`. |
+| `Invoice.net` | **Done** | `Numeric(10,2)`; `net = Σ(qty × unit_price)`, exact, no rounding needed. §6. |
+| `Invoice.vat` | **Done, pending professional confirmation of the rounding rule** | `vat = (net × 0.20).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)` for a VAT-registered seller, `0.00` otherwise — implemented in `commercial/service.py`'s `issue()`. The algorithm is the frozen V1 product default (§6), not yet an accountant sign-off. |
+| `Invoice.gross` | **Done** | `gross = net + vat`. Same status as `Invoice.vat`. |
 | `Invoice.annuls_invoice_id` | **Documentation semantics change required** | Structurally fine for its actual scope; docs/01 and docs/02 must be corrected to state it covers case A only, not cases B/C. §7. |
 | `Invoice.annul_reason` | **Documentation semantics change required** | Same correction as `annuls_invoice_id` — a case-A-only reason field, not a general correction-reason field. §7. |
 | `InvoiceLine.description` | **Already sufficient** | Matches ЗДДС чл. 114's line-level description/type requirement. §5. |
 | `InvoiceLine.qty` | **Already sufficient** | Matches the quantity requirement. §5. |
 | `InvoiceLine.unit_price` | **Already sufficient** | Matches the unit-price requirement. §5. |
-| `InvoiceLine.vat_rate` | **Already sufficient (schema) / documentation semantics change required (convention)** | Nullable `Numeric(5,2)` is the right shape; the `NULL` = not-charged vs. `0.00` = zero-rated convention (§6) needs to be written down, not just assumed by whoever writes the Issue code. |
+| `InvoiceLine.vat_rate` | **Done for V1's one supported rate** | Nullable `Numeric(5,2)`; Issue freezes it to `NULL` (seller not registered) or exactly `20.00` (seller registered, the only rate V1 supports) on every line, overriding whatever the draft held. The `NULL` = not-charged vs. `0.00` = zero-rated convention (§6) is not yet needed — true 0%-rated supplies remain deferred. |
 | *(unit of measure)* | **Deferred** | Not confirmed as a real gap — flagged PROFESSIONAL REVIEW REQUIRED (§5), not yet classified as needing schema/code work. |
 | `Company.name` | **Already sufficient** | Real, always-set legal/business name; no gap. |
 | `Company.requisites` | **Done (prerequisite slice landed)** | `address`/`phone`/`eik` are collectible (`COMPANY_REQUISITE_KEYS` in `identity/service.py`, `eik` allow-listed and structurally validated in `identity/router.py`) with a Settings → Фирма field. No separate VAT-number field — always `"BG" + eik` once `vat_registered` is true (R2). |
@@ -848,7 +861,12 @@ should also flag the year-scoping issue found here, since it inherits
 6. The correction mechanism (§7) — Annul action copy and scope — is built
    to explicitly cover case A only; credit/debit notes are a distinct,
    later slice, not retrofitted onto `annuls_invoice_id`.
-7. The rounding algorithm (§6, V1) and the B2/unit-of-measure/advance-payment
-   professional-review answers feed the totals-freeze and template code.
+7. ~~The rounding algorithm (§6, V1) feeds the totals-freeze code~~ —
+   **implemented** (VAT-registered-seller Invoice Issue slice, 09.08.2026):
+   one calculation on the invoice total, `ROUND_HALF_UP`, 2dp — the frozen
+   V1 product default, still pending formal professional confirmation (not
+   a blocker per the PO's own instruction). The B2/unit-of-measure/
+   advance-payment professional-review answers remain open and still feed
+   their own future template/schema work.
 8. This document is cited from the Invoice Issue implementation slice as
    its accountant sign-off record (docs/12 §4 release gate).

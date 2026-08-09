@@ -76,3 +76,13 @@ def is_valid_vat_number(value: str) -> bool:
     is_valid_eik stays permissive. Expects an already-normalized value (see
     normalize_vat_number)."""
     return value[:2] == "BG" and is_valid_eik(value[2:])
+
+
+def derive_seller_vat_number(eik: str) -> str:
+    """The seller's own VAT identification number: LAW-CONFIRMED
+    (docs/ACCOUNTANT_REVIEW.md §3 R1/R2, ЗДДС чл. 94, ал. 2) to always be
+    `"BG" + ЕИК` — never an independently issued or separately stored value,
+    unlike the buyer-side vat_number (which IS explicitly entered — see
+    normalize_vat_number/is_valid_vat_number above). Expects an
+    already-normalized, already-validated eik (see normalize_eik/is_valid_eik)."""
+    return f"BG{eik}"

@@ -85,6 +85,9 @@ export function IssuedInvoiceView({
               <p>{invoice.seller.name}</p>
               <p>{invoice.seller.address}</p>
               <p>{invoice.seller.eik}</p>
+              {invoice.seller.vat_number !== undefined && (
+                <p>{t("order.invoice_seller_vat_number_prefix")} {invoice.seller.vat_number}</p>
+              )}
             </div>
           )}
         </div>
@@ -129,7 +132,10 @@ export function IssuedInvoiceView({
           <dd className="tabular-nums text-slate-900">{(invoice.net ?? 0).toFixed(2)} €</dd>
         </div>
         <div className="flex justify-between">
-          <dt className="text-slate-500">{t("order.invoice_vat_not_charged")}</dt>
+          <dt className="text-slate-500">
+            {t(invoice.seller?.vat_number !== undefined
+              ? "order.invoice_vat_charged" : "order.invoice_vat_not_charged")}
+          </dt>
           <dd className="tabular-nums text-slate-900">{(invoice.vat ?? 0).toFixed(2)} €</dd>
         </div>
         <div className="flex justify-between text-base font-bold">

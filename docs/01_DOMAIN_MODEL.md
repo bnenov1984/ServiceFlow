@@ -199,14 +199,18 @@ Attributes are business attributes, not columns.
 - **Lifecycle:** **Draft → Issued → (Annulled)**. Drafts are editable and unnumbered.
   Issue assigns the next number and freezes the document. Corrections = annul +
   reissue; issued invoices are never edited (legal requirement). **Phase A Issue
-  implemented, buyer support extended to domestic companies** (docs/ACCOUNTANT_REVIEW.md
-  'RepairFlow Invoice V1 Freeze' §5 / §4 B1): non-VAT-registered seller only — a
-  VAT-registered seller is explicitly rejected, not silently mishandled. The buyer
-  may be an individual, or a domestic company (VAT-registered or not, given a known
-  `vat_registered` status and, when VAT-registered, a valid VAT number); a company
-  buyer whose VAT-registration status is not yet established is explicitly rejected.
-  The buyer's VAT status never changes the (still non-VAT-registered) seller's VAT
-  calculation. Annul/reissue and VAT-registered-seller Issue remain future slices.
+  implemented, buyer support extended to domestic companies, seller support
+  extended to VAT-registered companies** (docs/ACCOUNTANT_REVIEW.md 'RepairFlow
+  Invoice V1 Freeze' §5 / §4 B1 / §6): the seller may be non-VAT-registered, or
+  VAT-registered at the single standard 20% rate (`net = Σ(qty×unit_price)`,
+  `vat = round(net×0.20, 2)` — one calculation on the invoice total, `ROUND_HALF_UP`
+  — the frozen V1 rounding rule, implemented pending professional confirmation).
+  The buyer may be an individual, or a domestic company (VAT-registered or not,
+  given a known `vat_registered` status and, when VAT-registered, a valid VAT
+  number); a company buyer whose VAT-registration status is not yet established is
+  explicitly rejected. The buyer's VAT status never changes the seller's VAT
+  calculation, in either direction. Mixed VAT rates, reverse charge, 0%-rated
+  supplies, credit/debit notes, and annul/reissue remain future slices.
   **Phase A PDF implemented** (`GET /invoices/{id}/invoice.pdf`,
   docs/ACCOUNTANT_REVIEW.md §11): every issued Phase-A invoice has a printable/
   downloadable PDF representation, generated on demand from the frozen

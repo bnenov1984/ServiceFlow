@@ -86,6 +86,16 @@ const vatCompanyIssuedDetail = {
   },
 };
 
+const vatRegisteredSellerIssuedDetail = {
+  ...issuedDetail,
+  seller: {
+    name: "Сервиз А", address: "гр. София, ул. Примерна 1",
+    eik: "130489869", vat_registered: true, vat_number: "BG130489869",
+  },
+  vat_mode: "registered",
+  net: 150, vat: 30, gross: 180,
+};
+
 function mockDraftFlow(): void {
   vi.mocked(api.get).mockImplementation((path: string) =>
     Promise.resolve(path.startsWith("/invoices?") ? [draftListItem] : draftDetail) as never,
@@ -642,20 +652,20 @@ describe("InvoiceCard", () => {
     );
   });
 
-  it("shows the Phase-A limitation message for a VAT-registered seller", async () => {
+  it("displays a VAT-registered seller snapshot with VAT number and charged amount", async () => {
     const user = userEvent.setup();
-    mockDraftFlow();
-    vi.mocked(api.post).mockRejectedValue(
-      new ApiError(409, "invoice_error", "errors.invoices.seller_vat_unsupported"),
-    );
-    renderCard();
+    mockIssueSuccess(vatRegisteredSellerIssuedDetail);
+    renderCard("2026-02-10T00:00:00Z");
 
     await openIssueDialog(user);
     await user.click(dialogConfirmButton());
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Издаването на фактури от фирми, регистрирани по ДДС, все още не се поддържа.",
-    );
+    await screen.findByText("Фактура № 0000000001");
+    expect(screen.getByText("ДДС №: BG130489869")).toBeInTheDocument();
+    expect(screen.getByText("ДДС 20%")).toBeInTheDocument();
+    expect(screen.getByText("30.00 €")).toBeInTheDocument();
+    expect(screen.getByText("180.00 €")).toBeInTheDocument();
+    expect(screen.queryByText("ДДС: не се начислява")).not.toBeInTheDocument();
   });
 
   it("shows an actionable, recoverable message when the buyer's VAT status is unknown", async () => {
