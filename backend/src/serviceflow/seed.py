@@ -6,6 +6,12 @@ Usage:
 
 import sys
 
+# Registers the company_provisioned -> seed_default_types subscriber (import-
+# time side effect, business_os.shared_kernel.events.subscribe). Without this
+# import, seed_company()'s publish() below reaches zero subscribers when run
+# standalone (this script never imports serviceflow.main), leaving the new
+# company with no default RepairFlow asset types.
+import serviceflow.assets.service  # noqa: F401,E402
 from business_os.identity.service import activate_module, seed_company
 from business_os.shared_kernel.db import open_session
 from serviceflow.config import get_settings
