@@ -20,6 +20,7 @@ function renderPage() {
       <MemoryRouter initialEntries={["/invoices"]}>
         <Routes>
           <Route path="/invoices" element={children} />
+          <Route path="/invoices/:id" element={<div>INVOICE_DETAIL_PAGE</div>} />
           <Route path="/orders/:id" element={<div>ORDER_PAGE</div>} />
         </Routes>
       </MemoryRouter>
@@ -79,7 +80,7 @@ describe("InvoicesPage: rows", () => {
     expect(within_.getByText("Чернова")).toBeInTheDocument();
     expect(within_.getByText("2026-00002")).toBeInTheDocument();
     expect(within_.getByText("30.00 €")).toBeInTheDocument();
-    expect(within_.getByRole("link", { name: "Отвори" })).toHaveAttribute("href", "/orders/order-1");
+    expect(within_.getByRole("link", { name: "Отвори" })).toHaveAttribute("href", "/invoices/inv-draft");
     expect(within_.queryByRole("button", { name: "PDF" })).not.toBeInTheDocument();
   });
 
@@ -93,16 +94,35 @@ describe("InvoicesPage: rows", () => {
     expect(within_.getByText("Издадена")).toBeInTheDocument();
     expect(within_.getByText(new Date(issuedRow.issued_at).toLocaleString("bg-BG"))).toBeInTheDocument();
     expect(within_.getByText("150.00 €")).toBeInTheDocument();
-    expect(within_.getByRole("link", { name: "Отвори" })).toHaveAttribute("href", "/orders/order-2");
+    expect(within_.getByRole("link", { name: "Отвори" })).toHaveAttribute("href", "/invoices/inv-issued");
     expect(within_.getByRole("button", { name: "PDF" })).toBeInTheDocument();
   });
 
-  it("'Отвори' navigates to the originating order page", async () => {
+  it("'Отвори' on a Draft row navigates to the Invoice Detail page, not the order", async () => {
     const user = userEvent.setup();
     vi.mocked(api.get).mockResolvedValue([draftRow]);
     renderPage();
     await user.click(await screen.findByRole("link", { name: "Отвори" }));
+    expect(await screen.findByText("INVOICE_DETAIL_PAGE")).toBeInTheDocument();
+    expect(screen.queryByText("ORDER_PAGE")).not.toBeInTheDocument();
+  });
+
+  it("'Отвори' on an Issued row navigates to the Invoice Detail page, not the order", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockResolvedValue([issuedRow]);
+    renderPage();
+    await user.click(await screen.findByRole("link", { name: "Отвори" }));
+    expect(await screen.findByText("INVOICE_DETAIL_PAGE")).toBeInTheDocument();
+    expect(screen.queryByText("ORDER_PAGE")).not.toBeInTheDocument();
+  });
+
+  it("the Order-number link still navigates to the Service Order, distinct from 'Отвори'", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockResolvedValue([issuedRow]);
+    renderPage();
+    await user.click(await screen.findByRole("link", { name: "2026-00001" }));
     expect(await screen.findByText("ORDER_PAGE")).toBeInTheDocument();
+    expect(screen.queryByText("INVOICE_DETAIL_PAGE")).not.toBeInTheDocument();
   });
 
   it("PDF action targets the existing issued-invoice PDF endpoint", async () => {

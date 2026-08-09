@@ -140,8 +140,18 @@ gained `limit`/`offset` (query-level pagination, default 50) and a richer
 enriched via new `service_orders.contracts.get_order_summaries` and
 `customers.contracts.get_customer_summaries` — no per-row query. A history/
 list view only; invoices are still created exclusively from a Service
-Order's own Invoice section, and there is still no standalone invoice-detail
-page — "Отвори" reuses the existing `/orders/{id}` + InvoiceCard.
+Order's own Invoice section. At landing, "Отвори" reused the existing
+`/orders/{id}` + InvoiceCard — corrected below.
+
+**Standalone Invoice Detail (`/invoices/{id}`) ✅ landed 09.08.2026.** UX
+correction: the central list's "Отвори" was navigating to the originating
+Order, which contradicted an Invoice workspace's own natural "open the
+invoice" expectation. Now "Отвори" opens `/invoices/{id}`
+(invoices/InvoiceDetailPage.tsx); the Order number remains its own separate
+link to `/orders/{order_id}`. `InvoiceDraftEditor`/`IssuedInvoiceView` were
+extracted out of `order/InvoiceCard.tsx` into their own files so both the
+order-centric and invoice-centric views render the exact same components
+against the same `queryKeys.invoice(id)` cache — no second Invoice UI.
 
 ## Етап 5 — Hardening & Pilot
 

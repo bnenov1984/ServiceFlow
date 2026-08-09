@@ -401,6 +401,25 @@ describe("InvoiceCard", () => {
     expect(await screen.findByText("Фактура № 0000000001")).toBeInTheDocument();
   });
 
+  it("keeps its own internal header (status badge + number + PDF) — embedded default is unchanged by the standalone Invoice Detail page", async () => {
+    const user = userEvent.setup();
+    mockIssueSuccess();
+    const { container } = renderCard("2026-02-10T00:00:00Z");
+
+    await openIssueDialog(user);
+    await user.click(dialogConfirmButton());
+
+    await screen.findByText("Фактура № 0000000001");
+    // The section title ("Фактура", InvoiceCard's own h3) plus
+    // IssuedInvoiceView's own internal badge/number/PDF row are both
+    // present — InvoiceCard never passes embedded={false}, so
+    // IssuedInvoiceView keeps rendering its own header exactly as before.
+    expect(screen.getByText("Фактура")).toBeInTheDocument(); // InvoiceCard's own section title
+    expect(screen.getByText("Издадена")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "PDF" })).toBeInTheDocument();
+    expect(container.querySelector(".border-t.border-slate-100")).not.toBeNull();
+  });
+
   it("displays issued_at and tax_event_date without a day shift", async () => {
     const user = userEvent.setup();
     mockIssueSuccess();

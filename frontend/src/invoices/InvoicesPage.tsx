@@ -6,9 +6,12 @@
  *
  * Read + navigate only, never a new creation entry point: invoices are still
  * created exclusively from a Service Order's own Invoice section
- * (order/InvoiceCard.tsx) — "Отвори" here navigates to /orders/{order_id}
- * and reuses the existing OrderPage/InvoiceCard rather than a standalone
- * invoice-detail page (deliberately not built in this slice).
+ * (order/InvoiceCard.tsx). Navigation semantics (frozen — do not blur these
+ * two destinations back together): "Отвори" opens the Invoice itself
+ * (/invoices/{id}, invoices/InvoiceDetailPage.tsx, reusing the same
+ * IssuedInvoiceView/InvoiceDraftEditor InvoiceCard already renders); the
+ * separate Order-number link opens the originating Service Order
+ * (/orders/{order_id}).
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -54,7 +57,7 @@ const STATUS_LABEL_KEY: Record<string, Parameters<typeof t>[0]> = {
   annulled: "order.invoice_status_annulled",
 };
 
-function StatusBadge({ status }: { status: string }) {
+export function StatusBadge({ status }: { status: string }) {
   const labelKey = STATUS_LABEL_KEY[status];
   return (
     <span
@@ -92,7 +95,7 @@ function InvoiceRow({ invoice }: { invoice: InvoiceListItem }) {
       </td>
       <td className="whitespace-nowrap px-3 py-3">
         <div className="flex items-center gap-3">
-          <Link to={`/orders/${invoice.order_id}`} className="text-sm text-blue-700 hover:underline">
+          <Link to={`/invoices/${invoice.id}`} className="text-sm text-blue-700 hover:underline">
             {t("order.invoice_open")}
           </Link>
           {invoice.status === "issued" && (

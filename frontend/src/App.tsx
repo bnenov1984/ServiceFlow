@@ -10,6 +10,7 @@ import { CustomersPage } from "./customers/CustomersPage";
 import { DashboardPage } from "./dashboard/DashboardPage";
 import { t } from "./i18n/bg";
 import { IntakePage } from "./intake/IntakePage";
+import { InvoiceDetailPage } from "./invoices/InvoiceDetailPage";
 import { InvoicesPage } from "./invoices/InvoicesPage";
 import { OrderPage } from "./order/OrderPage";
 import { OrdersPage } from "./orders/OrdersPage";
@@ -99,6 +100,7 @@ export function App() {
         <Route path="customers" element={<CustomersPage />} />
         <Route path="customers/:id" element={<CustomerProfilePage />} />
         <Route path="invoices" element={<InvoicesPage />} />
+        <Route path="invoices/:invoiceId" element={<InvoiceDetailPage />} />
         <Route path="ps" element={<PsPage />} />
         <Route path="ps/workflow-templates" element={<WorkflowTemplatesPage />} />
         <Route path="settings/employees" element={<EmployeesPage />} />

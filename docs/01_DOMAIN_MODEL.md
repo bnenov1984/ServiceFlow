@@ -219,6 +219,18 @@ Attributes are business attributes, not columns.
   the frozen `gross` once an invoice carries one, otherwise the live sum of
   the draft's current lines — one field, two semantics, documented rather
   than hidden behind a single ambiguous name.
+  **Standalone Invoice Detail implemented** (`/invoices/{id}`,
+  invoices/InvoiceDetailPage.tsx): the central list's "Отвори" opens the
+  Invoice itself here, not the originating order — the Order number is its
+  own separate link to `/orders/{order_id}`, kept deliberately distinct so
+  "open the invoice" and "open the order" are never the same click. Draft
+  editing/Issue and the issued read-only view are the exact same
+  `InvoiceDraftEditor`/`IssuedInvoiceView` components `order/InvoiceCard.tsx`
+  already renders inside a Service Order — extracted, not duplicated, so
+  there is one Invoice presentation reused from two navigation contexts.
+  Both read/write through the same `queryKeys.invoice(id)` cache, so an
+  Issue performed from either context is immediately visible from the
+  other.
 - **Invariants:** numbering has no gaps and no reuse; requisite snapshots make the
   document self-contained even if company/customer data later changes; invoices are
   **optional per order** (B2C walk-ins often need none) and possible on Отказана

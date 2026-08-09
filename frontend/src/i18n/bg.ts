@@ -383,6 +383,13 @@ export const bg = {
   "invoices.empty_hint": "Фактурите се създават от поръчките.",
   "invoices.load_more": "Зареди още",
 
+  // Standalone Invoice Detail page (/invoices/{id}) — the invoice-centric
+  // counterpart to order.invoice_* (which stays the order-centric section
+  // inside OrderPage's InvoiceCard; reused, not duplicated, wherever the
+  // same wording already applies).
+  "invoice.back_to_invoices": "← Фактури",
+  "invoice.order_label": "Поръчка",
+
   // --- customers (docs/15 §6.7) ---
   "customers.search_placeholder": "Търсене по име или телефон…",
   "customers.empty": "Тук ще виждате всички клиенти. Добавете първия чрез нова поръчка.",
