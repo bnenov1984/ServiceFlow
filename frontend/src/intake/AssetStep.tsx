@@ -63,6 +63,23 @@ const FIELD_ERROR_KEYS: Record<string, Parameters<typeof t>[0]> = {
   unknown_field: "errors.assets.field_unknown",
 };
 
+// Form state (and FieldInput's controlled <input>) keeps every field as a
+// string regardless of def.type — the DOM only ever gives back strings from
+// onChange. At the form/schema boundary (submission), a "number" field must
+// become a real JSON number, or the backend's validate_field_values()
+// (isinstance(raw, int | float)) rejects a perfectly valid "2015"/"100000"
+// as errors.assets.field_not_a_number. Only coerces when the result is a
+// real number — an unparseable value (should not occur through a native
+// <input type="number">, but must still fail closed rather than silently
+// becoming `null`/JSON `NaN`→null, which would skip backend validation
+// entirely) is left as the original string, so the backend's own check
+// still rejects it as not_a_number instead of treating it as absent.
+export function coerceFieldValue(def: FieldDef | undefined, value: string): unknown {
+  if (def?.type !== "number") return value;
+  const n = Number(value);
+  return Number.isNaN(n) ? value : n;
+}
+
 function FieldInput({
   def,
   value,
@@ -163,9 +180,14 @@ export function AssetStep({
     setFieldErrors({});
     setSubmitting(true);
     try {
+      const fieldDefsByKey = new Map(selectedType.field_defs.map((def) => [def.key, def]));
       const created = await api.post<AssetOut>(`/customers/${customerId}/assets`, {
         asset_type_code: selectedType.code,
-        field_values: Object.fromEntries(Object.entries(values).filter(([, v]) => v !== "")),
+        field_values: Object.fromEntries(
+          Object.entries(values)
+            .filter(([, v]) => v !== "")
+            .map(([k, v]) => [k, coerceFieldValue(fieldDefsByKey.get(k), v)]),
+        ),
       });
       await queryClient.invalidateQueries({ queryKey: queryKeys.customerAssets(customerId) });
       onResolved({
