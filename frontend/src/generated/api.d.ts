@@ -1732,16 +1732,20 @@ export interface components {
          *     (docs/ACCOUNTANT_REVIEW.md §4 B1, LAW-CONFIRMED core list) — replaces
          *     the previously fully-unconstrained `dict[str, Any]`; `extra="forbid"`
          *     is the allow-list enforcement point, same pattern as the seller-side
-         *     `CompanyRequisitesPatch`. No separate VAT-number field, by the same
-         *     reasoning §3 R2 applies to the seller: for a domestic company it is
-         *     always "BG" + eik, so nothing independent needs storing (international/
-         *     reverse-charge buyers are out of scope for V1).
+         *     `CompanyRequisitesPatch`. `vat_number` (Customer VAT Identity
+         *     prerequisite slice) is the buyer-side counterpart to R2's law-confirmed
+         *     "BG" + ЕИК seller VAT number — explicitly entered, never derived/
+         *     auto-generated from `eik` alone, since a company's VAT-registration
+         *     status is a fact this module cannot infer (see
+         *     `customers/service.py`'s `_validate_vat_identity`).
          */
         CustomerCompanyRequisites: {
             /** Address */
             address?: string | null;
             /** Eik */
             eik?: string | null;
+            /** Vat Number */
+            vat_number?: string | null;
         };
         /** CustomerContactRecordIn */
         CustomerContactRecordIn: {
@@ -1783,6 +1787,8 @@ export interface components {
              * @default false
              */
             is_company: boolean;
+            /** Vat Registered */
+            vat_registered?: boolean | null;
             company_requisites?: components["schemas"]["CustomerCompanyRequisites"] | null;
             /**
              * Notes
@@ -1811,6 +1817,8 @@ export interface components {
             email: string | null;
             /** Is Company */
             is_company: boolean;
+            /** Vat Registered */
+            vat_registered: boolean | null;
             company_requisites: components["schemas"]["CustomerCompanyRequisites"] | null;
             /** Notes */
             notes: string;
@@ -1845,6 +1853,8 @@ export interface components {
             email: string | null;
             /** Is Company */
             is_company: boolean;
+            /** Vat Registered */
+            vat_registered: boolean | null;
             company_requisites: components["schemas"]["CustomerCompanyRequisites"] | null;
             /** Notes */
             notes: string;
@@ -1872,6 +1882,8 @@ export interface components {
             email?: string | null;
             /** Is Company */
             is_company?: boolean | null;
+            /** Vat Registered */
+            vat_registered?: boolean | null;
             company_requisites?: components["schemas"]["CustomerCompanyRequisites"] | null;
             /** Notes */
             notes?: string | null;

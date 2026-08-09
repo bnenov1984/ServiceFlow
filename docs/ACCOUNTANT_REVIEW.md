@@ -267,30 +267,50 @@ unconstrained `dict[str, Any]` — and `Customer.is_company` is settable from
 the intake create flow and editable in place from the customer profile
 page's "Данни за фактуриране" section.
 
-**Buyer VAT-number handling — OPEN, deferred to a future Issue-slice, not
-frozen by this document.** Unlike R2 on the seller side (§3, explicitly
-LAW-CONFIRMED and grounded in ЗДДС чл. 94, ал. 2 for the *reporting entity's
-own* VAT-registration derivation), this document has never stated a
-buyer-side equivalent. The `{address, eik}` contract intentionally omits a
-stored buyer VAT-number field for this prerequisite slice — that scoping
-choice was made by the implementer on the assumption that the same
-"BG" + ЕИК derivation formula that's law-confirmed for a VAT-registered
-entity's own number would extend to a VAT-registered buyer too, since it's
-the same underlying legal fact about how BG VAT numbers are assigned,
-independent of transaction role. That assumption itself has **not** been
-accountant-confirmed here, and — more concretely blocking than the
-derivation-formula question — there is still **no `Customer`-side
-VAT-registration signal at all** (no `vat_registered`-equivalent field), so
-the product has no way today to know *whether* a given company customer is
-VAT-registered in the first place. **Consequence: `Invoice.buyer` snapshots
-are not yet complete for a VAT-registered B2B recipient** — `{address, eik}`
-is sufficient only for the currently frozen prerequisite scope (schema/UI
-existence of `is_company`/`company_requisites`), not for a future Issue
-workflow's completeness gate on VAT-registered buyers. Both the missing
-buyer VAT-registration flag and confirmation of the derivation formula for
-the buyer role need to be resolved — by product decision and/or
-professional review — before that future Issue slice can build a correct
-`Invoice.buyer` snapshot for this case.
+**Buyer VAT-number handling — Customer VAT Identity prerequisite slice
+landed (PRODUCT DECISION, 09.08.2026); B2B Invoice Issue itself remains
+NOT implemented.** A read-only investigation (this document's own §4, prior
+revision) stopped short of any B2B Issue work specifically because there was
+**no `Customer`-side VAT-registration signal at all** — the product had no
+way to know *whether* a given company customer was VAT-registered, so it
+could not even safely scope down to "non-VAT-registered company buyers
+only" without guessing. The PO resolved this with an explicit product
+decision: **a company Customer must explicitly store its VAT-registration
+status.**
+
+Landed: `Customer.vat_registered` is a tri-state `bool | None` column
+(migration 0019) — `NULL` = not yet established (**never** silently treated
+as "confirmed not registered"), `False` = explicitly confirmed not
+VAT-registered, `True` = explicitly confirmed VAT-registered. Every
+pre-existing company Customer reads back `NULL` (no backfill). Paired with
+it, `CustomerCompanyRequisites.vat_number` (`customers/router.py`) is a new
+allow-listed, `extra="forbid"` field: an **explicitly entered** VAT number,
+structurally validated as `"BG" + ЕИК`-shaped (9 or 13 digits after the
+`BG` prefix) — the same conservative, no-checksum, no-registry-lookup
+posture `is_valid_eik` already uses. Write-time rule
+(`customers/service.py`'s `_validate_vat_identity`): `is_company=True` and
+`vat_registered=True` requires a `vat_number`; `vat_registered` in
+`(None, False)` requires nothing further.
+
+This deliberately **sidesteps**, rather than answers, the derivation-formula
+question this document previously left open (whether "BG" + ЕИК can be
+*computed* for a buyer the way R2 law-confirms it for the seller's own
+number) — the VAT number is always explicitly typed in by staff, never
+auto-generated from `eik`, so no derivation assumption is relied upon at
+all. **No automatic VAT-registry verification (NRA/VIES or otherwise)
+exists or is claimed** — `vat_registered` is exactly as reliable as whoever
+sets it in the UI, nothing more.
+
+**Still open, unaffected by this slice:** B2B Invoice Issue itself is
+**not implemented** — `commercial/service.py`'s blanket
+`errors.invoices.company_buyer_unsupported` rejection for any
+`Customer.is_company == True` buyer is **unchanged**. This slice only makes
+the *data* available for a future Issue workflow to consume; it does not
+wire that data into Issue, does not populate `Invoice.buyer` for a company,
+and does not resolve whether a self-reported VAT status is an adequate
+completeness basis for a legally issued document (that professional-review
+question, raised in the prior investigation, still stands for whenever a
+future Issue slice is proposed).
 
 **B2 (individual/B2C buyer) — PROFESSIONAL REVIEW REQUIRED.** This is the
 most sensitive open item in the whole document, and deliberately **not**
@@ -693,7 +713,7 @@ failure after allocation but before commit restores the sequence.
 | Phase-A Issue supports | Phase-A Issue explicitly does NOT support |
 |---|---|
 | Seller: `Company.vat_registered == False` only. | Seller: `Company.vat_registered == True` — blocked on §6's still-open VAT-rounding professional-review question, not attempted in Phase A. |
-| Buyer: `Customer.is_company == False` (individual) only. | Buyer: `Customer.is_company == True` (any company buyer) — `Customer` has no VAT-registration signal today, so the system cannot tell a non-VAT-registered company buyer apart from a VAT-registered one. Phase A does not guess; it excludes every company buyer until buyer VAT-registration/VAT-number handling (§4's open point) is explicitly resolved. |
+| Buyer: `Customer.is_company == False` (individual) only. | Buyer: `Customer.is_company == True` (any company buyer) — unchanged by the Customer VAT Identity prerequisite slice (§4): `Customer.vat_registered`/`company_requisites.vat_number` now exist as *data*, but `commercial/service.py`'s Issue code has not been touched and still rejects every company buyer with `errors.invoices.company_buyer_unsupported`, regardless of its VAT status. Wiring that data into Issue is a distinct, not-yet-approved future slice. |
 | `tax_event_date` supplied explicitly in the Issue request body. | Any backend inference of `tax_event_date` from order/delivery/payment dates — explicitly rejected as a design choice (not just deferred), to keep the legal decision a visible human confirmation moment. |
 | Owner-only authorization. | The docs/02 §12 "Worker: toggle" behavior — `worker_can_issue_invoices` does not exist in code and OQ-W1 remains an open confirm-question there; Owner-only is a safe subset that can only be widened later, never narrowed. |
 | Repeated Issue on a non-draft (already-issued or annulled) invoice → `409 errors.invoices.not_draft`. | Idempotent re-return of the already-issued representation — rejected in favor of a clear, deterministic error. |
@@ -725,7 +745,7 @@ writing down) · **deferred** (intentionally out of V1 scope).
 | `Invoice.issued_at` | **Already sufficient** | Confirmed correct semantics (issue timestamp only), no overlap with tax-event date. |
 | `invoices.tax_event_date` | **Done (prerequisite slice landed)** | Migration 0018 added it: `Date`, nullable, no server default, no backfill — not provisioned by migration 0009, unlike every other Etap-4 `invoices` column. Model field + read-only `GET`/`POST`-detail exposure in `commercial/models.py`/`router.py`; no write path anywhere. §2. |
 | `Invoice.seller` | **Already sufficient (schema)** | Correct JSONB snapshot shape; populating it at Issue depends on `Company.requisites`'s gap below, not on this column. |
-| `Invoice.buyer` | **Already sufficient (schema)** | Same — depends on `Customer.company_requisites`/`is_company`'s (larger) gap below. |
+| `Invoice.buyer` | **Already sufficient (schema)** | JSONB shape is fine as-is; `Customer`-side source data for a company snapshot now exists too (`is_company`/`company_requisites`/`vat_registered`, all below) — but nothing populates `Invoice.buyer` for a company buyer yet, since `commercial/service.py`'s Issue code hasn't been extended to read any of it. §4. |
 | `Invoice.vat_mode` | **Already sufficient** | Binary `registered`/`not_registered` matches the V1 product decision; no change needed. |
 | `Invoice.net` | **Already sufficient (schema) / documentation semantics change required (algorithm)** | `Numeric(10,2)` is the right shape; the rounding algorithm that populates it is the open V1 professional-review item (§6), not a column problem. |
 | `Invoice.vat` | **Already sufficient (schema) / documentation semantics change required (algorithm)** | Same as `net`. |
@@ -742,7 +762,8 @@ writing down) · **deferred** (intentionally out of V1 scope).
 | `Company.vat_registered` | **Already sufficient** | Already collectible via the landed Company Legal Requisites slice — no further gap. |
 | `Customer.name` | **Already sufficient** | Real, UI-editable field; no gap. |
 | `Customer.is_company` | **Done (prerequisite slice landed)** | Settable from the intake create flow and editable in place from the customer profile's "Данни за фактуриране" section. §4. |
-| `Customer.company_requisites` | **Done for name/address/ЕИК (prerequisite slice landed); buyer VAT-number handling still OPEN** | Replaced the unconstrained `dict[str, Any]` with a typed, allow-listed `CustomerCompanyRequisites` schema (`address`, `eik` only, `extra="forbid"`) in `customers/router.py` — the same allow-list-contract treatment `Company.requisites` already had. No stored buyer VAT-number field — but unlike the seller side (R2), this document never froze that omission for buyers; it's an implementer scoping choice pending confirmation. `Invoice.buyer` is not yet complete for a VAT-registered B2B buyer: no `Customer`-side VAT-registration signal exists either. §4. |
+| `Customer.company_requisites` | **Done for name/address/ЕИК/vat_number (Customer VAT Identity prerequisite slice landed)** | Typed, allow-listed `CustomerCompanyRequisites` schema (`address`, `eik`, `vat_number`; `extra="forbid"`) in `customers/router.py` — the same allow-list-contract treatment `Company.requisites` already had. `vat_number` is explicitly entered, never derived from `eik`. §4. |
+| `Customer.vat_registered` | **Done (Customer VAT Identity prerequisite slice landed, 09.08.2026)** | New tri-state column (migration 0019): `NULL` (unknown, no backfill for pre-existing rows) / `False` (confirmed not registered) / `True` (confirmed registered, requires `company_requisites.vat_number`). Closes the "no buyer VAT-registration signal" blocker the read-only B2B investigation stopped on. Does **not** by itself enable B2B Invoice Issue — see §4 and the Phase-A table above. |
 | `document_sequences` | **Done (prerequisite slice landed)** | The compliance defect described in §1 is fixed, without a migration: `service_orders.service` now exposes `allocate_sequence()` (generic atomic counter, no formatting), `next_order_number()` (unchanged year-scoped order behavior), and `next_invoice_number()` (continuous, 10-digit zero-padded, keyed on the new `INVOICE_SEQUENCE_EPOCH = 0` constant instead of a bare inline `0`). `year=0` for `kind="invoice"` is documented in code as a fixed series/epoch marker, never a calendar year, and is only ever referenced through that one named constant — see `service_orders/service.py`. |
 
 **Documentation decisions that must change** once this pass is accepted:
@@ -776,14 +797,16 @@ should also flag the year-scoping issue found here, since it inherits
    done, §5** — wired into the Phase-A Issue-time completeness check
    (`errors.invoices.seller_incomplete`/`seller_vat_unsupported`).
 5. ~~The buyer identifiers (§4) become a new Customer UI surface~~ —
-   **done for B1's name/address/ЕИК** (company buyer): `is_company`/
-   `company_requisites` are settable from the intake create flow and
-   editable from the customer profile page. **Still open:** B1's buyer
-   VAT-number handling (no stored field, no `Customer`-side VAT-registration
-   signal — see §4) needs its own product decision/professional review
-   before a future Issue slice can build `Invoice.buyer` correctly for a
-   VAT-registered B2B buyer. B2 (individual/B2C buyer) remains gated on its
-   own professional-review answer — untouched by this slice.
+   **done for B1's name/address/ЕИК/VAT identity** (company buyer):
+   `is_company`/`company_requisites`/`vat_registered` are settable from the
+   intake create flow and editable from the customer profile page (Customer
+   VAT Identity prerequisite slice, 09.08.2026 — see §4 for the exact tri-
+   state schema). **Still open:** wiring this data into a future B2B Invoice
+   Issue workflow — `commercial/service.py` still rejects every company
+   buyer unconditionally — and the professional-review question of whether
+   a self-reported VAT status is an adequate basis for a legally issued
+   document. B2 (individual/B2C buyer) remains gated on its own
+   professional-review answer — untouched by this slice.
 6. The correction mechanism (§7) — Annul action copy and scope — is built
    to explicitly cover case A only; credit/debit notes are a distinct,
    later slice, not retrofitted onto `annuls_invoice_id`.

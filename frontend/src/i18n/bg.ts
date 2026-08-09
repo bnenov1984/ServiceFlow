@@ -96,6 +96,7 @@ export const bg = {
   "errors.auth.invalid_pin": "Грешен PIN.",
   "errors.customers.not_found": "Няма такъв клиент.",
   "errors.customers.anonymized": "Клиентът е анонимизиран и не може да се редактира.",
+  "errors.customers.vat_number_required": "Въведете ДДС номер за фирма, регистрирана по ЗДДС.",
   "errors.assets.not_found": "Няма такъв актив.",
   "errors.assets.unknown_type": "Непознат тип актив.",
   "errors.assets.invalid_fields": "Моля, коригирайте маркираните полета.",
@@ -415,6 +416,10 @@ export const bg = {
   "customer.type_company": "Фирма",
   "customer.company_details": "Данни за фактуриране",
   "customer.company_details_none": "Клиентът е физическо лице.",
+  "customer.vat_status_unknown": "Не е проверено",
+  "customer.vat_status_not_registered": "Не",
+  "customer.vat_status_registered": "Да",
+  "customer.vat_status_unknown_hint": "Докато ДДС статусът не бъде потвърден, към тази фирма не може да бъде издадена фактура.",
 
   // --- professional services / PropertyFlow dashboard ---
   "ps.title": "PropertyFlow",
@@ -650,6 +655,7 @@ export const bg = {
   "company.field_phone": "Телефон",
   "company.field_eik": "ЕИК / БУЛСТАТ",
   "company.field_vat_registered": "Регистрация по ЗДДС",
+  "company.field_vat_number": "ДДС номер",
   "company.save_action": "Запази",
   "company.saved": "Данните за фирмата са запазени.",
 

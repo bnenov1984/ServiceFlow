@@ -13,7 +13,12 @@ from business_os.identity.deps import (
     require_repairflow_active,
     require_subscription_ok,
 )
-from business_os.shared_kernel.normalize import is_valid_eik, normalize_eik
+from business_os.shared_kernel.normalize import (
+    is_valid_eik,
+    is_valid_vat_number,
+    normalize_eik,
+    normalize_vat_number,
+)
 from serviceflow.customers import service
 from serviceflow.customers.models import Customer
 from serviceflow.service_orders import service as orders_service
@@ -26,15 +31,18 @@ class CustomerCompanyRequisites(BaseModel):
     (docs/ACCOUNTANT_REVIEW.md §4 B1, LAW-CONFIRMED core list) — replaces
     the previously fully-unconstrained `dict[str, Any]`; `extra="forbid"`
     is the allow-list enforcement point, same pattern as the seller-side
-    `CompanyRequisitesPatch`. No separate VAT-number field, by the same
-    reasoning §3 R2 applies to the seller: for a domestic company it is
-    always "BG" + eik, so nothing independent needs storing (international/
-    reverse-charge buyers are out of scope for V1)."""
+    `CompanyRequisitesPatch`. `vat_number` (Customer VAT Identity
+    prerequisite slice) is the buyer-side counterpart to R2's law-confirmed
+    "BG" + ЕИК seller VAT number — explicitly entered, never derived/
+    auto-generated from `eik` alone, since a company's VAT-registration
+    status is a fact this module cannot infer (see
+    `customers/service.py`'s `_validate_vat_identity`)."""
 
     model_config = ConfigDict(extra="forbid")
 
     address: str | None = Field(default=None, max_length=500)
     eik: str | None = Field(default=None, max_length=20)
+    vat_number: str | None = Field(default=None, max_length=20)
 
     @field_validator("eik")
     @classmethod
@@ -48,6 +56,18 @@ class CustomerCompanyRequisites(BaseModel):
             raise ValueError("invalid EIK/BULSTAT: expected 9 or 13 digits")
         return normalized
 
+    @field_validator("vat_number")
+    @classmethod
+    def _validate_vat_number(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = normalize_vat_number(value)
+        if not normalized:
+            return None
+        if not is_valid_vat_number(normalized):
+            raise ValueError('invalid VAT number: expected "BG" + 9 or 13 digits')
+        return normalized
+
 
 class CustomerIn(BaseModel):
     name: str = Field(min_length=1, max_length=200)
@@ -55,6 +75,10 @@ class CustomerIn(BaseModel):
     phone2: str | None = Field(default=None, max_length=30)
     email: str | None = Field(default=None, max_length=200)
     is_company: bool = False
+    # Tri-state, default None/unknown (never False) — a Customer VAT
+    # Identity prerequisite slice concern, not something this create
+    # payload is expected to resolve on its own. See Customer.vat_registered.
+    vat_registered: bool | None = None
     company_requisites: CustomerCompanyRequisites | None = None
     notes: str = Field(default="", max_length=5000)
 
@@ -65,6 +89,7 @@ class CustomerPatch(BaseModel):
     phone2: str | None = Field(default=None, max_length=30)
     email: str | None = Field(default=None, max_length=200)
     is_company: bool | None = None
+    vat_registered: bool | None = None
     company_requisites: CustomerCompanyRequisites | None = None
     notes: str | None = Field(default=None, max_length=5000)
 
@@ -76,6 +101,7 @@ class CustomerOut(BaseModel):
     phone2: str | None
     email: str | None
     is_company: bool
+    vat_registered: bool | None
     company_requisites: CustomerCompanyRequisites | None
     notes: str
     archived: bool
@@ -91,12 +117,15 @@ class CustomerOut(BaseModel):
         # established defensive-read pattern on the Company/seller side).
         raw = c.company_requisites or None
         requisites = (
-            CustomerCompanyRequisites(address=raw.get("address"), eik=raw.get("eik"))
+            CustomerCompanyRequisites(
+                address=raw.get("address"), eik=raw.get("eik"), vat_number=raw.get("vat_number"),
+            )
             if raw else None
         )
         return CustomerOut(
             id=c.id, name=c.name, phone=c.phone, phone2=c.phone2, email=c.email,
-            is_company=c.is_company, company_requisites=requisites,
+            is_company=c.is_company, vat_registered=c.vat_registered,
+            company_requisites=requisites,
             notes=c.notes, archived=c.archived_at is not None,
             anonymized=c.anonymized_at is not None, row_version=c.row_version,
             duplicate_ids=duplicate_ids or [],
@@ -112,6 +141,12 @@ class CustomerListItemOut(CustomerOut):
 def _not_found() -> HTTPException:
     return HTTPException(status_code=404, detail={
         "code": "not_found", "message_key": "errors.customers.not_found", "params": {},
+    })
+
+
+def _customer_error(e: service.CustomerError) -> HTTPException:
+    return HTTPException(status_code=e.status, detail={
+        "code": "customer_error", "message_key": e.message_key, "params": {},
     })
 
 
@@ -133,7 +168,10 @@ def list_customers(db: TenantDbDep, tenant: TenantDep, q: str | None = None,
 def create_customer(body: CustomerIn, db: TenantDbDep, tenant: TenantDep) -> CustomerOut:
     # Duplicate phones warn, never block (docs/02 B3): the hint rides on the response.
     duplicates = service.find_duplicates_by_phone(db, tenant, body.phone)
-    customer = service.create(db, tenant, **body.model_dump())
+    try:
+        customer = service.create(db, tenant, **body.model_dump())
+    except service.CustomerError as e:
+        raise _customer_error(e) from e
     return CustomerOut.of(customer, [d.id for d in duplicates])
 
 
@@ -157,7 +195,10 @@ def patch_customer(customer_id: uuid.UUID, body: CustomerPatch, db: TenantDbDep,
             "code": "anonymized", "message_key": "errors.customers.anonymized", "params": {},
         })
     fields = body.model_dump(exclude_unset=True)
-    customer = service.update(db, tenant, customer, fields)
+    try:
+        customer = service.update(db, tenant, customer, fields)
+    except service.CustomerError as e:
+        raise _customer_error(e) from e
     duplicates = (
         service.find_duplicates_by_phone(db, tenant, customer.phone, exclude_id=customer.id)
         if "phone" in fields else []

@@ -3,6 +3,7 @@
 export interface CustomerCompanyRequisites {
   address: string | null;
   eik: string | null;
+  vat_number: string | null;
 }
 
 export interface CustomerListItem {
@@ -23,6 +24,7 @@ export interface CustomerDetail {
   phone2: string | null;
   email: string | null;
   is_company: boolean;
+  vat_registered: boolean | null;
   company_requisites: CustomerCompanyRequisites | null;
   archived: boolean;
   anonymized: boolean;

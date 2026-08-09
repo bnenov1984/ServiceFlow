@@ -22,6 +22,13 @@ class Customer(Base, TimestampMixin):
     phone2: Mapped[str | None] = mapped_column(default=None)
     email: Mapped[str | None] = mapped_column(default=None)
     is_company: Mapped[bool] = mapped_column(default=False)
+    # Tri-state (docs/ACCOUNTANT_REVIEW.md §4 B1): NULL = not yet established
+    # (never treated as "confirmed not registered"), False = explicitly
+    # confirmed not VAT-registered, True = explicitly confirmed VAT-
+    # registered (requires company_requisites.vat_number — see
+    # customers/service.py's _validate_vat_identity). No server default —
+    # every pre-existing row reads back NULL, not False (migration 0019).
+    vat_registered: Mapped[bool | None] = mapped_column(default=None)
     company_requisites: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
     notes: Mapped[str] = mapped_column(default="", server_default="")
     # Shadow columns (ADR-010) — maintained by the service layer, never by hand.

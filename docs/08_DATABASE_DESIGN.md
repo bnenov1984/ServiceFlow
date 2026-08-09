@@ -40,13 +40,18 @@ gate passes.
   detail jsonb, created_at. Business history lives in timeline_events, not here.
 
 ### customers
-- **customers** — name, phone, phone2, email, is_company bool, company_requisites
-  jsonb NULL (B2B invoices), notes, **phone_normalized**, **name_translit**
-  (ADR-010 shadow columns, trigram-indexed), anonymized_at NULL.
+- **customers** — name, phone, phone2, email, is_company bool,
+  **vat_registered bool NULL** (Customer VAT Identity prerequisite slice,
+  migration 0019 — tri-state: NULL=unknown/unestablished, never backfilled
+  or defaulted to false; False=confirmed not registered; True=confirmed
+  registered), company_requisites jsonb NULL (B2B invoices), notes,
+  **phone_normalized**, **name_translit** (ADR-010 shadow columns,
+  trigram-indexed), anonymized_at NULL.
   Allow-listed `company_requisites` keys (docs/ACCOUNTANT_REVIEW.md §4 B1,
   the buyer/B2B-customer mirror of the companies row above): `address`,
-  `eik` — same no-separate-VAT-number reasoning as the seller side, applied
-  by symmetry (B1 doesn't itself spell out a buyer VAT-number field).
+  `eik`, `vat_number` — unlike the seller side's `"BG" + eik` derivation,
+  the buyer's `vat_number` is a real stored field, always explicitly
+  entered (never derived), required only when `vat_registered=True`.
 
 ### assets
 - **asset_types** — code, name_bg, icon, field_defs jsonb: ordered

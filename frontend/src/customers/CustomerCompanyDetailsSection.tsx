@@ -17,7 +17,15 @@ function requisitesFrom(customer: CustomerDetail) {
   return {
     address: customer.company_requisites?.address ?? "",
     eik: customer.company_requisites?.eik ?? "",
+    vatRegistered: customer.vat_registered,
+    vatNumber: customer.company_requisites?.vat_number ?? "",
   };
+}
+
+function vatStatusLabel(vatRegistered: boolean | null): string {
+  if (vatRegistered === true) return t("customer.vat_status_registered");
+  if (vatRegistered === false) return t("customer.vat_status_not_registered");
+  return t("customer.vat_status_unknown");
 }
 
 export function CustomerCompanyDetailsSection({
@@ -50,8 +58,17 @@ export function CustomerCompanyDetailsSection({
         // Toggling to individual never erases previously-stored requisites
         // here — preservation over destructive mutation, since nothing in
         // the domain rules requires clearing them on a temporary toggle.
+        vat_registered: isCompany ? requisites.vatRegistered : customer.vat_registered,
         company_requisites: isCompany
-          ? { address: requisites.address.trim() || null, eik: requisites.eik.trim() || null }
+          ? {
+              address: requisites.address.trim() || null,
+              eik: requisites.eik.trim() || null,
+              // A stale VAT number never lingers under a non-registered/
+              // unknown status — only ever sent when the effective status
+              // being saved is actually "registered".
+              vat_number: requisites.vatRegistered === true
+                ? (requisites.vatNumber.trim() || null) : null,
+            }
           : customer.company_requisites,
       });
       await queryClient.invalidateQueries({ queryKey: queryKeys.customer(customerId) });
@@ -121,6 +138,23 @@ export function CustomerCompanyDetailsSection({
             </dt>
             <dd className="mt-0.5">{customer.company_requisites?.eik || "—"}</dd>
           </div>
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              {t("company.field_vat_registered")}
+            </dt>
+            <dd className="mt-0.5">{vatStatusLabel(customer.vat_registered)}</dd>
+          </div>
+          {customer.vat_registered === true && (
+            <div>
+              <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                {t("company.field_vat_number")}
+              </dt>
+              <dd className="mt-0.5">{customer.company_requisites?.vat_number || "—"}</dd>
+            </div>
+          )}
+          {customer.vat_registered === null && (
+            <p className="text-sm text-amber-700">{t("customer.vat_status_unknown_hint")}</p>
+          )}
         </dl>
       ) : (
         <p className="text-sm text-slate-400">{t("customer.company_details_none")}</p>

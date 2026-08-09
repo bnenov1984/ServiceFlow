@@ -98,6 +98,7 @@ def test_individual_customer_creation_is_unchanged(client: TestClient) -> None:
     assert resp.status_code == 201
     body = resp.json()
     assert body["is_company"] is False
+    assert body["vat_registered"] is None
     assert body["company_requisites"] is None
 
 
@@ -110,8 +111,9 @@ def test_company_customer_can_be_created_with_approved_requisites(client: TestCl
     assert resp.status_code == 201
     body = resp.json()
     assert body["is_company"] is True
+    assert body["vat_registered"] is None  # unknown, never a silent False
     assert body["company_requisites"] == {
-        "address": "гр. София, бул. Витоша 1", "eik": "130489869",
+        "address": "гр. София, бул. Витоша 1", "eik": "130489869", "vat_number": None,
     }
 
 
@@ -127,7 +129,9 @@ def test_company_customer_requisites_can_be_updated(client: TestClient) -> None:
         "company_requisites": {"address": "гр. Пловдив", "eik": "175074752"},
     })
     assert resp.status_code == 200
-    assert resp.json()["company_requisites"] == {"address": "гр. Пловдив", "eik": "175074752"}
+    assert resp.json()["company_requisites"] == {
+        "address": "гр. Пловдив", "eik": "175074752", "vat_number": None,
+    }
 
 
 def test_unknown_company_requisites_key_is_rejected(client: TestClient) -> None:
@@ -194,7 +198,9 @@ def test_is_company_round_trips_without_touching_requisites(client: TestClient) 
     resp = client.patch(f"/api/v1/customers/{cid}", headers=h, json={"is_company": False})
     assert resp.status_code == 200
     assert resp.json()["is_company"] is False
-    assert resp.json()["company_requisites"] == {"address": "гр. София", "eik": "130489869"}
+    assert resp.json()["company_requisites"] == {
+        "address": "гр. София", "eik": "130489869", "vat_number": None,
+    }
 
 
 def test_rls_blocks_even_unscoped_queries(client: TestClient) -> None:
@@ -220,3 +226,237 @@ def test_rls_blocks_even_unscoped_queries(client: TestClient) -> None:
             " '00000000-0000-0000-0000-000000000000', false)"
         ))
         assert db.scalars(select(Customer)).all() == []
+
+
+# --- Customer VAT Identity prerequisite (docs/ACCOUNTANT_REVIEW.md §4 B1) ---
+# Storage/API only — no Invoice Issue behavior. Customer.vat_registered is a
+# tri-state column: NULL (unknown, never a silent False) / False (explicitly
+# confirmed not VAT-registered) / True (explicitly confirmed, requires
+# company_requisites.vat_number). See customers/service.py's
+# _validate_vat_identity for the write-time rule this suite exercises.
+
+
+def test_pre_existing_company_customer_migrates_to_vat_status_unknown(client: TestClient) -> None:
+    """Simulates a row that existed before migration 0019 by writing
+    directly at the DB layer (the only way to produce a row with no
+    vat_registered value today, since every real write path now goes
+    through this migration) — the API must read it back as UNKNOWN
+    (None), never coerce a missing value into False."""
+    import uuid as uuid_mod
+
+    from sqlalchemy import select
+
+    from business_os.identity.models import User
+    from business_os.shared_kernel.db import bind_tenant_scope, open_session
+    from serviceflow.customers.models import Customer
+
+    csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+    h = {"X-CSRF-Token": csrf}
+    cid = client.post("/api/v1/customers", headers=h, json={
+        "name": "Стара Фирма ЕООД", "phone": "029001199", "is_company": True,
+        "company_requisites": {"address": "гр. Русе", "eik": "130489869"},
+    }).json()["id"]
+
+    url = os.environ["SERVICEFLOW_DATABASE_URL"]
+    for db in open_session(url):
+        owner = db.scalar(select(User).where(User.email == "a@a.bg"))
+        assert owner is not None
+        bind_tenant_scope(db, owner.company_id)
+        customer = db.get(Customer, uuid_mod.UUID(cid))
+        assert customer is not None
+        assert customer.vat_registered is None  # migration 0019: no backfill, ever
+
+    resp = client.get(f"/api/v1/customers/{cid}", headers=h)
+    assert resp.status_code == 200
+    assert resp.json()["vat_registered"] is None
+    # No existing data destroyed by the migration/read path.
+    assert resp.json()["company_requisites"] == {
+        "address": "гр. Русе", "eik": "130489869", "vat_number": None,
+    }
+
+
+def test_create_company_with_unknown_vat_status(client: TestClient) -> None:
+    csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+    resp = client.post("/api/v1/customers", headers={"X-CSRF-Token": csrf}, json={
+        "name": "Пример ЕООД", "phone": "029001122", "is_company": True,
+        "company_requisites": {"address": "гр. София", "eik": "130489869"},
+    })
+    assert resp.status_code == 201
+    assert resp.json()["vat_registered"] is None
+
+
+def test_create_company_explicitly_not_vat_registered(client: TestClient) -> None:
+    csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+    resp = client.post("/api/v1/customers", headers={"X-CSRF-Token": csrf}, json={
+        "name": "Пример ЕООД", "phone": "029001122", "is_company": True,
+        "vat_registered": False,
+        "company_requisites": {"address": "гр. София", "eik": "130489869"},
+    })
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["vat_registered"] is False
+    assert body["company_requisites"]["vat_number"] is None
+
+
+def test_create_vat_registered_company_with_vat_number(client: TestClient) -> None:
+    csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+    resp = client.post("/api/v1/customers", headers={"X-CSRF-Token": csrf}, json={
+        "name": "Пример ЕООД", "phone": "029001122", "is_company": True,
+        "vat_registered": True,
+        "company_requisites": {
+            "address": "гр. София", "eik": "130489869", "vat_number": "BG130489869",
+        },
+    })
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["vat_registered"] is True
+    assert body["company_requisites"]["vat_number"] == "BG130489869"
+
+
+def test_vat_registered_true_without_vat_number_is_rejected(client: TestClient) -> None:
+    csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+    resp = client.post("/api/v1/customers", headers={"X-CSRF-Token": csrf}, json={
+        "name": "Пример ЕООД", "phone": "029001122", "is_company": True,
+        "vat_registered": True,
+        "company_requisites": {"address": "гр. София", "eik": "130489869"},
+    })
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["message_key"] == "errors.customers.vat_number_required"
+
+
+def test_vat_registered_true_without_vat_number_is_rejected_on_update(client: TestClient) -> None:
+    """The merged-effective-state rule: a PATCH that sets vat_registered=True
+    without also supplying company_requisites (leaving vat_number at its
+    already-None stored value) must be rejected too — not just the
+    single-request create case."""
+    csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+    h = {"X-CSRF-Token": csrf}
+    cid = client.post("/api/v1/customers", headers=h, json={
+        "name": "Пример ЕООД", "phone": "029001122", "is_company": True,
+        "company_requisites": {"address": "гр. София", "eik": "130489869"},
+    }).json()["id"]
+
+    resp = client.patch(f"/api/v1/customers/{cid}", headers=h, json={"vat_registered": True})
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["message_key"] == "errors.customers.vat_number_required"
+
+
+@pytest.mark.parametrize("bad_vat", ["BG12345", "130489869", "US130489869", "bg-130489869"])
+def test_malformed_vat_number_is_rejected(client: TestClient, bad_vat: str) -> None:
+    csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+    resp = client.post("/api/v1/customers", headers={"X-CSRF-Token": csrf}, json={
+        "name": "Пример ЕООД", "phone": "029001122", "is_company": True,
+        "vat_registered": True,
+        "company_requisites": {
+            "address": "гр. София", "eik": "130489869", "vat_number": bad_vat,
+        },
+    })
+    assert resp.status_code == 400
+    assert resp.json()["message_key"] == "errors.validation"
+
+
+def test_vat_number_normalizes_case_and_whitespace(client: TestClient) -> None:
+    csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+    resp = client.post("/api/v1/customers", headers={"X-CSRF-Token": csrf}, json={
+        "name": "Пример ЕООД", "phone": "029001122", "is_company": True,
+        "vat_registered": True,
+        "company_requisites": {
+            "address": "гр. София", "eik": "130489869", "vat_number": "  bg 130489869  ",
+        },
+    })
+    assert resp.status_code == 201
+    assert resp.json()["company_requisites"]["vat_number"] == "BG130489869"
+
+
+def test_update_unknown_to_not_vat_registered(client: TestClient) -> None:
+    csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+    h = {"X-CSRF-Token": csrf}
+    cid = client.post("/api/v1/customers", headers=h, json={
+        "name": "Пример ЕООД", "phone": "029001122", "is_company": True,
+        "company_requisites": {"address": "гр. София", "eik": "130489869"},
+    }).json()["id"]
+
+    resp = client.patch(f"/api/v1/customers/{cid}", headers=h, json={"vat_registered": False})
+    assert resp.status_code == 200
+    assert resp.json()["vat_registered"] is False
+
+
+def test_update_unknown_to_vat_registered_with_number(client: TestClient) -> None:
+    csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+    h = {"X-CSRF-Token": csrf}
+    cid = client.post("/api/v1/customers", headers=h, json={
+        "name": "Пример ЕООД", "phone": "029001122", "is_company": True,
+        "company_requisites": {"address": "гр. София", "eik": "130489869"},
+    }).json()["id"]
+
+    resp = client.patch(f"/api/v1/customers/{cid}", headers=h, json={
+        "vat_registered": True,
+        "company_requisites": {
+            "address": "гр. София", "eik": "130489869", "vat_number": "BG130489869",
+        },
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["vat_registered"] is True
+    assert body["company_requisites"]["vat_number"] == "BG130489869"
+
+
+def test_update_vat_number_while_already_registered(client: TestClient) -> None:
+    csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+    h = {"X-CSRF-Token": csrf}
+    cid = client.post("/api/v1/customers", headers=h, json={
+        "name": "Пример ЕООД", "phone": "029001122", "is_company": True,
+        "vat_registered": True,
+        "company_requisites": {
+            "address": "гр. София", "eik": "130489869", "vat_number": "BG130489869",
+        },
+    }).json()["id"]
+
+    resp = client.patch(f"/api/v1/customers/{cid}", headers=h, json={
+        "company_requisites": {
+            "address": "гр. София", "eik": "130489869", "vat_number": "BG175074752",
+        },
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["vat_registered"] is True  # untouched by this patch, stays True
+    assert body["company_requisites"]["vat_number"] == "BG175074752"
+
+
+def test_vat_identity_fields_are_tenant_isolated(client: TestClient) -> None:
+    csrf_a = _seed_and_login(client, "Сервиз А", "a@a.bg")
+    cid = client.post("/api/v1/customers", headers={"X-CSRF-Token": csrf_a}, json={
+        "name": "Фирма А ЕООД", "phone": "029001122", "is_company": True,
+        "vat_registered": True,
+        "company_requisites": {
+            "address": "Адрес А", "eik": "130489869", "vat_number": "BG130489869",
+        },
+    }).json()["id"]
+    client.post("/api/v1/auth/logout", headers={"X-CSRF-Token": csrf_a})
+
+    _seed_and_login(client, "Сервиз Б", "b@b.bg")
+    assert client.get("/api/v1/customers").json() == []
+    assert client.get(f"/api/v1/customers/{cid}").status_code == 404
+
+
+@pytest.mark.parametrize("vat_registered", [None, False, True])
+def test_read_contract_round_trips_every_vat_status(
+    client: TestClient, vat_registered: bool | None,
+) -> None:
+    csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+    h = {"X-CSRF-Token": csrf}
+    payload: dict[str, object] = {
+        "name": "Пример ЕООД", "phone": "029001122", "is_company": True,
+        "company_requisites": {"address": "гр. София", "eik": "130489869"},
+    }
+    if vat_registered is not None:
+        payload["vat_registered"] = vat_registered
+        if vat_registered:
+            payload["company_requisites"] = {
+                "address": "гр. София", "eik": "130489869", "vat_number": "BG130489869",
+            }
+    created = client.post("/api/v1/customers", headers=h, json=payload).json()
+
+    fetched = client.get(f"/api/v1/customers/{created['id']}", headers=h).json()
+    assert fetched["vat_registered"] == vat_registered
+    assert fetched["company_requisites"] == created["company_requisites"]

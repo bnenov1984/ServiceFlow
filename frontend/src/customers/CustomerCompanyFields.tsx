@@ -3,6 +3,16 @@
  * (docs/ACCOUNTANT_REVIEW.md §4 B1): one control reused by the intake
  * create flow (CustomerStep) and the customer profile's company-details
  * edit section, so the two surfaces can never drift apart.
+ *
+ * VAT-registration status (Customer VAT Identity prerequisite slice) is a
+ * tri-state control, not a checkbox: unknown/not-registered/registered are
+ * all valid, complete states on their own — unknown must stay visually and
+ * semantically distinct from "confirmed not registered," never defaulted
+ * to it. The VAT-number input only ever appears for the registered state.
+ * This component only edits the *draft* form value — clearing a stale
+ * vat_number when the effective status isn't "registered" at save time is
+ * the caller's job (CustomerCompanyDetailsSection/CustomerStep), the same
+ * place that already decides what to actually send on save.
  */
 
 import { t } from "../i18n/bg";
@@ -10,6 +20,8 @@ import { t } from "../i18n/bg";
 export interface CompanyRequisitesForm {
   address: string;
   eik: string;
+  vatRegistered: boolean | null;
+  vatNumber: string;
 }
 
 function toggleClass(active: boolean): string {
@@ -84,6 +96,65 @@ export function CustomerCompanyFields({
               className="w-full rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
             />
           </div>
+
+          <div>
+            <span className="mb-1 block text-sm font-medium text-slate-700">
+              {t("company.field_vat_registered")}
+            </span>
+            <div
+              className="flex gap-2"
+              role="group"
+              aria-label={t("company.field_vat_registered")}
+            >
+              <button
+                type="button"
+                aria-pressed={requisites.vatRegistered === null}
+                onClick={() => onRequisitesChange({ ...requisites, vatRegistered: null })}
+                className={toggleClass(requisites.vatRegistered === null)}
+              >
+                {t("customer.vat_status_unknown")}
+              </button>
+              <button
+                type="button"
+                aria-pressed={requisites.vatRegistered === false}
+                onClick={() => onRequisitesChange({ ...requisites, vatRegistered: false })}
+                className={toggleClass(requisites.vatRegistered === false)}
+              >
+                {t("customer.vat_status_not_registered")}
+              </button>
+              <button
+                type="button"
+                aria-pressed={requisites.vatRegistered === true}
+                onClick={() => onRequisitesChange({ ...requisites, vatRegistered: true })}
+                className={toggleClass(requisites.vatRegistered === true)}
+              >
+                {t("customer.vat_status_registered")}
+              </button>
+            </div>
+            {requisites.vatRegistered === null && (
+              <p className="mt-1 text-sm text-amber-700">
+                {t("customer.vat_status_unknown_hint")}
+              </p>
+            )}
+          </div>
+
+          {requisites.vatRegistered === true && (
+            <div>
+              <label
+                className="mb-1 block text-sm font-medium text-slate-700"
+                htmlFor="customer-company-vat-number"
+              >
+                {t("company.field_vat_number")}
+              </label>
+              <input
+                id="customer-company-vat-number"
+                value={requisites.vatNumber}
+                onChange={(e) => onRequisitesChange({ ...requisites, vatNumber: e.target.value })}
+                maxLength={20}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
+              />
+            </div>
+          )}
         </div>
       )}
     </div>

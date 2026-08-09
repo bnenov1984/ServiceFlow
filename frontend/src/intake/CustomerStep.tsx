@@ -7,7 +7,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
-import { CustomerCompanyFields } from "../customers/CustomerCompanyFields";
+import { CustomerCompanyFields, type CompanyRequisitesForm } from "../customers/CustomerCompanyFields";
 import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
@@ -55,7 +55,9 @@ export function CustomerStep({
   const [newPhone, setNewPhone] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [isCompany, setIsCompany] = useState(false);
-  const [companyRequisites, setCompanyRequisites] = useState({ address: "", eik: "" });
+  const [companyRequisites, setCompanyRequisites] = useState<CompanyRequisitesForm>({
+    address: "", eik: "", vatRegistered: null, vatNumber: "",
+  });
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const queryClient = useQueryClient();
@@ -99,8 +101,14 @@ export function CustomerStep({
       const created = await api.post<CustomerOut>("/customers", {
         name: newName, phone: newPhone, email: newEmail || null,
         is_company: isCompany,
+        vat_registered: isCompany ? companyRequisites.vatRegistered : null,
         company_requisites: isCompany
-          ? { address: companyRequisites.address.trim() || null, eik: companyRequisites.eik.trim() || null }
+          ? {
+              address: companyRequisites.address.trim() || null,
+              eik: companyRequisites.eik.trim() || null,
+              vat_number: companyRequisites.vatRegistered === true
+                ? (companyRequisites.vatNumber.trim() || null) : null,
+            }
           : null,
       });
       await queryClient.invalidateQueries({ queryKey: ["customers"] });

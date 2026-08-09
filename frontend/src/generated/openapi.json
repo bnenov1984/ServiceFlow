@@ -5384,12 +5384,24 @@
               }
             ],
             "title": "Eik"
+          },
+          "vat_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vat Number"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "title": "CustomerCompanyRequisites",
-        "description": "Buyer-company legal requisites for a future Invoice.buyer snapshot\n(docs/ACCOUNTANT_REVIEW.md §4 B1, LAW-CONFIRMED core list) — replaces\nthe previously fully-unconstrained `dict[str, Any]`; `extra=\"forbid\"`\nis the allow-list enforcement point, same pattern as the seller-side\n`CompanyRequisitesPatch`. No separate VAT-number field, by the same\nreasoning §3 R2 applies to the seller: for a domestic company it is\nalways \"BG\" + eik, so nothing independent needs storing (international/\nreverse-charge buyers are out of scope for V1)."
+        "description": "Buyer-company legal requisites for a future Invoice.buyer snapshot\n(docs/ACCOUNTANT_REVIEW.md §4 B1, LAW-CONFIRMED core list) — replaces\nthe previously fully-unconstrained `dict[str, Any]`; `extra=\"forbid\"`\nis the allow-list enforcement point, same pattern as the seller-side\n`CompanyRequisitesPatch`. `vat_number` (Customer VAT Identity\nprerequisite slice) is the buyer-side counterpart to R2's law-confirmed\n\"BG\" + ЕИК seller VAT number — explicitly entered, never derived/\nauto-generated from `eik` alone, since a company's VAT-registration\nstatus is a fact this module cannot infer (see\n`customers/service.py`'s `_validate_vat_identity`)."
       },
       "CustomerContactRecordIn": {
         "properties": {
@@ -5515,6 +5527,17 @@
             "title": "Is Company",
             "default": false
           },
+          "vat_registered": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vat Registered"
+          },
           "company_requisites": {
             "anyOf": [
               {
@@ -5580,6 +5603,17 @@
             "type": "boolean",
             "title": "Is Company"
           },
+          "vat_registered": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vat Registered"
+          },
           "company_requisites": {
             "anyOf": [
               {
@@ -5628,6 +5662,7 @@
           "phone2",
           "email",
           "is_company",
+          "vat_registered",
           "company_requisites",
           "notes",
           "archived",
@@ -5679,6 +5714,17 @@
             "type": "boolean",
             "title": "Is Company"
           },
+          "vat_registered": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vat Registered"
+          },
           "company_requisites": {
             "anyOf": [
               {
@@ -5723,6 +5769,7 @@
           "phone2",
           "email",
           "is_company",
+          "vat_registered",
           "company_requisites",
           "notes",
           "archived",
@@ -5793,6 +5840,17 @@
               }
             ],
             "title": "Is Company"
+          },
+          "vat_registered": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vat Registered"
           },
           "company_requisites": {
             "anyOf": [

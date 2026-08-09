@@ -54,3 +54,25 @@ def is_valid_eik(value: str) -> bool:
     risk rejecting a valid business. Expects an already-normalized value
     (see normalize_eik)."""
     return value.isdigit() and len(value) in (9, 13)
+
+
+def normalize_vat_number(value: str) -> str:
+    """BG VAT identification number: strip incidental surrounding whitespace,
+    uppercase only the "bg"/"Bg"/etc. prefix (never the digits, which are
+    numeric anyway) — same trim-before-validate convention as normalize_eik.
+    Does not validate format; see is_valid_vat_number."""
+    stripped = value.strip()
+    if stripped[:2].lower() == "bg":
+        return "BG" + stripped[2:].strip()
+    return stripped
+
+
+def is_valid_vat_number(value: str) -> bool:
+    """Conservative structural check only, mirroring is_valid_eik: a BG VAT
+    number is law-confirmed (docs/ACCOUNTANT_REVIEW.md §3 R2) to be
+    `"BG" + ЕИК` — never an independently issued value — so the digit
+    portion must satisfy the exact same 9-or-13-digit shape as an EIK. No
+    checksum/modulus algorithm and no registry lookup, for the same reason
+    is_valid_eik stays permissive. Expects an already-normalized value (see
+    normalize_vat_number)."""
+    return value[:2] == "BG" and is_valid_eik(value[2:])

@@ -45,7 +45,7 @@ describe("CustomerStep create flow", () => {
 
     expect(api.post).toHaveBeenCalledWith("/customers", {
       name: "Иван Петров", phone: "0888123456", email: null,
-      is_company: false, company_requisites: null,
+      is_company: false, vat_registered: null, company_requisites: null,
     });
     expect(onResolved).toHaveBeenCalledWith(
       expect.objectContaining({ id: "c1", name: "Иван Петров", phone: "0888123456" }),
@@ -101,8 +101,55 @@ describe("CustomerStep create flow", () => {
 
     expect(api.post).toHaveBeenCalledWith("/customers", {
       name: "Пример ЕООД", phone: "029001122", email: null,
-      is_company: true,
-      company_requisites: { address: "гр. София", eik: "130489869" },
+      is_company: true, vat_registered: null,
+      company_requisites: { address: "гр. София", eik: "130489869", vat_number: null },
     });
+  });
+
+  it("creates a VAT-registered company customer with the VAT number", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.post).mockResolvedValue({
+      id: "c3", name: "ДДС ЕООД", phone: "029001133", archived: false, duplicate_ids: [],
+    });
+    renderStep();
+
+    await enterCreateMode(user);
+    await user.type(screen.getByPlaceholderText("Име"), "ДДС ЕООД");
+    await user.type(screen.getByPlaceholderText("Телефон"), "029001133");
+    await user.click(screen.getByRole("button", { name: "Фирма" }));
+    await user.type(screen.getByLabelText("Адрес"), "гр. Варна");
+    await user.type(screen.getByLabelText("ЕИК / БУЛСТАТ"), "130489869");
+    await user.click(screen.getByRole("button", { name: "Да" }));
+    await user.type(screen.getByLabelText("ДДС номер"), "BG130489869");
+    await user.click(screen.getByRole("button", { name: "Продължи" }));
+
+    expect(api.post).toHaveBeenCalledWith("/customers", {
+      name: "ДДС ЕООД", phone: "029001133", email: null,
+      is_company: true, vat_registered: true,
+      company_requisites: { address: "гр. Варна", eik: "130489869", vat_number: "BG130489869" },
+    });
+  });
+
+  it("defaults new company customers to unknown VAT status with an explanatory hint", async () => {
+    const user = userEvent.setup();
+    renderStep();
+    await enterCreateMode(user);
+
+    await user.click(screen.getByRole("button", { name: "Фирма" }));
+
+    expect(screen.getByRole("button", { name: "Не е проверено" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText(/не може да бъде издадена фактура/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("ДДС номер")).not.toBeInTheDocument();
+  });
+
+  it("the VAT-number input only appears once 'Да' is selected", async () => {
+    const user = userEvent.setup();
+    renderStep();
+    await enterCreateMode(user);
+    await user.click(screen.getByRole("button", { name: "Фирма" }));
+
+    expect(screen.queryByLabelText("ДДС номер")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Да" }));
+    expect(screen.getByLabelText("ДДС номер")).toBeInTheDocument();
   });
 });
