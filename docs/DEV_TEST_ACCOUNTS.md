@@ -5,13 +5,18 @@ for ordinary smoke testing.
 
 ## Vendor Console (`/vendor/login`)
 
-- Email: `vendor@dev.local`
+- Email: `vendor@example.com`
 - Password: `DevVendor123!`
 
 ## RepairFlow Tenant — "RepairFlow Demo Service" (`/login`)
 
-- Owner: `owner@dev.local` / `DevOwner123!` / PIN `1234`
-- Worker: `worker@dev.local` / `DevWorker123!` / PIN `4321`
+- Owner: `owner@example.com` / `DevOwner123!` / PIN `1234`
+- Worker: `worker@example.com` / `DevWorker123!` / PIN `4321`
+
+`.local` addresses were tried first but are rejected by Pydantic's `EmailStr`
+(`.local` is an IANA special-use/reserved TLD) — every login request 400s
+before the password is ever checked. `example.com` (RFC 2606 reserved for
+documentation/testing) passes `EmailStr` and is what's actually stored.
 
 ## Recreating them
 
@@ -20,10 +25,10 @@ If the dev database is ever reset, recreate the Vendor + Tenant + Owner with:
 ```bash
 cd backend
 SERVICEFLOW_PLATFORM_ADMIN_PASSWORD='DevVendor123!' \
-  uv run python -m business_os.platform_admin.bootstrap "Dev Vendor Admin" vendor@dev.local
+  uv run python -m business_os.platform_admin.bootstrap "Dev Vendor Admin" vendor@example.com
 
 uv run python -m serviceflow.seed "RepairFlow Demo Service" "Demo Owner" \
-  owner@dev.local DevOwner123! 1234
+  owner@example.com DevOwner123! 1234
 ```
 
 Both commands are idempotent — safe to rerun, and rerunning never changes an
