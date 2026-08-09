@@ -29,6 +29,10 @@ export interface SellerSnapshot {
 
 export interface BuyerSnapshot {
   name: string;
+  address?: string;
+  eik?: string;
+  vat_registered?: boolean;
+  vat_number?: string;
 }
 
 export interface InvoiceDetailOut extends InvoiceOut {

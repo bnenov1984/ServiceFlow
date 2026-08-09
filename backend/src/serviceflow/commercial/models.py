@@ -8,9 +8,10 @@ Invoice migration would add it) — migration 0009 fulfills that.
 
 Invoice creation is prefilled from an order's part/labor lines (via
 service_orders' public contract, never its internal models); drafts are
-freely line-editable. Issue (Phase A only — non-VAT-registered seller,
-individual buyer, docs/ACCOUNTANT_REVIEW.md 'RepairFlow Invoice V1 Freeze'
-§5) atomically assigns `number`/`issued_at`/`tax_event_date`/`seller`/
+freely line-editable. Issue (non-VAT-registered seller only; buyer may be an
+individual or a domestic company, VAT-registered or not — docs/
+ACCOUNTANT_REVIEW.md 'RepairFlow Invoice V1 Freeze' §5 / §4 B1) atomically
+assigns `number`/`issued_at`/`tax_event_date`/`seller`/
 `buyer`/`net`/`vat`/`gross` and freezes the row (`commercial/service.py`'s
 `issue()`); `commercial/pdf.py` renders that frozen snapshot on demand.
 `annuls_invoice_id`/`annul_reason`/`pdf_storage_key` stay unset — annul/

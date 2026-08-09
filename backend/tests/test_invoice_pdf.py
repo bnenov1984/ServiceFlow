@@ -1,8 +1,9 @@
-"""Issued Invoice PDF (Phase A only, docs/ACCOUNTANT_REVIEW.md 'RepairFlow
-Invoice V1 Freeze' §5/§11): GET /invoices/{id}/invoice.pdf. Read-only —
+"""Issued Invoice PDF (docs/ACCOUNTANT_REVIEW.md 'RepairFlow Invoice V1
+Freeze' §5/§11 and §4 B1): GET /invoices/{id}/invoice.pdf. Read-only —
 generated fresh from the frozen Invoice/InvoiceLine snapshot on every
-request, never from live Company/Customer data. See
-commercial/pdf.py's module docstring for the exact rationale."""
+request, never from live Company/Customer data. Covers individual and
+domestic company (VAT-registered or not) buyers. See commercial/pdf.py's
+module docstring for the exact rationale."""
 
 import os
 
@@ -37,9 +38,19 @@ def _ready_seller(client: TestClient, h: dict[str, str], eik: str = VALID_EIK) -
 
 
 def _order(client: TestClient, h: dict[str, str], *,
-          customer_name: str = "Иван Петров") -> str:
-    cid = client.post("/api/v1/customers", headers=h,
-                      json={"name": customer_name, "phone": "0888111222"}).json()["id"]
+          customer_name: str = "Иван Петров", is_company: bool = False,
+          vat_registered: bool | None = None,
+          company_address: str | None = "гр. Пловдив",
+          company_eik: str | None = VALID_EIK,
+          vat_number: str | None = None) -> str:
+    payload: dict[str, object] = {"name": customer_name, "phone": "0888111222"}
+    if is_company:
+        payload["is_company"] = True
+        payload["vat_registered"] = vat_registered
+        payload["company_requisites"] = {
+            "address": company_address, "eik": company_eik, "vat_number": vat_number,
+        }
+    cid = client.post("/api/v1/customers", headers=h, json=payload).json()["id"]
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
         "asset_type_code": "phone", "field_values": {"brand": "Apple"},
     }).json()["id"]
@@ -160,6 +171,33 @@ def test_frozen_buyer_name_rendered(client: TestClient) -> None:
     text = _extract_pdf_text(r.content)
     assert "Мария Иванова" in text
     assert "ПОЛУЧАТЕЛ" in text
+
+
+def test_non_vat_company_buyer_pdf_renders_address_and_eik(client: TestClient) -> None:
+    h = _login(client)
+    _ready_seller(client, h)
+    invoice_id = _issued_invoice(client, h, customer_name="Пример ЕООД", is_company=True,
+                                 vat_registered=False, company_address="гр. Пловдив")
+
+    r = client.get(f"/api/v1/invoices/{invoice_id}/invoice.pdf", headers=h)
+    text = _extract_pdf_text(r.content)
+    assert "Пример ЕООД" in text
+    assert "гр. Пловдив" in text
+    assert VALID_EIK in text
+    assert "ДДС №:" not in text
+
+
+def test_vat_registered_company_buyer_pdf_renders_vat_number(client: TestClient) -> None:
+    h = _login(client)
+    _ready_seller(client, h)
+    invoice_id = _issued_invoice(client, h, customer_name="ДДС ЕООД", is_company=True,
+                                 vat_registered=True, vat_number="BG130489869")
+
+    r = client.get(f"/api/v1/invoices/{invoice_id}/invoice.pdf", headers=h)
+    text = _extract_pdf_text(r.content)
+    assert "ДДС ЕООД" in text
+    assert "ДДС №:" in text
+    assert "BG130489869" in text
 
 
 def test_line_columns_rendered(client: TestClient) -> None:
@@ -300,6 +338,49 @@ def test_pdf_reflects_frozen_snapshot_not_live_master_data(client: TestClient) -
     assert after_edit == original
 
 
+def test_company_buyer_pdf_frozen_after_customer_edit(client: TestClient) -> None:
+    h = _login(client)
+    _ready_seller(client, h)
+    oid = _order_with_lines(client, h, customer_name="Пример ЕООД", is_company=True,
+                            vat_registered=True, company_address="гр. Пловдив",
+                            company_eik=VALID_EIK, vat_number="BG130489869")
+    invoice_id = _draft(client, h, oid)
+    _issue(client, h, invoice_id)
+
+    original = _extract_pdf_text(
+        client.get(f"/api/v1/invoices/{invoice_id}/invoice.pdf", headers=h).content,
+    )
+    assert "Пример ЕООД" in original
+    assert "BG130489869" in original
+
+    from sqlalchemy import select
+
+    from business_os.identity.models import User
+    from business_os.shared_kernel.db import bind_tenant_scope, open_session
+    from serviceflow.service_orders.models import ServiceOrder
+
+    for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
+        owner = db.scalar(select(User).where(User.email == "a@a.bg"))
+        assert owner is not None
+        bind_tenant_scope(db, owner.company_id)
+        order = db.get(ServiceOrder, oid)
+        assert order is not None
+        customer_id = order.customer_id
+    client.patch(f"/api/v1/customers/{customer_id}", headers=h, json={
+        "name": "Друго Име ООД",
+        "company_requisites": {
+            "address": "гр. Бургас", "eik": "175074752", "vat_number": "BG175074752",
+        },
+    })
+
+    after_edit = _extract_pdf_text(
+        client.get(f"/api/v1/invoices/{invoice_id}/invoice.pdf", headers=h).content,
+    )
+    assert after_edit == original
+    assert "Друго Име ООД" not in after_edit
+    assert "BG175074752" not in after_edit
+
+
 # --- Pagination / robustness -------------------------------------------
 
 
@@ -318,6 +399,25 @@ def test_multiple_lines_all_rendered(client: TestClient) -> None:
     text = _extract_pdf_text(r.content)
     for i in range(5):
         assert f"Част {i}" in text
+
+
+def test_long_company_buyer_address_wraps_without_failing(client: TestClient) -> None:
+    h = _login(client)
+    _ready_seller(client, h)
+    long_address = (
+        "гр. София, ж.к. Много Дълъг Квартал, бул. Изключително Дългото Име На Булеварда "
+        "№ 123, вход Б, етаж 7, апартамент 45, до автосервиз до голямата бензиностанция"
+    )
+    oid = _order_with_lines(client, h, customer_name="Пример ЕООД", is_company=True,
+                            vat_registered=False, company_address=long_address)
+    invoice_id = _draft(client, h, oid)
+    _issue(client, h, invoice_id)
+
+    r = client.get(f"/api/v1/invoices/{invoice_id}/invoice.pdf", headers=h)
+    assert r.status_code == 200
+    assert r.content.startswith(b"%PDF")
+    text = _extract_pdf_text(r.content)
+    assert "Много Дълъг Квартал" in text
 
 
 def test_long_description_wraps_without_failing(client: TestClient) -> None:

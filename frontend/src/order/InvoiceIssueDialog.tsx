@@ -17,6 +17,12 @@ export interface IssueErrorInfo {
   key: string;
 }
 
+const BUYER_RECOVERY_ERROR_KEYS = new Set([
+  "errors.invoices.buyer_incomplete",
+  "errors.invoices.buyer_vat_status_unknown",
+  "errors.invoices.buyer_vat_number_invalid",
+]);
+
 export function InvoiceIssueDialog({
   open,
   onClose,
@@ -25,6 +31,7 @@ export function InvoiceIssueDialog({
   error,
   draftTotal,
   defaultTaxEventDate,
+  customerId,
 }: {
   open: boolean;
   onClose: () => void;
@@ -33,6 +40,7 @@ export function InvoiceIssueDialog({
   error: IssueErrorInfo | null;
   draftTotal: number;
   defaultTaxEventDate: string;
+  customerId?: string;
 }) {
   const [taxEventDate, setTaxEventDate] = useState(defaultTaxEventDate);
 
@@ -77,6 +85,11 @@ export function InvoiceIssueDialog({
             {error.key === "errors.invoices.seller_incomplete" && (
               <Link to="/settings/company" className="font-medium underline">
                 {t("order.invoice_issue_settings_link")}
+              </Link>
+            )}
+            {customerId && BUYER_RECOVERY_ERROR_KEYS.has(error.key) && (
+              <Link to={`/customers/${customerId}`} className="font-medium underline">
+                {t("order.invoice_issue_customer_link")}
               </Link>
             )}
           </div>

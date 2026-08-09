@@ -11,9 +11,10 @@ prefilled from the order's lines (via service_orders' public contract —
 never its internal models), GET lists/reads, PATCH replaces the line set
 (drafts only, docs/09 lists no separate invoice_lines sub-resource, unlike
 part-lines/labor-lines), POST .../issue transitions draft -> issued
-(Phase A only — non-VAT-registered seller, individual buyer; see
-commercial/service.py's `issue()`), GET .../invoice.pdf renders the issued
-document (Phase A only; see commercial/pdf.py). No annul/reissue endpoints
+(non-VAT-registered seller only; buyer may be an individual or a domestic
+company, VAT-registered or not — see commercial/service.py's `issue()`),
+GET .../invoice.pdf renders the issued document (same buyer coverage; see
+commercial/pdf.py). No annul/reissue endpoints
 and no `?q=` search yet (see commercial/models.py's module docstring).
 
 GET /invoices doubles as the central invoice list (frontend's /invoices

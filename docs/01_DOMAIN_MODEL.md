@@ -199,10 +199,14 @@ Attributes are business attributes, not columns.
 - **Lifecycle:** **Draft → Issued → (Annulled)**. Drafts are editable and unnumbered.
   Issue assigns the next number and freezes the document. Corrections = annul +
   reissue; issued invoices are never edited (legal requirement). **Phase A Issue
-  implemented** (docs/ACCOUNTANT_REVIEW.md 'RepairFlow Invoice V1 Freeze' §5):
-  non-VAT-registered seller, individual buyer only — a VAT-registered seller or a
-  company buyer is explicitly rejected, not silently mishandled. Annul/reissue,
-  VAT-registered-seller Issue, and company-buyer Issue remain future slices.
+  implemented, buyer support extended to domestic companies** (docs/ACCOUNTANT_REVIEW.md
+  'RepairFlow Invoice V1 Freeze' §5 / §4 B1): non-VAT-registered seller only — a
+  VAT-registered seller is explicitly rejected, not silently mishandled. The buyer
+  may be an individual, or a domestic company (VAT-registered or not, given a known
+  `vat_registered` status and, when VAT-registered, a valid VAT number); a company
+  buyer whose VAT-registration status is not yet established is explicitly rejected.
+  The buyer's VAT status never changes the (still non-VAT-registered) seller's VAT
+  calculation. Annul/reissue and VAT-registered-seller Issue remain future slices.
   **Phase A PDF implemented** (`GET /invoices/{id}/invoice.pdf`,
   docs/ACCOUNTANT_REVIEW.md §11): every issued Phase-A invoice has a printable/
   downloadable PDF representation, generated on demand from the frozen

@@ -144,7 +144,7 @@ export function OrderPage() {
             paidAmount={order.paid_amount}
             balance={order.balance}
           />
-          <InvoiceCard orderId={order.id} deliveredAt={order.delivered_at} />
+          <InvoiceCard orderId={order.id} deliveredAt={order.delivered_at} customerId={order.customer_id} />
         </div>
 
         <div className="flex flex-col gap-4">

@@ -92,7 +92,20 @@ export function IssuedInvoiceView({
           <h4 className="text-xs font-medium uppercase tracking-wide text-slate-500">
             {t("order.invoice_buyer")}
           </h4>
-          {invoice.buyer && <p className="mt-1 text-sm text-slate-700">{invoice.buyer.name}</p>}
+          {invoice.buyer && (
+            <div className="mt-1 text-sm text-slate-700">
+              <p>{invoice.buyer.name}</p>
+              {invoice.buyer.address !== undefined && (
+                <p>{t("order.invoice_buyer_address_prefix")} {invoice.buyer.address}</p>
+              )}
+              {invoice.buyer.eik !== undefined && (
+                <p>{t("order.invoice_buyer_eik_prefix")} {invoice.buyer.eik}</p>
+              )}
+              {invoice.buyer.vat_number !== undefined && (
+                <p>{t("order.invoice_buyer_vat_number_prefix")} {invoice.buyer.vat_number}</p>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

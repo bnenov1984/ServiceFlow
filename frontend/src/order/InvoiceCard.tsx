@@ -27,8 +27,8 @@ import { IssuedInvoiceView } from "./IssuedInvoiceView";
 import type { InvoiceOut } from "./invoiceTypes";
 
 export function InvoiceCard({
-  orderId, deliveredAt,
-}: { orderId: string; deliveredAt: string | null }) {
+  orderId, deliveredAt, customerId,
+}: { orderId: string; deliveredAt: string | null; customerId?: string }) {
   const [open, setOpen] = useState(false);
 
   const { data: invoices, isLoading } = useQuery({
@@ -69,6 +69,7 @@ export function InvoiceCard({
               invoiceId={invoice.id}
               orderId={orderId}
               deliveredAt={deliveredAt}
+              customerId={customerId}
               onClose={() => setOpen(false)}
             />
           )}

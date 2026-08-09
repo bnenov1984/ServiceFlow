@@ -42,6 +42,7 @@ interface OrderSummary {
   id: string;
   number: string;
   delivered_at: string | null;
+  customer_id: string;
 }
 
 export function InvoiceDetailPage() {
@@ -140,6 +141,7 @@ export function InvoiceDetailPage() {
             invoiceId={invoice.id}
             orderId={invoice.order_id}
             deliveredAt={order?.delivered_at ?? null}
+            customerId={order?.customer_id}
             embedded={false}
           />
         ) : (

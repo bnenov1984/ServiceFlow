@@ -21,7 +21,7 @@ vi.mock("../auth/AuthContext", () => ({
 
 const orderId = "order-1";
 
-function renderCard(deliveredAt: string | null = null, isOwner = true) {
+function renderCard(deliveredAt: string | null = null, isOwner = true, customerId?: string) {
   mockUseAuth.mockReturnValue({ me: { is_owner: isOwner } });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const Wrapper = ({ children }: { children: ReactNode }) => (
@@ -31,7 +31,10 @@ function renderCard(deliveredAt: string | null = null, isOwner = true) {
       </ToastProvider>
     </QueryClientProvider>
   );
-  const view = render(<InvoiceCard orderId={orderId} deliveredAt={deliveredAt} />, { wrapper: Wrapper });
+  const view = render(
+    <InvoiceCard orderId={orderId} deliveredAt={deliveredAt} customerId={customerId} />,
+    { wrapper: Wrapper },
+  );
   return { ...view, client };
 }
 
@@ -68,6 +71,19 @@ const issuedDetail = {
   buyer: { name: "Иван Петров" },
   vat_mode: "not_registered",
   net: 150, vat: 0, gross: 150,
+};
+
+const nonVatCompanyIssuedDetail = {
+  ...issuedDetail,
+  buyer: { name: "Пример ЕООД", address: "гр. Пловдив", eik: "130489869", vat_registered: false },
+};
+
+const vatCompanyIssuedDetail = {
+  ...issuedDetail,
+  buyer: {
+    name: "ДДС ЕООД", address: "гр. Варна", eik: "130489869",
+    vat_registered: true, vat_number: "BG130489869",
+  },
 };
 
 function mockDraftFlow(): void {
@@ -297,6 +313,18 @@ describe("InvoiceCard", () => {
     )).toBeInTheDocument();
   });
 
+  it("does not show any permanent company-buyer warning by default", async () => {
+    const user = userEvent.setup();
+    mockDraftFlow();
+    renderCard();
+
+    await openIssueDialog(user);
+    expect(screen.queryByText(
+      "Фактури към фирми клиенти все още не се поддържат в тази версия.",
+    )).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("shows an editable tax event date field", async () => {
     const user = userEvent.setup();
     mockDraftFlow();
@@ -347,6 +375,19 @@ describe("InvoiceCard", () => {
   it("confirm sends exactly { tax_event_date }", async () => {
     const user = userEvent.setup();
     mockIssueSuccess();
+    renderCard("2026-02-10T00:00:00Z");
+
+    await openIssueDialog(user);
+    await user.click(dialogConfirmButton());
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+      "/invoices/inv-1/issue", { tax_event_date: "2026-02-10" },
+    ));
+  });
+
+  it("sends exactly { tax_event_date } even when the resolved buyer is a company", async () => {
+    const user = userEvent.setup();
+    mockIssueSuccess(nonVatCompanyIssuedDetail);
     renderCard("2026-02-10T00:00:00Z");
 
     await openIssueDialog(user);
@@ -457,6 +498,36 @@ describe("InvoiceCard", () => {
 
     await screen.findByText("Фактура № 0000000001");
     expect(screen.getByText("Иван Петров")).toBeInTheDocument();
+  });
+
+  it("displays a non-VAT company buyer snapshot with address and EIK, no VAT number", async () => {
+    const user = userEvent.setup();
+    mockIssueSuccess(nonVatCompanyIssuedDetail);
+    renderCard("2026-02-10T00:00:00Z");
+
+    await openIssueDialog(user);
+    await user.click(dialogConfirmButton());
+
+    await screen.findByText("Фактура № 0000000001");
+    expect(screen.getByText("Пример ЕООД")).toBeInTheDocument();
+    expect(screen.getByText("Адрес: гр. Пловдив")).toBeInTheDocument();
+    expect(screen.getByText("ЕИК: 130489869")).toBeInTheDocument();
+    expect(screen.queryByText(/ДДС №:/)).not.toBeInTheDocument();
+  });
+
+  it("displays a VAT-registered company buyer snapshot including the VAT number", async () => {
+    const user = userEvent.setup();
+    mockIssueSuccess(vatCompanyIssuedDetail);
+    renderCard("2026-02-10T00:00:00Z");
+
+    await openIssueDialog(user);
+    await user.click(dialogConfirmButton());
+
+    await screen.findByText("Фактура № 0000000001");
+    expect(screen.getByText("ДДС ЕООД")).toBeInTheDocument();
+    expect(screen.getByText("Адрес: гр. Варна")).toBeInTheDocument();
+    expect(screen.getByText("ЕИК: 130489869")).toBeInTheDocument();
+    expect(screen.getByText("ДДС №: BG130489869")).toBeInTheDocument();
   });
 
   it("shows net/vat/gross from the Issue response, not recomputed", async () => {
@@ -587,20 +658,76 @@ describe("InvoiceCard", () => {
     );
   });
 
-  it("shows the Phase-A limitation message for a company buyer", async () => {
+  it("shows an actionable, recoverable message when the buyer's VAT status is unknown", async () => {
     const user = userEvent.setup();
     mockDraftFlow();
     vi.mocked(api.post).mockRejectedValue(
-      new ApiError(409, "invoice_error", "errors.invoices.company_buyer_unsupported"),
+      new ApiError(409, "invoice_error", "errors.invoices.buyer_vat_status_unknown"),
     );
-    renderCard();
+    renderCard(null, true, "cust-1");
 
     await openIssueDialog(user);
     await user.click(dialogConfirmButton());
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Фактури към фирми клиенти все още не се поддържат в тази версия.",
+      "Уточнете дали клиентът е регистриран по ДДС.",
     );
+    expect(screen.getByRole("link", { name: "Данни за клиента" })).toHaveAttribute(
+      "href", "/customers/cust-1",
+    );
+  });
+
+  it("shows an actionable, recoverable message when the buyer's company data is incomplete", async () => {
+    const user = userEvent.setup();
+    mockDraftFlow();
+    vi.mocked(api.post).mockRejectedValue(
+      new ApiError(409, "invoice_error", "errors.invoices.buyer_incomplete"),
+    );
+    renderCard(null, true, "cust-1");
+
+    await openIssueDialog(user);
+    await user.click(dialogConfirmButton());
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Попълнете фирмените данни на клиента преди издаване на фактура.",
+    );
+    expect(screen.getByRole("link", { name: "Данни за клиента" })).toHaveAttribute(
+      "href", "/customers/cust-1",
+    );
+  });
+
+  it("shows an actionable, recoverable message for an invalid buyer VAT number", async () => {
+    const user = userEvent.setup();
+    mockDraftFlow();
+    vi.mocked(api.post).mockRejectedValue(
+      new ApiError(409, "invoice_error", "errors.invoices.buyer_vat_number_invalid"),
+    );
+    renderCard(null, true, "cust-1");
+
+    await openIssueDialog(user);
+    await user.click(dialogConfirmButton());
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Въведете валиден ДДС номер за клиента.",
+    );
+    expect(screen.getByRole("link", { name: "Данни за клиента" })).toHaveAttribute(
+      "href", "/customers/cust-1",
+    );
+  });
+
+  it("omits the customer recovery link when no customerId is available", async () => {
+    const user = userEvent.setup();
+    mockDraftFlow();
+    vi.mocked(api.post).mockRejectedValue(
+      new ApiError(409, "invoice_error", "errors.invoices.buyer_incomplete"),
+    );
+    renderCard(); // no customerId
+
+    await openIssueDialog(user);
+    await user.click(dialogConfirmButton());
+
+    await screen.findByRole("alert");
+    expect(screen.queryByRole("link", { name: "Данни за клиента" })).not.toBeInTheDocument();
   });
 
   it("renders a subscription-blocked failure with the standard message", async () => {

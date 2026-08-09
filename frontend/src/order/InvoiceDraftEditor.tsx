@@ -67,9 +67,9 @@ function defaultTaxEventDate(deliveredAt: string | null): string {
 }
 
 export function InvoiceDraftEditor({
-  invoiceId, orderId, deliveredAt, onClose, embedded = true,
+  invoiceId, orderId, deliveredAt, customerId, onClose, embedded = true,
 }: {
-  invoiceId: string; orderId: string; deliveredAt: string | null;
+  invoiceId: string; orderId: string; deliveredAt: string | null; customerId?: string;
   onClose?: () => void; embedded?: boolean;
 }) {
   const { me } = useAuth();
@@ -339,6 +339,7 @@ export function InvoiceDraftEditor({
           error={issueError}
           draftTotal={invoice.draft_total}
           defaultTaxEventDate={defaultTaxEventDate(deliveredAt)}
+          customerId={customerId}
         />
       )}
     </div>

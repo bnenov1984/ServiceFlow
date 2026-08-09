@@ -139,6 +139,9 @@ export const bg = {
   "errors.invoices.seller_incomplete": "Попълнете фирмените реквизити (адрес и ЕИК) преди издаване на фактура.",
   "errors.invoices.seller_vat_unsupported": "Издаването на фактури от фирми, регистрирани по ДДС, все още не се поддържа.",
   "errors.invoices.company_buyer_unsupported": "Фактури към фирми клиенти все още не се поддържат в тази версия.",
+  "errors.invoices.buyer_incomplete": "Попълнете фирмените данни на клиента преди издаване на фактура.",
+  "errors.invoices.buyer_vat_status_unknown": "Уточнете дали клиентът е регистриран по ДДС.",
+  "errors.invoices.buyer_vat_number_invalid": "Въведете валиден ДДС номер за клиента.",
   "errors.invoices.vat_state_invalid": "Тази чернова съдържа ред с ДДС ставка, което текущата версия не поддържа.",
   "errors.invoices.not_issued": "PDF има само издадена фактура.",
 
@@ -228,6 +231,7 @@ export const bg = {
   "order.invoice_issue_warning": "След издаването фактурата получава окончателен номер и повече не може да бъде редактирана.",
   "order.invoice_issue_tax_event_date": "Дата на данъчно събитие",
   "order.invoice_issue_settings_link": "Настройки → Фирма",
+  "order.invoice_issue_customer_link": "Данни за клиента",
   "order.invoice_status_issued": "Издадена",
   // No annul workflow exists in the UI yet (backend-only enum value) — kept
   // so the central invoice list (invoices/InvoicesPage.tsx) can still render
@@ -237,6 +241,9 @@ export const bg = {
   "order.invoice_issued_at": "Издадена на",
   "order.invoice_seller": "Продавач",
   "order.invoice_buyer": "Купувач",
+  "order.invoice_buyer_address_prefix": "Адрес:",
+  "order.invoice_buyer_eik_prefix": "ЕИК:",
+  "order.invoice_buyer_vat_number_prefix": "ДДС №:",
   "order.invoice_net": "Данъчна основа",
   "order.invoice_vat_not_charged": "ДДС: не се начислява",
   "order.invoice_gross": "Общо",

@@ -7,10 +7,14 @@ second part; `issue()` is the third; `get_issued()` (the PDF endpoint's
 fetch-and-status-check, commercial/pdf.py does the actual rendering) is the
 fourth; `list_invoices()`'s pagination + `draft_totals()` (batch, one query
 per page regardless of row count) back the central invoice list
-(commercial/router.py's `list_invoices` endpoint) as the fifth — annul/reissue
-and VAT-registered-seller/company-buyer support are still a later slice (see
-commercial/models.py docstring and docs/ACCOUNTANT_REVIEW.md's 'RepairFlow
-Invoice V1 Freeze' §5, Phase-A scope)."""
+(commercial/router.py's `list_invoices` endpoint) as the fifth. Buyer support
+now covers individuals and domestic company buyers (VAT-registered or not,
+docs/ACCOUNTANT_REVIEW.md §4 B1) — see `_buyer_snapshot()`. The seller side
+remains non-VAT-registered only (`errors.invoices.seller_vat_unsupported`);
+VAT-registered-seller support, annul/reissue, and cross-border B2B are still
+later slices (see commercial/models.py docstring and
+docs/ACCOUNTANT_REVIEW.md's 'RepairFlow Invoice V1 Freeze' §5, Phase-A
+scope)."""
 
 import uuid
 from collections.abc import Iterable
@@ -24,7 +28,12 @@ from sqlalchemy.orm import Session
 from business_os.identity import contracts as identity_contracts
 from business_os.shared_kernel.db import TenantContext, scoped
 from business_os.shared_kernel.events import DomainEvent, publish
-from business_os.shared_kernel.normalize import is_valid_eik, normalize_eik
+from business_os.shared_kernel.normalize import (
+    is_valid_eik,
+    is_valid_vat_number,
+    normalize_eik,
+    normalize_vat_number,
+)
 from serviceflow.commercial.models import Invoice, InvoiceLine, Payment
 from serviceflow.customers import contracts as customers_contracts
 from serviceflow.service_orders import contracts as orders_contracts
@@ -196,8 +205,47 @@ def replace_lines(db: Session, ctx: TenantContext, invoice: Invoice,
     return invoice
 
 
-# --- Issue (Phase A only: non-VAT-registered seller, individual buyer —
-# docs/ACCOUNTANT_REVIEW.md 'RepairFlow Invoice V1 Freeze' §5) --------------
+# --- Issue (non-VAT-registered seller only; buyer may be an individual or a
+# domestic company, VAT-registered or not — docs/ACCOUNTANT_REVIEW.md
+# 'RepairFlow Invoice V1 Freeze' §5 / §4 B1) --------------------------------
+
+
+def _buyer_snapshot(customer: customers_contracts.CustomerSummary) -> dict[str, Any]:
+    """Validates the buyer and builds the exact JSON to freeze into
+    `Invoice.buyer`. Individual buyers are unchanged (`{"name": ...}`).
+    Company buyers require name/address/ЕИК plus an explicitly-known
+    `vat_registered` state (NULL is rejected, never silently treated as
+    False): not VAT-registered buyers snapshot without a VAT number even if
+    stale JSON left one behind; VAT-registered buyers require one, revalidated
+    here rather than trusted from historical JSON (mirrors the seller-side
+    EIK re-check above). The buyer's own VAT-registration status never
+    affects the seller's VAT calculation — the seller is still non-VAT-
+    registered, so vat_mode/vat/gross are unaffected by any of this."""
+    if not customer.is_company:
+        return {"name": customer.name}
+
+    requisites = customer.company_requisites or {}
+    address = requisites.get("address")
+    eik_raw = requisites.get("eik")
+    eik = normalize_eik(eik_raw) if eik_raw else None
+    if not customer.name or not address or not eik or not is_valid_eik(eik):
+        raise InvoiceError("errors.invoices.buyer_incomplete")
+
+    if customer.vat_registered is None:
+        raise InvoiceError("errors.invoices.buyer_vat_status_unknown")
+
+    if customer.vat_registered is False:
+        return {"name": customer.name, "address": address, "eik": eik, "vat_registered": False}
+
+    vat_number_raw = requisites.get("vat_number")
+    vat_number = normalize_vat_number(vat_number_raw) if vat_number_raw else None
+    if not vat_number or not is_valid_vat_number(vat_number):
+        raise InvoiceError("errors.invoices.buyer_vat_number_invalid")
+
+    return {
+        "name": customer.name, "address": address, "eik": eik,
+        "vat_registered": True, "vat_number": vat_number,
+    }
 
 
 def issue(db: Session, ctx: TenantContext, invoice_id: uuid.UUID,
@@ -251,10 +299,7 @@ def issue(db: Session, ctx: TenantContext, invoice_id: uuid.UUID,
     assert order is not None  # invoice.order_id is a real FK; scoped() already proved same-tenant
     customer = customers_contracts.get_customer_summary(db, ctx, order.customer_id)
     assert customer is not None  # same: a real FK, same-tenant by construction
-    if customer.is_company:
-        raise InvoiceError("errors.invoices.company_buyer_unsupported")
-    # Customer.name is NOT NULL at the schema level — no reachable "buyer
-    # incomplete" failure exists for an individual buyer to check for.
+    buyer_snapshot = _buyer_snapshot(customer)
 
     assert invoice.currency == "EUR"  # the only value any write path has ever set (server_default)
 
@@ -274,7 +319,7 @@ def issue(db: Session, ctx: TenantContext, invoice_id: uuid.UUID,
         "name": company.name, "address": seller_address, "eik": seller_eik,
         "vat_registered": False,
     }
-    invoice.buyer = {"name": customer.name}
+    invoice.buyer = buyer_snapshot
     invoice.vat_mode = "not_registered"
     invoice.net = net
     invoice.vat = vat

@@ -1,8 +1,10 @@
-"""Phase-A Invoice Issue (docs/ACCOUNTANT_REVIEW.md 'RepairFlow Invoice V1
-Freeze' §5): POST /invoices/{id}/issue. Supports ONLY a non-VAT-registered
-seller and an individual (non-company) buyer — everything else must fail
-deterministically before number allocation. See commercial/service.py's
-`issue()` for the exact transaction algorithm this exercises."""
+"""Invoice Issue (docs/ACCOUNTANT_REVIEW.md 'RepairFlow Invoice V1 Freeze'
+§5 / §4 B1): POST /invoices/{id}/issue. Supports ONLY a non-VAT-registered
+seller; the buyer may be an individual or a domestic company (VAT-registered
+or not) — everything else (VAT-registered seller, incomplete/unknown-VAT-
+status company buyer) must fail deterministically before number allocation.
+See commercial/service.py's `issue()` for the exact transaction algorithm
+this exercises."""
 
 import os
 import threading
@@ -42,12 +44,21 @@ def _ready_seller(client: TestClient, h: dict[str, str], eik: str = VALID_EIK) -
 
 
 def _order(client: TestClient, h: dict[str, str], *,
-          customer_name: str = "Иван", is_company: bool = False) -> str:
+          customer_name: str = "Иван", is_company: bool = False,
+          vat_registered: bool | None = None,
+          company_address: str | None = "гр. Пловдив",
+          company_eik: str | None = VALID_EIK,
+          vat_number: str | None = None) -> str:
     payload: dict[str, object] = {"name": customer_name, "phone": "0888111222"}
     if is_company:
         payload["is_company"] = True
-        payload["company_requisites"] = {"address": "гр. Пловдив", "eik": VALID_EIK}
-    cid = client.post("/api/v1/customers", headers=h, json=payload).json()["id"]
+        payload["vat_registered"] = vat_registered
+        payload["company_requisites"] = {
+            "address": company_address, "eik": company_eik, "vat_number": vat_number,
+        }
+    resp = client.post("/api/v1/customers", headers=h, json=payload)
+    assert resp.status_code == 201, resp.text
+    cid = resp.json()["id"]
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
         "asset_type_code": "phone", "field_values": {"brand": "Apple"},
     }).json()["id"]
@@ -134,6 +145,45 @@ def _timeline_events(order_id: str, event_type: str = "invoice_issued",
     raise AssertionError("unreachable")
 
 
+def _customer_id_for_order(order_id: str, owner_email: str = "a@a.bg") -> uuid_mod.UUID:
+    from sqlalchemy import select
+
+    from business_os.shared_kernel.db import bind_tenant_scope, open_session
+    from serviceflow.service_orders.models import ServiceOrder
+
+    company_id = _owner_company_id(owner_email)
+    for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
+        bind_tenant_scope(db, company_id)
+        order = db.scalar(select(ServiceOrder).where(ServiceOrder.id == uuid_mod.UUID(order_id)))
+        assert order is not None
+        return order.customer_id
+    raise AssertionError("unreachable")
+
+
+def _set_company_requisites_directly(customer_id: uuid_mod.UUID, requisites: dict[str, object],
+                                     owner_email: str = "a@a.bg") -> None:
+    """Bypasses `customers/router.py`'s Pydantic-level EIK/VAT-number format
+    validation and `customers/service.py`'s `_validate_vat_identity` — the
+    only way to put a Customer row into a state today's UI/API can no longer
+    produce (stale/legacy data), which is exactly what Issue's own defensive
+    re-validation (mirroring the seller-side EIK re-check) exists to guard
+    against."""
+    from sqlalchemy import select
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from business_os.shared_kernel.db import bind_tenant_scope, open_session
+    from serviceflow.customers.models import Customer
+
+    company_id = _owner_company_id(owner_email)
+    for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
+        bind_tenant_scope(db, company_id)
+        customer = db.scalar(select(Customer).where(Customer.id == customer_id))
+        assert customer is not None
+        customer.company_requisites = {**(customer.company_requisites or {}), **requisites}
+        flag_modified(customer, "company_requisites")
+        db.commit()
+
+
 # --- Happy path --------------------------------------------------------
 
 
@@ -179,6 +229,96 @@ def test_issued_invoice_is_reflected_on_get(client: TestClient) -> None:
     assert resp.status_code == 200
     assert resp.json()["status"] == "issued"
     assert resp.json()["number"] == 1
+
+
+def test_non_vat_company_buyer_issues_successfully(client: TestClient) -> None:
+    h = _login(client)
+    _ready_seller(client, h)
+    oid = _order_with_lines(client, h, customer_name="Пример ЕООД", is_company=True,
+                            vat_registered=False, company_address="гр. Пловдив",
+                            company_eik=VALID_EIK)
+    invoice_id = _draft(client, h, oid)
+
+    resp = _issue(client, h, invoice_id)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "issued"
+    assert body["buyer"] == {
+        "name": "Пример ЕООД", "address": "гр. Пловдив", "eik": VALID_EIK,
+        "vat_registered": False,
+    }
+    # Seller stays non-VAT-registered regardless of buyer type.
+    assert body["vat_mode"] == "not_registered"
+    assert body["net"] == 150.0
+    assert body["vat"] == 0.0
+    assert body["gross"] == 150.0
+
+    detail = client.get(f"/api/v1/invoices/{invoice_id}", headers=h).json()
+    assert detail["buyer"] == body["buyer"]
+
+
+def test_non_vat_company_buyer_stale_vat_number_not_copied(client: TestClient) -> None:
+    """A company customer may have a leftover vat_number in company_requisites
+    from before vat_registered was set back to False (docs' own "choosing
+    'Не' clears any draft VAT number from the save payload" UI behavior
+    notwithstanding — this proves the backend never trusts it either)."""
+    h = _login(client)
+    _ready_seller(client, h)
+    oid = _order_with_lines(client, h, customer_name="Пример ЕООД", is_company=True,
+                            vat_registered=False)
+    cid = _customer_id_for_order(oid)
+    _set_company_requisites_directly(cid, {"vat_number": "BG130489869"})
+    invoice_id = _draft(client, h, oid)
+
+    resp = _issue(client, h, invoice_id)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["buyer"] == {
+        "name": "Пример ЕООД", "address": "гр. Пловдив", "eik": VALID_EIK,
+        "vat_registered": False,
+    }
+    assert "vat_number" not in resp.json()["buyer"]
+
+
+def test_vat_registered_company_buyer_issues_successfully(client: TestClient) -> None:
+    h = _login(client)
+    _ready_seller(client, h)
+    oid = _order_with_lines(client, h, customer_name="ДДС ЕООД", is_company=True,
+                            vat_registered=True, company_address="гр. Варна",
+                            company_eik=VALID_EIK, vat_number="BG130489869")
+    invoice_id = _draft(client, h, oid)
+
+    resp = _issue(client, h, invoice_id)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["buyer"] == {
+        "name": "ДДС ЕООД", "address": "гр. Варна", "eik": VALID_EIK,
+        "vat_registered": True, "vat_number": "BG130489869",
+    }
+    # The buyer being VAT-registered never makes the (non-VAT) seller charge VAT.
+    assert body["vat_mode"] == "not_registered"
+    assert body["vat"] == 0.0
+    assert body["gross"] == body["net"]
+
+    detail = client.get(f"/api/v1/invoices/{invoice_id}", headers=h).json()
+    assert detail["buyer"] == body["buyer"]
+
+
+def test_vat_registered_company_buyer_vat_number_normalized(client: TestClient) -> None:
+    """The stored value only has incidental whitespace to strip (as if it
+    predates today's Customer-create-time normalization) — Issue must
+    still normalize it fresh rather than trust the stored bytes verbatim,
+    same defensive posture as the seller-side EIK re-check."""
+    h = _login(client)
+    _ready_seller(client, h)
+    oid = _order_with_lines(client, h, customer_name="ДДС ЕООД", is_company=True,
+                            vat_registered=True, vat_number="BG130489869")
+    cid = _customer_id_for_order(oid)
+    _set_company_requisites_directly(cid, {"vat_number": " BG130489869 "})
+    invoice_id = _draft(client, h, oid)
+
+    resp = _issue(client, h, invoice_id)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["buyer"]["vat_number"] == "BG130489869"
 
 
 # --- Validation ----------------------------------------------------------
@@ -242,15 +382,106 @@ def test_vat_registered_seller_rejected(client: TestClient) -> None:
     assert resp.json()["detail"]["message_key"] == "errors.invoices.seller_vat_unsupported"
 
 
-def test_company_buyer_rejected(client: TestClient) -> None:
+def test_company_buyer_vat_status_unknown_rejected(client: TestClient) -> None:
     h = _login(client)
     _ready_seller(client, h)
-    oid = _order_with_lines(client, h, is_company=True)
+    oid = _order_with_lines(client, h, is_company=True)  # vat_registered left at its NULL default
     invoice_id = _draft(client, h, oid)
 
     resp = _issue(client, h, invoice_id)
     assert resp.status_code == 409
-    assert resp.json()["detail"]["message_key"] == "errors.invoices.company_buyer_unsupported"
+    assert resp.json()["detail"]["message_key"] == "errors.invoices.buyer_vat_status_unknown"
+
+
+def test_company_buyer_missing_address_rejected(client: TestClient) -> None:
+    h = _login(client)
+    _ready_seller(client, h)
+    oid = _order_with_lines(client, h, is_company=True, vat_registered=False,
+                            company_address=None)
+    invoice_id = _draft(client, h, oid)
+
+    resp = _issue(client, h, invoice_id)
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["message_key"] == "errors.invoices.buyer_incomplete"
+
+
+def test_company_buyer_missing_eik_rejected(client: TestClient) -> None:
+    h = _login(client)
+    _ready_seller(client, h)
+    oid = _order_with_lines(client, h, is_company=True, vat_registered=False, company_eik=None)
+    invoice_id = _draft(client, h, oid)
+
+    resp = _issue(client, h, invoice_id)
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["message_key"] == "errors.invoices.buyer_incomplete"
+
+
+def test_company_buyer_invalid_eik_rejected(client: TestClient) -> None:
+    """Stale/legacy data only — today's Customer create/update path already
+    rejects a malformed EIK, so this simulates data that predates that
+    validation (mirrors the seller-side EIK re-check's own rationale)."""
+    h = _login(client)
+    _ready_seller(client, h)
+    oid = _order_with_lines(client, h, is_company=True, vat_registered=False)
+    cid = _customer_id_for_order(oid)
+    _set_company_requisites_directly(cid, {"eik": "123"})
+    invoice_id = _draft(client, h, oid)
+
+    resp = _issue(client, h, invoice_id)
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["message_key"] == "errors.invoices.buyer_incomplete"
+
+
+def test_company_buyer_vat_registered_missing_vat_number_rejected(client: TestClient) -> None:
+    """Stale/legacy data only — today's Customer path requires a vat_number
+    whenever vat_registered=True (customers/service.py's
+    `_validate_vat_identity`), so this simulates data from before that rule
+    existed, exercising Issue's own independent re-check."""
+    h = _login(client)
+    _ready_seller(client, h)
+    oid = _order_with_lines(client, h, is_company=True, vat_registered=True,
+                            vat_number="BG130489869")
+    cid = _customer_id_for_order(oid)
+    _set_company_requisites_directly(cid, {"vat_number": None})
+    invoice_id = _draft(client, h, oid)
+
+    resp = _issue(client, h, invoice_id)
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["message_key"] == "errors.invoices.buyer_vat_number_invalid"
+
+
+def test_company_buyer_vat_registered_invalid_vat_number_format_rejected(
+    client: TestClient,
+) -> None:
+    h = _login(client)
+    _ready_seller(client, h)
+    oid = _order_with_lines(client, h, is_company=True, vat_registered=True,
+                            vat_number="BG130489869")
+    cid = _customer_id_for_order(oid)
+    _set_company_requisites_directly(cid, {"vat_number": "FR130489869"})
+    invoice_id = _draft(client, h, oid)
+
+    resp = _issue(client, h, invoice_id)
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["message_key"] == "errors.invoices.buyer_vat_number_invalid"
+
+
+def test_vat_registered_seller_still_rejected_with_valid_company_buyer(
+    client: TestClient,
+) -> None:
+    """The buyer's VAT-registration status must never influence the
+    seller-side gate: even a fully valid, VAT-registered company buyer does
+    not unlock a VAT-registered seller."""
+    h = _login(client)
+    _ready_seller(client, h)
+    client.patch("/api/v1/company/requisites", headers=h, json={"vat_registered": True})
+    oid = _order_with_lines(client, h, is_company=True, vat_registered=True,
+                            vat_number="BG130489869")
+    invoice_id = _draft(client, h, oid)
+
+    resp = _issue(client, h, invoice_id)
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["message_key"] == "errors.invoices.seller_vat_unsupported"
 
 
 def test_non_null_line_vat_rate_rejected(client: TestClient) -> None:
@@ -383,7 +614,9 @@ def test_seller_incomplete_failure_consumes_no_number(client: TestClient) -> Non
     assert _timeline_events(oid) == []
 
 
-def test_company_buyer_failure_consumes_no_number(client: TestClient) -> None:
+def test_company_buyer_vat_status_unknown_failure_consumes_no_number(
+    client: TestClient,
+) -> None:
     from sqlalchemy import select
 
     from business_os.identity.models import User
@@ -392,6 +625,55 @@ def test_company_buyer_failure_consumes_no_number(client: TestClient) -> None:
     h = _login(client)
     _ready_seller(client, h)
     oid = _order_with_lines(client, h, is_company=True)
+    invoice_id = _draft(client, h, oid)
+
+    resp = _issue(client, h, invoice_id)
+    assert resp.status_code == 409
+
+    for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
+        owner = db.scalar(select(User).where(User.email == "a@a.bg"))
+        assert owner is not None
+        assert _sequence_current(owner.company_id) is None
+    assert _timeline_events(oid) == []
+
+
+def test_company_buyer_incomplete_failure_consumes_no_number(client: TestClient) -> None:
+    from sqlalchemy import select
+
+    from business_os.identity.models import User
+    from business_os.shared_kernel.db import open_session
+
+    h = _login(client)
+    _ready_seller(client, h)
+    oid = _order_with_lines(client, h, is_company=True, vat_registered=False,
+                            company_address=None)
+    invoice_id = _draft(client, h, oid)
+
+    resp = _issue(client, h, invoice_id)
+    assert resp.status_code == 409
+
+    for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
+        owner = db.scalar(select(User).where(User.email == "a@a.bg"))
+        assert owner is not None
+        assert _sequence_current(owner.company_id) is None
+    assert client.get(f"/api/v1/invoices/{invoice_id}", headers=h).json()["number"] is None
+    assert _timeline_events(oid) == []
+
+
+def test_company_buyer_vat_number_invalid_failure_consumes_no_number(
+    client: TestClient,
+) -> None:
+    from sqlalchemy import select
+
+    from business_os.identity.models import User
+    from business_os.shared_kernel.db import open_session
+
+    h = _login(client)
+    _ready_seller(client, h)
+    oid = _order_with_lines(client, h, is_company=True, vat_registered=True,
+                            vat_number="BG130489869")
+    cid = _customer_id_for_order(oid)
+    _set_company_requisites_directly(cid, {"vat_number": None})
     invoice_id = _draft(client, h, oid)
 
     resp = _issue(client, h, invoice_id)
@@ -770,3 +1052,76 @@ def test_buyer_snapshot_survives_later_customer_edit(client: TestClient) -> None
 
     buyer_after_edit = client.get(f"/api/v1/invoices/{invoice_id}", headers=h).json()["buyer"]
     assert buyer_after_edit == original_buyer
+
+
+def test_non_vat_company_buyer_snapshot_survives_later_customer_edits(client: TestClient) -> None:
+    h = _login(client)
+    _ready_seller(client, h)
+    oid = _order_with_lines(client, h, customer_name="Пример ЕООД", is_company=True,
+                            vat_registered=False, company_address="гр. Пловдив",
+                            company_eik=VALID_EIK)
+    cid = _customer_id_for_order(oid)
+    invoice_id = _draft(client, h, oid)
+    _issue(client, h, invoice_id)
+
+    original_buyer = client.get(f"/api/v1/invoices/{invoice_id}", headers=h).json()["buyer"]
+    assert original_buyer == {
+        "name": "Пример ЕООД", "address": "гр. Пловдив", "eik": VALID_EIK,
+        "vat_registered": False,
+    }
+
+    # Edit name, address, EIK, and flip vat_registered to True with a number —
+    # none of it may retroactively change the already-issued snapshot.
+    client.patch(f"/api/v1/customers/{cid}", headers=h, json={
+        "name": "Друго Име ООД",
+        "vat_registered": True,
+        "company_requisites": {
+            "address": "гр. Бургас", "eik": "175074752", "vat_number": "BG175074752",
+        },
+    })
+
+    buyer_after_edit = client.get(f"/api/v1/invoices/{invoice_id}", headers=h).json()["buyer"]
+    assert buyer_after_edit == original_buyer
+
+
+def test_vat_registered_company_buyer_snapshot_survives_vat_number_edit(
+    client: TestClient,
+) -> None:
+    h = _login(client)
+    _ready_seller(client, h)
+    oid = _order_with_lines(client, h, customer_name="ДДС ЕООД", is_company=True,
+                            vat_registered=True, vat_number="BG130489869")
+    cid = _customer_id_for_order(oid)
+    invoice_id = _draft(client, h, oid)
+    _issue(client, h, invoice_id)
+
+    original_buyer = client.get(f"/api/v1/invoices/{invoice_id}", headers=h).json()["buyer"]
+    assert original_buyer["vat_number"] == "BG130489869"
+
+    client.patch(f"/api/v1/customers/{cid}", headers=h, json={
+        "company_requisites": {
+            "address": "гр. Пловдив", "eik": VALID_EIK, "vat_number": "BG175074752",
+        },
+    })
+
+    buyer_after_edit = client.get(f"/api/v1/invoices/{invoice_id}", headers=h).json()["buyer"]
+    assert buyer_after_edit == original_buyer
+    assert buyer_after_edit["vat_number"] == "BG130489869"
+
+
+def test_cross_tenant_company_buyer_data_not_visible(client: TestClient) -> None:
+    """The buyer snapshot is resolved through customers_contracts, which is
+    itself scoped by TenantContext — this proves an issued company-buyer
+    invoice is invisible cross-tenant end to end, same as the plain
+    tenant-isolation test but exercising the company-buyer code path."""
+    h_a = _login(client, "Сервиз А", "a@a.bg")
+    _ready_seller(client, h_a)
+    oid = _order_with_lines(client, h_a, customer_name="Фирма А ЕООД", is_company=True,
+                            vat_registered=False)
+    invoice_id = _draft(client, h_a, oid)
+    assert _issue(client, h_a, invoice_id).status_code == 200
+    client.post("/api/v1/auth/logout", headers=h_a)
+
+    h_b = _login(client, "Сервиз Б", "b@b.bg")
+    resp = client.get(f"/api/v1/invoices/{invoice_id}", headers=h_b)
+    assert resp.status_code == 404

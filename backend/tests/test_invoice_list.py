@@ -37,9 +37,17 @@ def _ready_seller(client: TestClient, h: dict[str, str], eik: str = VALID_EIK) -
     assert resp.status_code == 200, resp.text
 
 
-def _order(client: TestClient, h: dict[str, str], *, customer_name: str = "Иван") -> str:
-    cid = client.post("/api/v1/customers", headers=h,
-                      json={"name": customer_name, "phone": "0888111222"}).json()["id"]
+def _order(client: TestClient, h: dict[str, str], *, customer_name: str = "Иван",
+          is_company: bool = False, vat_registered: bool | None = None,
+          vat_number: str | None = None) -> str:
+    payload: dict[str, object] = {"name": customer_name, "phone": "0888111222"}
+    if is_company:
+        payload["is_company"] = True
+        payload["vat_registered"] = vat_registered
+        payload["company_requisites"] = {
+            "address": "гр. Пловдив", "eik": VALID_EIK, "vat_number": vat_number,
+        }
+    cid = client.post("/api/v1/customers", headers=h, json=payload).json()["id"]
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
         "asset_type_code": "phone", "field_values": {"brand": "Apple"},
     }).json()["id"]
@@ -57,8 +65,8 @@ def _customer_id_for_order(client: TestClient, h: dict[str, str], oid: str) -> s
 
 
 def _order_with_lines(client: TestClient, h: dict[str, str], *,
-                      customer_name: str = "Иван") -> str:
-    oid = _order(client, h, customer_name=customer_name)
+                      customer_name: str = "Иван", **kwargs: object) -> str:
+    oid = _order(client, h, customer_name=customer_name, **kwargs)  # type: ignore[arg-type]
     client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
                json={"name": "Дисплей", "qty": 1, "unit_cost": "60", "unit_price": "100"})
     client.post(f"/api/v1/orders/{oid}/labor-lines", headers=h,
@@ -77,11 +85,11 @@ def _issue(client: TestClient, h: dict[str, str], invoice_id: str,
 
 
 def _issued_invoice(client: TestClient, h: dict[str, str], *,
-                    customer_name: str = "Иван") -> tuple[str, str]:
+                    customer_name: str = "Иван", **kwargs: object) -> tuple[str, str]:
     """Full flow: seller ready, order + part/labor lines, draft, issue.
     Returns (invoice_id, order_id)."""
     _ready_seller(client, h)
-    oid = _order_with_lines(client, h, customer_name=customer_name)
+    oid = _order_with_lines(client, h, customer_name=customer_name, **kwargs)  # type: ignore[arg-type]
     invoice_id = _draft(client, h, oid)
     r = _issue(client, h, invoice_id)
     assert r.status_code == 200, r.text
@@ -259,6 +267,35 @@ def test_edit_customer_after_issue_list_row_still_shows_snapshot_name(
     row = _row(body, invoice_id)
     assert row["customer_name"] == "Оригинално Име"
     assert row["customer_name"] != "Ново Име"
+
+
+def test_issued_customer_name_from_frozen_buyer_snapshot_for_company_buyer(
+    client: TestClient,
+) -> None:
+    h = _login(client)
+    invoice_id, _ = _issued_invoice(client, h, customer_name="Издадена Фирма ЕООД",
+                                    is_company=True, vat_registered=False)
+
+    body = client.get("/api/v1/invoices?status=issued").json()
+    assert _row(body, invoice_id)["customer_name"] == "Издадена Фирма ЕООД"
+
+
+def test_edit_company_customer_after_issue_list_row_still_shows_snapshot_name(
+    client: TestClient,
+) -> None:
+    h = _login(client)
+    invoice_id, oid = _issued_invoice(client, h, customer_name="Оригинална Фирма ЕООД",
+                                      is_company=True, vat_registered=True,
+                                      vat_number="BG130489869")
+    cid = _customer_id_for_order(client, h, oid)
+
+    r = client.patch(f"/api/v1/customers/{cid}", headers=h, json={"name": "Нова Фирма ЕООД"})
+    assert r.status_code == 200, r.text
+
+    body = client.get("/api/v1/invoices?status=issued").json()
+    row = _row(body, invoice_id)
+    assert row["customer_name"] == "Оригинална Фирма ЕООД"
+    assert row["customer_name"] != "Нова Фирма ЕООД"
 
 
 def test_edit_customer_on_draft_list_row_reflects_live_name(client: TestClient) -> None:

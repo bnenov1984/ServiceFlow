@@ -29,6 +29,7 @@ class CustomerSummary:
     id: uuid.UUID
     name: str
     is_company: bool
+    vat_registered: bool | None
     company_requisites: dict[str, Any] | None
 
 
@@ -42,6 +43,7 @@ def get_customer_summary(db: Session, ctx: TenantContext,
         return None
     return CustomerSummary(
         id=customer.id, name=customer.name, is_company=customer.is_company,
+        vat_registered=customer.vat_registered,
         company_requisites=customer.company_requisites,
     )
 
@@ -55,6 +57,7 @@ def get_customer_summaries(db: Session, ctx: TenantContext,
     never from here (see commercial/router.py's list_invoices)."""
     return {
         cid: CustomerSummary(id=c.id, name=c.name, is_company=c.is_company,
+                             vat_registered=c.vat_registered,
                              company_requisites=c.company_requisites)
         for cid, c in _service.get_many(db, ctx, customer_ids).items()
     }

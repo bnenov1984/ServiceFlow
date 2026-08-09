@@ -1,11 +1,11 @@
 """Issued Invoice PDF (docs/ACCOUNTANT_REVIEW.md §11: server-generated,
 no signature/stamp required — LAW-CONFIRMED not required, same basis the
-intake protocol already relies on). Phase A only: non-VAT-registered
-seller, individual buyer (docs/ACCOUNTANT_REVIEW.md 'RepairFlow Invoice V1
-Freeze' §5) — the caller (commercial/service.py's `get_issued`) is
-responsible for confirming `status == "issued"` before this module is ever
-reached; nothing here re-derives or trusts anything else about invoice
-state.
+intake protocol already relies on). Non-VAT-registered seller only; buyer
+may be an individual or a domestic company, VAT-registered or not
+(docs/ACCOUNTANT_REVIEW.md 'RepairFlow Invoice V1 Freeze' §5 / §4 B1) — the
+caller (commercial/service.py's `get_issued`) is responsible for confirming
+`status == "issued"` before this module is ever reached; nothing here
+re-derives or trusts anything else about invoice state.
 
 Generated on demand from the frozen `Invoice`/`InvoiceLine` snapshot on
 every request — no `pdf_storage_key` write, no mutation, no commit. The
@@ -72,6 +72,9 @@ class InvoicePdfData:
     seller_address: str
     seller_eik: str
     buyer_name: str
+    buyer_address: str | None
+    buyer_eik: str | None
+    buyer_vat_number: str | None
     currency: str
     net: Decimal
     vat: Decimal
@@ -105,6 +108,9 @@ def to_pdf_data(invoice: Invoice, lines: list[InvoiceLine]) -> InvoicePdfData:
         seller_address=str(invoice.seller.get("address", "")),
         seller_eik=str(invoice.seller.get("eik", "")),
         buyer_name=str(invoice.buyer.get("name", "")),
+        buyer_address=invoice.buyer.get("address"),
+        buyer_eik=invoice.buyer.get("eik"),
+        buyer_vat_number=invoice.buyer.get("vat_number"),
         currency=invoice.currency,
         net=invoice.net,
         vat=invoice.vat,
@@ -157,6 +163,12 @@ def generate_invoice_pdf(data: InvoicePdfData) -> bytes:
 
     _section("ПОЛУЧАТЕЛ")
     pdf.cell(0, 6, data.buyer_name, new_x="LMARGIN", new_y="NEXT")
+    if data.buyer_address is not None:
+        pdf.cell(0, 6, f"Адрес: {data.buyer_address}", new_x="LMARGIN", new_y="NEXT")
+    if data.buyer_eik is not None:
+        pdf.cell(0, 6, f"ЕИК: {data.buyer_eik}", new_x="LMARGIN", new_y="NEXT")
+    if data.buyer_vat_number is not None:
+        pdf.cell(0, 6, f"ДДС №: {data.buyer_vat_number}", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(6)
 
     # fpdf2's table() context manager handles pagination-safe row wrapping
