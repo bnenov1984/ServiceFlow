@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { Dialog } from "../components/Dialog";
 import { t } from "../i18n/bg";
 import { api } from "../lib/api";
+import { apiUrl } from "../lib/apiUrl";
 import { queryKeys } from "../lib/queryKeys";
 
 interface AttachmentOut {
@@ -87,7 +88,7 @@ export function PhotosGrid({ orderId }: { orderId: string }) {
           >
             {a.kind === "photo" ? (
               <img
-                src={`/api/v1/attachments/${a.id}/file?thumb=true`}
+                src={apiUrl(`/api/v1/attachments/${a.id}/file?thumb=true`)}
                 alt={a.caption || t("order.photos")}
                 className="h-full w-full object-cover"
               />
@@ -121,7 +122,7 @@ export function PhotosGrid({ orderId }: { orderId: string }) {
       <Dialog open={lightboxId !== null} onClose={() => setLightboxId(null)} title={t("order.photos")}>
         {lightboxId && (
           <img
-            src={`/api/v1/attachments/${lightboxId}/file`}
+            src={apiUrl(`/api/v1/attachments/${lightboxId}/file`)}
             alt=""
             className="max-h-[70vh] w-full object-contain"
           />

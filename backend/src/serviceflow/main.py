@@ -5,6 +5,7 @@ from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 import serviceflow.timeline.service  # noqa: F401 — registers the timeline subscriber
@@ -51,6 +52,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         docs_url="/api/docs" if settings.debug else None,
         redoc_url=None,
     )
+
+    # Only relevant for a separately-hosted frontend (e.g. Render): local dev
+    # talks to the backend through Vite's own proxy, which is same-origin
+    # from the browser's perspective, so no CORS headers are needed or added
+    # there. `allow_origins` is deliberately never "*" — that combination
+    # with `allow_credentials=True` is rejected by browsers outright, and
+    # would defeat cookie-based auth's own origin check regardless. Added
+    # before any other middleware so it wraps the whole stack (FastAPI's
+    # add_middleware prepends internally, so the first call here ends up
+    # outermost) — CORS headers must be present on preflight (OPTIONS) and
+    # on error responses alike, not only on the success path.
+    cors_origins = [o.strip() for o in settings.cors_allow_origins.split(",") if o.strip()]
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
+            allow_headers=["Content-Type", "X-CSRF-Token"],
+        )
 
     @app.middleware("http")
     async def request_id_middleware(

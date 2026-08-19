@@ -4,6 +4,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   plugins: [react()],
   server: {
+    allowedHosts: [".trycloudflare.com"],
     proxy: {
       "/api": "http://localhost:8000",
     },

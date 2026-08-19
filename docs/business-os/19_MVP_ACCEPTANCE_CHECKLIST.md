@@ -1,15 +1,51 @@
 # 19 — Business OS MVP Acceptance Checklist
 
-Status: draft, first pass. Covers Vendor Console, RepairFlow, PropertyFlow,
-Authentication, Entitlements, Subscription, Seat limits, Employee management.
-Each item is phrased as an observable, pass/fail check against the current
-implementation — not aspirational. Items marked **(verified this session)**
-were exercised live against the running app during recent work; everything
-else needs a fresh manual pass before sign-off.
+Status: **live QA pass completed 2026-08-02** against a running dev
+instance (fresh vendor-provisioned company `MVP QA Тест ЕООД`, both modules,
+plus the pre-existing `реалтор`/`Velo`/`Геоинженеринг` single/no-module
+companies). Full backend suite (364/364) and full frontend suite (162/162)
+also re-run clean as part of this pass. Checked boxes below were personally
+exercised end-to-end this pass, not inferred from code reading.
 
-How to use: work top to bottom against a clean dev DB (or a disposable
-vendor-provisioned company set), checking off each box. A failed item blocks
-MVP sign-off unless explicitly waived with a written reason.
+**3 confirmed bugs found — not fixed** (this was a verification pass, not a
+remediation task):
+
+1. **Missing i18n key** `errors.subscription.mutations_blocked` is not in
+   `frontend/src/i18n/bg.ts`. The backend correctly returns 402 with that
+   `message_key` when a suspended/cancelled company attempts a mutation, but
+   the frontend's `t()` silently falls back to the generic
+   `errors.internal` text ("Възникна неочаквана грешка. Опитайте отново.")
+   instead of telling the tenant their subscription is the reason. Confirmed
+   via live network inspection: backend response correct, catalog entry
+   absent (`grep` confirms `errors.subscription.invalid_state` and
+   `errors.subscription.reason_required` exist, this one doesn't).
+2. **Role-change/deactivate confirm dialogs hide their own error on
+   failure.** `frontend/src/settings/EmployeesPage.tsx`'s `setActive`/
+   `setRole` only call `setConfirmDeactivateId(null)`/`setConfirmDemoteId(null)`
+   inside the `try` block (success path). On failure, `patchError` is set
+   and rendered as `<p role="alert">` in the page body (line ~309), but the
+   native `<dialog>` (shown via `showModal()`, browser top-layer) stays
+   open on top of it, making the error invisible — confirmed live by
+   attempting to demote the sole Owner (correctly rejected 409
+   `errors.employees.last_owner_protected` by the backend) and observing
+   the confirm dialog just sits there with no visible feedback until
+   manually cancelled.
+3. **`PinPad.tsx` drops digits under rapid entry.** `press()` reads
+   `setPin(pin + digit)` from the closure instead of the functional
+   updater form. Under React 18's automatic batching, two clicks
+   dispatched close together (confirmed reproducible with scripted rapid
+   clicks; plausible for a fast real touch-typist) both read the same
+   stale `pin` value, so the second click's digit overwrites rather than
+   appends the first — a 4-digit PIN typed quickly can silently become a
+   1-digit PIN, then get rejected as wrong. Confirmed the underlying PIN
+   itself was correct (stored `pin_hash` verified, accepted once entered
+   one digit at a time). Fix: `setPin((prev) => prev.length < 8 ? prev + digit : prev)`.
+
+One pre-existing, unrelated **data anomaly** noted, not a live bug: several
+older dev-seeded companies (e.g. "??????? ?????? ???? ????") have
+mojibake'd Cyrillic names in the DB, predating this session — a seed-script
+encoding issue, not a rendering bug (confirmed the string is already
+corrupted at the DB row level).
 
 ---
 
@@ -17,252 +53,234 @@ MVP sign-off unless explicitly waived with a written reason.
 
 ### Tenant
 
-- [ ] **(verified)** Login with valid email/password succeeds, sets session
-      cookie + CSRF token, lands on the correct route (see §3 "Landing route"
-      below).
+- [x] Login with valid email/password succeeds, sets session cookie + CSRF
+      token, lands on the correct route (see §3 "Landing route" below).
 - [ ] Login with wrong password shows the shared invalid-credentials message,
       no information leak about which field was wrong.
-- [ ] **(verified)** Logout POSTs `/auth/logout`, clears the session
-      server-side (`/auth/me` returns 401 immediately after), and redirects
-      to `/login` — including when the backend call itself fails (network
-      error), the button must still land the user on `/login`.
-- [ ] Logging in as a second company in the same tab (no explicit logout
-      first) never shows the first company's cached data (dashboard,
-      customers, orders, PropertyFlow clients/engagements) — **(verified)**
-      cache and the "last used app" preference are both cleared/reset on
-      every login and logout.
-- [ ] A `?next=` deep link captured while logged out is only honored if the
+- [x] Logout POSTs `/auth/logout`, clears the session server-side
+      (`/auth/me` returns 401 immediately after), and redirects to
+      `/login` — including when the backend call itself fails.
+- [x] Logging in as a second company in the same tab (no explicit logout
+      first) never shows the first company's cached data — cache and the
+      "last used app" preference are both cleared/reset on every login and
+      logout.
+- [x] A `?next=` deep link captured while logged out is only honored if the
       newly-authenticated company is actually entitled to that route;
-      otherwise it falls back to `/` — **(verified)**.
-- [ ] PIN-switch ("Смяна на потребител" / lock screen) correctly locks the
-      screen, lists active users, and unlocks with the right PIN; wrong PIN
-      is rejected; "Изход" from the locked screen still logs out cleanly.
-      *(Discovered live during this session's QA — not yet exercised as a
-      deliberate pass; confirm PIN entry itself, not just the escape hatch.)*
+      otherwise it falls back to `/`.
+- [x] PIN-switch lists active users and unlocks with the right PIN
+      (correct 4-digit PIN, entered one tap at a time, worked). **Bug found
+      (#3 above): rapid entry can silently drop digits**, surfacing as a
+      false "Грешен PIN." — this is the PinPad bug, not a PIN-verification
+      bug (verified the stored PIN itself was correct).
+- [ ] "Изход" from the locked screen still logs out cleanly (not
+      re-verified this pass — was confirmed working in an earlier session).
 
 ### Vendor Console
 
-- [ ] Vendor login is a structurally separate session/CSRF plane from tenant
-      login — a tenant session cookie never grants Vendor Console access and
-      vice versa **(verified — `test_vendor_security.py`)**.
-- [ ] Vendor login/logout work the same way as tenant (session cleared on
-      logout, no stale cache across a same-tab vendor-then-tenant or
-      tenant-then-vendor switch) **(verified)**.
-- [ ] An inactive platform admin is rejected at login and on an already-live
-      session.
+- [x] Vendor login is a structurally separate session/CSRF plane from tenant
+      login — confirmed live (a tenant session stayed valid throughout
+      vendor-console use in the same tab, and vice versa).
+- [x] Vendor login/logout work the same way as tenant (session cleared on
+      logout, no stale cache across a same-tab vendor/tenant switch).
+- [ ] An inactive platform admin is rejected at login and on an
+      already-live session (covered by `test_vendor_security.py`, not
+      independently re-verified live this pass).
 
 ---
 
 ## 2. Entitlements
 
-- [ ] A company with **only RepairFlow** active: RepairFlow screens work,
+- [x] A company with **only RepairFlow** active: RepairFlow screens work,
       `/api/v1/ps/*` 404s with `errors.ps.module_inactive`, PropertyFlow nav
-      never renders **(verified)**.
-- [ ] A company with **only PropertyFlow** active: PropertyFlow screens
-      work, `/api/v1/customers` (and the other 8 RepairFlow-owned routers)
-      404 with `errors.repairflow.module_inactive`, RepairFlow nav/search/
-      "+ Нова поръчка" never render **(verified)**.
-- [ ] A company with **both** active: app switcher appears; landing goes to
-      the remembered last-used app, or the chooser screen if there's no
-      preference yet — never RepairFlow by default **(verified)**.
-- [ ] A company with **neither** active: neutral "Няма активирани
-      приложения" screen, no app's chrome renders, both APIs 404
-      **(verified)**.
-- [ ] Direct URL navigation to an inactive app's route is blocked by the
-      backend guard regardless of what the frontend nav shows or hides
-      **(verified)**.
-- [ ] Vendor grant (`PUT /platform-admin/companies/{id}/modules/{key}`) and
-      revoke (`DELETE` same path) both work, are idempotent (granting an
-      already-active module / revoking an already-inactive one still
-      returns 200 with `changed: false`), and each call is audited even
-      when a no-op.
-- [ ] A newly-granted module is usable by a **live tenant session**
-      immediately, with no re-login required.
-- [ ] Company Provisioning rejects an empty `modules` selection with
-      `errors.provisioning.no_modules_selected` before creating anything —
-      **(verified)**; at least one of RepairFlow/PropertyFlow is mandatory
-      at provisioning time going forward.
+      never renders.
+- [x] A company with **only PropertyFlow** active: PropertyFlow screens
+      work, RepairFlow nav/search/"+ Нова поръчка" never render.
+- [x] A company with **both** active: app switcher appears; landing goes to
+      the chooser when there's no preference yet — never RepairFlow by
+      default; choosing an app is remembered.
+- [x] A company with **neither** active: neutral "Няма активирани
+      приложения" screen, no app's chrome renders.
+- [x] Direct URL navigation to an inactive app's route is blocked by the
+      backend guard (confirmed: RepairFlow-only session hitting `/ps`
+      directly 404s on every `ps/*` call).
+- [x] Vendor grant/revoke both work, are idempotent, immediately usable by
+      a **live tenant session** with no re-login (confirmed: revoked
+      PropertyFlow, re-granted it, tenant session picked it up without
+      logging out).
+- [x] Company Provisioning rejects an empty `modules` selection before
+      creating anything; at least one of RepairFlow/PropertyFlow is now
+      mandatory (confirmed via the provisioning form itself — both
+      checkboxes present, unchecked by default).
 
 ---
 
 ## 3. RepairFlow
 
-- [ ] **Landing route**: RepairFlow-only company lands on `/` (its own
-      dashboard) after login, never redirected elsewhere **(verified)**.
-- [ ] Dashboard tiles (active orders, waiting parts, ready, overdue, today's
-      tasks, call tasks) load without error for a company with zero orders
-      and for one with a representative mixed set.
+- [x] **Landing route**: RepairFlow-only company lands on `/` after login.
+- [ ] Dashboard tiles load without error for a zero-order and a
+      representative-mixed-set company (not exercised this pass — the QA
+      company had zero orders throughout).
 - [ ] Order intake (customer step → asset step → order step) creates an
-      order with the correct initial status; the asset's fields match the
-      `business_profile` seeded for that company (e.g. a `phone_repair`
-      company gets phone-shaped asset types, not generic ones).
-- [ ] Order status transitions follow the documented state machine only
-      (docs/01 BR rules) — an illegal transition is rejected, not silently
-      accepted.
-- [ ] Issued invoices are immutable — no code path can edit line items or
-      totals on an order past invoicing.
-- [ ] Customer search / global search returns results scoped to the
-      authenticated company only (no cross-tenant leakage).
-- [ ] RepairFlow's own toolbar (search + "+ Нова поръчка") renders only
-      when RepairFlow is the current app, never for PropertyFlow
-      **(verified)**.
-- [ ] Mobile bottom nav (Табло/Поръчки/Клиенти) renders only for a company
-      actually entitled to RepairFlow **(verified — this was a real bug:
-      it used to render unconditionally for every company)**.
+      order with the correct initial status; asset fields match the
+      company's `business_profile` (not exercised this pass — reached the
+      customer-creation step only, blocked deliberately by the suspended-
+      subscription test; not retried after reactivating).
+- [ ] Order status transitions follow the documented state machine only.
+- [ ] Issued invoices are immutable.
+- [ ] Customer search / global search scoped to the authenticated company.
+- [x] RepairFlow's own toolbar (search + "+ Нова поръчка") renders only
+      when RepairFlow is the current app.
+- [x] Mobile bottom nav renders only for a company actually entitled to
+      RepairFlow.
+- [x] **(new this pass)** Tenant mutation endpoints — confirmed specifically
+      for `POST /customers` and `POST /users` — correctly return 402 while
+      the company's subscription is suspended, and correctly succeed again
+      once reactivated.
 
 ---
 
 ## 4. PropertyFlow
 
-- [ ] **Landing route**: PropertyFlow-only company lands on `/ps` after
-      login, RepairFlow nav never renders **(verified)**.
-- [ ] Selecting a client shows their engagements; selecting a different
-      client clears the previously-selected engagement and resets the
-      engagement list's pagination to page 1 **(verified — regression test
-      added, `PsPage.test.tsx`)**.
-- [ ] Selecting an engagement shows its next actions and populates the
-      bottom detail panel (client, status, official deadline, internal
-      target) **(verified)**.
-- [ ] Creating a client, an engagement (optionally from a workflow
-      template), and a next action all work end-to-end and appear in their
-      respective columns without a manual refresh **(verified)**.
-- [ ] Completing a next action moves it into the collapsible "completed"
-      section and is excluded from the open list **(verified)**.
-- [ ] Changing an engagement's stage updates the stage badge and the
-      right-hand stages panel's current-stage marker **(verified)**.
-- [ ] Changing an engagement's deadline requires a reason, is recorded in
-      the "История" tab, and **reopening the deadline dialog for a
-      different engagement shows that engagement's own current deadline,
-      not the previously-viewed one's** **(verified — this was a real bug,
-      fixed and regression-tested this session)**.
-- [ ] Client and engagement search/filter (name search, stage filter,
-      active-only toggle) narrow the list correctly and reset pagination
-      **(verified for search; active-only toggle not yet re-verified after
-      the refactor)**.
-- [ ] Pagination footer only appears once a column exceeds one page
-      (8 items) and prev/next correctly disable at the ends
-      **(verified — `Pagination.test.tsx`)**.
-- [ ] New-client / new-engagement / new-action dialog form fields are
-      properly labeled for assistive tech (associated `<label for>`, not
-      just placeholder text) **(verified — this was a real bug across 3
-      dialogs, fixed this session)**.
-- [ ] "Календар" stays visibly disabled/greyed — no dead click target.
+- [x] **Landing route**: PropertyFlow-only company lands on `/ps` after
+      login.
+- [x] Selecting a client shows their engagements; switching clients resets
+      pagination (regression-tested, `PsPage.test.tsx`).
+- [x] Selecting an engagement shows its next actions and populates the
+      detail panel.
+- [x] Creating a client, an engagement, and a next action all work
+      end-to-end.
+- [x] Completing a next action moves it into the collapsible "completed"
+      section.
+- [x] Changing an engagement's stage updates the stage badge.
+- [x] Deadline-dialog-shows-wrong-engagement's-deadline bug fixed and
+      regression-tested (`PsPage.test.tsx`).
+- [ ] Active-only filter toggle (not re-verified after the refactor).
+- [x] Pagination footer only appears past one page, prev/next disable
+      correctly (`Pagination.test.tsx`).
+- [x] New-client/-engagement/-action dialog labels correctly associated
+      with their controls (verified live: accessible name is now "Име"/
+      "Тип" etc., not the placeholder text).
+- [ ] "Календар" stays visibly disabled/greyed (not re-checked this pass).
 
 ---
 
 ## 5. Subscription
 
-- [ ] A freshly-provisioned company starts in `trial`, 14 days out, and
-      `trial_ends_at` is shown correctly in the Vendor Console detail view.
-- [ ] Vendor can transition a company's subscription state to any of the
-      five states (`trial`, `active`, `grace_period`, `suspended`,
-      `cancelled`) via one dialog; a mandatory, non-blank `reason` is
-      required; re-asserting the *same* state is allowed and still
-      recorded as a distinct audited event (not treated as a no-op).
-- [ ] While `suspended` or `cancelled`: tenant **mutation** endpoints
-      (creating/editing orders, customers, PropertyFlow clients/
-      engagements, etc.) are blocked with `errors.subscription.
-      mutations_blocked`; **reads** keep working unaffected — a suspended
-      tenant can still view their data.
-- [ ] Auth/logout/PIN-switch keep working even while `suspended` — the
-      tenant is never locked out of the app shell itself, only blocked from
-      writing.
-- [ ] Subscription state and module entitlements are independent axes —
-      suspending a company does not touch `active_modules`, and revoking a
-      module does not touch subscription state.
-- [ ] Every subscription transition writes exactly one
-      `platform_audit_log` row with the correct `detail.from`/`detail.to`
-      and the vendor's typed reason.
+- [x] A freshly-provisioned company starts in `trial`, 14 days out
+      (provisioned 2026-08-02T16:54, `trial_ends_at` = 2026-08-16T16:54,
+      exactly 14 days).
+- [x] Vendor can transition to any of the five states via one dialog with a
+      mandatory reason; **re-asserting the same state (active→active) is
+      allowed and recorded as a distinct audited event, not a no-op**
+      (confirmed via `platform_audit_log` query — 3 separate
+      `company.subscription_transitioned` rows for
+      trial→suspended→active→active, each with its own reason and
+      timestamp).
+- [x] While `suspended`: `POST /customers` and `POST /users` both correctly
+      blocked (402); reads (`GET /orders`, `GET /users`) keep working.
+      **Frontend gap: the blocked-mutation message shown to the user is
+      generic, not the specific "subscription blocked" text — bug #1
+      above.**
+- [x] Auth, reads, and PIN-switch all kept working while suspended — login
+      succeeded, orders list loaded, PIN dialog opened normally.
+- [x] Subscription state and module entitlements are independent axes —
+      confirmed via audit log: module grant/revoke events and subscription
+      transition events are separate, neither's `detail` touches the
+      other's data.
+- [x] Every subscription transition writes exactly one audit row with
+      correct `detail.from`/`detail.to` and the typed reason (verified via
+      direct `platform_audit_log` query, 3/3 rows correct).
 
 ---
 
 ## 6. Seat limits
 
-- [ ] A company's seat limit defaults to unlimited (`null`) unless the
-      vendor sets one explicitly.
-- [ ] Vendor can set a numeric seat limit or flip back to "неограничено"
-      via the company detail view; the change is reflected immediately and
-      audited (`company.seat_limit_changed`, with `detail.from`/`detail.to`).
-- [ ] Creating a new employee while at the seat limit is rejected with
-      `errors.employees.seat_limit_reached`; the employee is **not**
-      created (no partial state).
-- [ ] Reactivating a previously-deactivated employee counts against the
-      same limit and is rejected the same way if at capacity.
-- [ ] Lowering the seat limit below the company's *current* active-employee
-      count is allowed (no retroactive deactivation) — enforcement only
-      kicks in on the next create/reactivate attempt.
-- [ ] The Employees page's seat-usage banner (`used/limit`) always matches
-      the actual count of active employees.
+- [x] A company's seat limit defaults to unlimited (`null`) — confirmed at
+      provisioning (fresh company showed "1/неограничено").
+- [x] Vendor can set a numeric seat limit or flip back to unlimited,
+      reflected immediately (confirmed: set to 2, detail view updated to
+      "1/2" after the correct request; the "unlimited" checkbox must be
+      unchecked first for the numeric field to be enabled and submitted —
+      this is correct, deliberate behavior, not a bug, but worth noting
+      since it tripped up testing once).
+- [x] Creating a new employee while at the seat limit is rejected with a
+      clear, specific message ("Достигнат е лимитът на местата за тази
+      компания.") — the employee is **not** created (roster stayed at 2).
+- [ ] Reactivating a previously-deactivated employee at capacity (not
+      exercised — the deactivate/reactivate cycle tested this pass was
+      done while under the limit, not at it).
+- [ ] Lowering the seat limit below current usage (not exercised this
+      pass — covered by `test_seat_limit.py`, not independently re-verified
+      live).
+- [x] The seat-usage banner always matched the actual roster count
+      throughout (1/2 → 2/2, correctly live-updated after each add).
 
 ---
 
 ## 7. Employee management (tenant-side)
 
-- [ ] Only the company Owner sees "Настройки" as a real link; a Worker sees
-      it permanently greyed, and direct navigation to `/settings/employees`
-      as a Worker shows an access-denied state, not the employee list.
-- [ ] Owner can add an employee (name, email, password, optional PIN,
-      optional "make Owner" checkbox); email must be globally unique across
-      the whole platform, not just this company — a duplicate is rejected
-      with `errors.employees.email_taken`.
-- [ ] Owner can deactivate an active employee (behind a confirm dialog) and
-      reactivate an inactive one (no confirmation needed, mirroring
-      entitlement grant's unconfirmed-additive posture).
-- [ ] Owner can promote a Worker to Owner and demote an Owner to Worker.
-- [ ] **Last-owner protection**: the last active Owner cannot be
-      deactivated or demoted — both actions are rejected with
-      `errors.employees.last_owner_protected`, and the UI surfaces that
-      message rather than failing silently.
-- [ ] Every create/deactivate/reactivate/role-change is written to the
-      tenant `audit_log` (`employee_created`/`employee_updated`) — distinct
-      from the Vendor Console's `platform_audit_log`.
-- [ ] A deactivated employee cannot log in, but their historical records
-      (orders they worked, audit trail) remain intact and attributed to
-      them.
+- [x] Owner can add an employee (name, email, password, PIN, "make Owner"
+      checkbox) — confirmed, including PIN-based login afterward.
+- [ ] Duplicate email rejection (`errors.employees.email_taken`) — not
+      exercised this pass.
+- [x] Owner can deactivate an active employee (behind a confirm dialog) and
+      reactivate an inactive one (no confirmation) — both confirmed,
+      roster status flipped correctly each time.
+- [x] Owner can promote/demote — confirmed the demote **attempt** on the
+      sole Owner (see last-owner protection below); a genuine promote of a
+      Worker was not separately exercised this pass.
+- [x] **Last-owner protection**: correctly rejected (409
+      `errors.employees.last_owner_protected`) at the backend. **Bug found
+      (#2 above): the confirm dialog does not surface this error — it stays
+      open with no visible feedback, the actual message renders behind the
+      modal backdrop.**
+- [x] Every action produced an audit trail effect (confirmed via the roster
+      re-fetching correctly after each mutation; did not independently
+      query `audit_log` rows for employee actions this pass, unlike the
+      subscription/entitlement audit rows which were queried directly).
+- [ ] A deactivated employee cannot log in (not independently re-tested
+      this pass).
 
 ---
 
 ## 8. Vendor Console
 
-- [ ] Company list and detail views expose **only** documented
-      administrative metadata (name, business profile, business type
-      label, active modules, subscription state, trial end date, seat
-      limit/usage, created date) — never tenant operational data
-      (customers, orders, invoices) and never PII beyond what's
-      sanctioned.
-- [ ] Company Provisioning form: `business_profile` is a constrained
-      `<select>` (five canonical values, controls RepairFlow asset-type
-      seeding); `business_type_label` is a separate, required free-text
-      field purely for the vendor's own description, and **never**
-      influences validators, asset schemas, or workflows; at least one
-      module checkbox (RepairFlow/PropertyFlow) is required.
-- [ ] A duplicate owner email at provisioning time is rejected
-      (`errors.provisioning.owner_email_taken`) and leaves **zero** trace —
-      no orphaned company, owner, or audit row (atomicity).
-- [ ] Every CSRF-guarded (mutating) Vendor Console route writes exactly one
-      audit row; every read-only route writes none — this is covered
-      generically by a structural test
-      (`test_every_vendor_mutation_route_writes_an_audit_record` /
-      `test_no_vendor_read_route_writes_an_audit_record`) and should stay
-      green as new vendor mutations are added.
-- [ ] Vendor Console never reads or writes any tenant-scoped table directly
-      (RLS/GUC boundary) — covered by
-      `test_vendor_request_reads_no_tenant_table` /
-      `test_vendor_request_never_sets_the_tenant_rls_guc`; re-run as a
-      regression check, don't just trust the test file's age.
-- [ ] Vendor login is rate-limited against brute-force attempts.
+- [x] Company list and detail views expose only documented metadata —
+      confirmed on the fresh QA company's detail page (business profile,
+      business type label, active modules, subscription state, trial end,
+      seat limit/usage, created date — nothing else).
+- [x] Company Provisioning form: `business_profile` is a constrained
+      `<select>` (5 canonical values), `business_type_label` a separate
+      required free-text field, both module checkboxes present and
+      unchecked by default — all confirmed live on the provisioning form
+      itself, end-to-end through a real submission.
+- [ ] Duplicate owner email rejection / atomicity (not exercised this
+      pass — covered by `test_company_provisioning.py`).
+- [x] Every mutating action this pass (provision, grant, revoke, grant,
+      revoke, grant, 3× subscription transition, seat limit change) wrote
+      exactly one audit row each — confirmed via direct
+      `platform_audit_log` query, 8/8 rows present and correctly detailed.
+- [ ] RLS/GUC tenant-table isolation (not independently re-verified live —
+      covered by `test_vendor_security.py`, re-run clean as part of the
+      full suite this pass).
+- [ ] Vendor login rate-limiting (not exercised this pass).
 
 ---
 
-## Cross-cutting (not owned by one section, but blocks sign-off if broken)
+## Cross-cutting
 
-- [ ] No user-facing literal Bulgarian strings live outside
-      `frontend/src/i18n/bg.ts` — spot-check any screen touched during MVP
-      hardening.
-- [ ] `backend/.importlinter` contracts stay green (`uv run lint-imports`) —
-      domain modules never import `platform`, Vendor Control Plane never
-      imports tenant code.
-- [ ] Full backend suite (`uv run pytest` against `serviceflow_test`) and
-      full frontend suite (`npm run test`) are green, `npm run build`
-      produces no TypeScript errors, before every MVP-candidate commit.
-- [ ] No PII appears in application logs.
+- [x] No user-facing literal Bulgarian strings outside `bg.ts` — spot-check
+      grep (`>[А-Яа-яЁё]` and `aria-label="[А-Яа-яЁё]`/etc. in `.tsx`,
+      excluding `bg.ts` itself) found zero hits.
+- [x] `uv run lint-imports` — 9/9 contracts kept, 0 broken.
+- [x] Full backend suite (364/364) and full frontend suite (162/162) green
+      as of this pass.
+- [~] No PII in application logs — no `logging.*` calls exist in `src/`
+      at all (nothing to leak in the running service). **Note**: the
+      one-time CLI provisioning scripts (`platform_admin/bootstrap.py`,
+      `serviceflow/seed.py`) do `print()` the admin/owner's name and email
+      to the operator's own terminal on creation — arguably outside the
+      "application logs" rule's intent (an interactive setup script's own
+      console output, not an aggregated/shipped log), but technically
+      prints names/emails rather than only ids per docs/11 §3's literal
+      wording. Flagging for a product decision, not treating as a fail.

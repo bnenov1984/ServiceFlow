@@ -28,7 +28,7 @@ export class ApiError extends Error {
     super(messageKey);
   }
 }
-
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 let csrfToken: string | null = null;
 let vendorCsrfToken: string | null = null;
 
@@ -57,7 +57,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
   let response: Response;
   try {
-    response = await fetch(`/api/v1${path}`, init);
+    response = await fetch(`${API_BASE_URL}/api/v1${path}`, init);
   } catch {
     throw new ApiError(0, "network", "health.unreachable");
   }

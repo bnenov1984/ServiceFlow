@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "C:\\Users\\Home\\Desktop\\Projects\\Claude\\ServiceFlow\\frontend"],
+      "port": 5173
+    },
+    {
+      "name": "backend",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "set SERVICEFLOW_DATABASE_URL=postgresql+psycopg://sf_app:sf-app-pw@localhost:5433/serviceflow&& set SERVICEFLOW_DEBUG=true&& uv run --project C:\\Users\\Home\\Desktop\\Projects\\Claude\\ServiceFlow\\backend uvicorn serviceflow.main:app --reload --port 8000"],
+      "port": 8000
+    }
+  ]
+}

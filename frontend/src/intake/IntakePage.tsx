@@ -8,6 +8,7 @@
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ApiError, api } from "../lib/api";
+import { apiUrl } from "../lib/apiUrl";
 import { t } from "../i18n/bg";
 import { useToast } from "../components/Toast";
 import { AssetStep, type ResolvedAsset } from "./AssetStep";
@@ -112,7 +113,7 @@ export function IntakePage() {
       }
 
       // Same-origin navigation carries the session cookie automatically.
-      window.open(`/api/v1/orders/${order.id}/protocol.pdf?type=intake`, "_blank");
+      window.open(apiUrl(`/api/v1/orders/${order.id}/protocol.pdf?type=intake`), "_blank");
       navigate(`/orders/${order.id}`);
     } catch (err) {
       setSubmitError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));

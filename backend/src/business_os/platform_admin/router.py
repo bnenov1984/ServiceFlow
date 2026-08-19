@@ -31,6 +31,7 @@ from business_os.platform_admin.deps import (
     VendorDbDep,
     require_platform_csrf,
 )
+from business_os.shared_kernel.cookies import session_cookie_policy
 from serviceflow.config import get_settings
 
 router = APIRouter()
@@ -71,8 +72,9 @@ def vendor_login(body: VendorLoginRequest, request: Request, response: Response,
         }) from e
     response.set_cookie(
         PLATFORM_SESSION_COOKIE, raw_token,
-        httponly=True, samesite="lax", secure=not get_settings().debug,
-        max_age=int(service.SESSION_TTL.total_seconds()), path=PLATFORM_COOKIE_PATH,
+        httponly=True, max_age=int(service.SESSION_TTL.total_seconds()),
+        path=PLATFORM_COOKIE_PATH,
+        **session_cookie_policy(debug=get_settings().debug),
     )
     admin = service.get_admin(db, session.platform_admin_id)
     assert admin is not None
@@ -99,7 +101,10 @@ def vendor_logout(auth: PlatformAdminDep, response: Response,
                   db: VendorDbDep) -> dict[str, bool]:
     session, _ = auth
     service.logout(db, session)
-    response.delete_cookie(PLATFORM_SESSION_COOKIE, path=PLATFORM_COOKIE_PATH)
+    response.delete_cookie(
+        PLATFORM_SESSION_COOKIE, path=PLATFORM_COOKIE_PATH,
+        **session_cookie_policy(debug=get_settings().debug),
+    )
     return {"ok": True}
 
 

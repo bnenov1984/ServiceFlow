@@ -35,6 +35,7 @@ import { IssuedInvoiceView } from "../order/IssuedInvoiceView";
 import type { InvoiceDetailOut } from "../order/invoiceTypes";
 import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
+import { apiUrl } from "../lib/apiUrl";
 import { queryKeys } from "../lib/queryKeys";
 import { StatusBadge } from "./InvoicesPage";
 
@@ -109,7 +110,7 @@ export function InvoiceDetailPage() {
         {invoice.status === "issued" && (
           <button
             type="button"
-            onClick={() => window.open(`/api/v1/invoices/${invoice.id}/invoice.pdf`, "_blank")}
+            onClick={() => window.open(apiUrl(`/api/v1/invoices/${invoice.id}/invoice.pdf`), "_blank")}
             className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50 min-h-touch"
           >
             {t("order.invoice_pdf")}

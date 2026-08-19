@@ -19,6 +19,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "../components/States";
 import { t } from "../i18n/bg";
 import { api } from "../lib/api";
+import { apiUrl } from "../lib/apiUrl";
 import { queryKeys } from "../lib/queryKeys";
 import type { InvoiceDetailOut } from "./invoiceTypes";
 
@@ -49,7 +50,7 @@ export function IssuedInvoiceView({
             </span>
             <button
               type="button"
-              onClick={() => window.open(`/api/v1/invoices/${invoiceId}/invoice.pdf`, "_blank")}
+              onClick={() => window.open(apiUrl(`/api/v1/invoices/${invoiceId}/invoice.pdf`), "_blank")}
               className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50 min-h-touch"
             >
               {t("order.invoice_pdf")}

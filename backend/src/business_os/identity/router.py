@@ -23,6 +23,7 @@ from business_os.identity.deps import (
     require_subscription_ok,
 )
 from business_os.identity.models import AuthSession, Company, User
+from business_os.shared_kernel.cookies import session_cookie_policy
 from business_os.shared_kernel.normalize import is_valid_eik, normalize_eik
 from serviceflow.config import get_settings
 
@@ -236,8 +237,8 @@ def login(body: LoginRequest, request: Request, response: Response, db: DbDep) -
         }) from e
     response.set_cookie(
         SESSION_COOKIE, raw_token,
-        httponly=True, samesite="lax", secure=not get_settings().debug,
-        max_age=int(service.SESSION_TTL.total_seconds()), path="/",
+        httponly=True, max_age=int(service.SESSION_TTL.total_seconds()), path="/",
+        **session_cookie_policy(debug=get_settings().debug),
     )
     user = db.get(User, session.user_id)
     assert user is not None
@@ -254,7 +255,9 @@ def me(auth: AuthDep, db: DbDep) -> MeResponse:
 def logout(auth: AuthDep, response: Response, db: DbDep) -> dict[str, bool]:
     session, _ = auth
     service.logout(db, session)
-    response.delete_cookie(SESSION_COOKIE, path="/")
+    response.delete_cookie(
+        SESSION_COOKIE, path="/", **session_cookie_policy(debug=get_settings().debug)
+    )
     return {"ok": True}
 
 

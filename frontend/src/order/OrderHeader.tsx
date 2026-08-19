@@ -13,6 +13,7 @@ import { StatusPill } from "../components/StatusPill";
 import { useToast } from "../components/Toast";
 import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
+import { apiUrl } from "../lib/apiUrl";
 import { queryKeys } from "../lib/queryKeys";
 import { allowedTransitions, isTerminal, kindOf, statusName } from "../lib/statusMatrix";
 import { ApprovalDialog } from "./dialogs/ApprovalDialog";
@@ -286,7 +287,7 @@ export function OrderHeader({ orderId, number, statusCode, archived }: OrderHead
 
       <button
         type="button"
-        onClick={() => window.open(`/api/v1/orders/${orderId}/protocol.pdf?type=intake`, "_blank")}
+        onClick={() => window.open(apiUrl(`/api/v1/orders/${orderId}/protocol.pdf?type=intake`), "_blank")}
         className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 min-h-touch"
       >
         {t("order.print_protocol")}
