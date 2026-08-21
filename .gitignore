@@ -23,3 +23,8 @@ Thumbs.db
 
 # Spike scratch area
 ops/local-edition/spike/.work/
+
+# Playwright
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
