@@ -232,6 +232,48 @@ def test_deactivate_and_reactivate_employee(client: TestClient) -> None:
     assert resp.status_code == 200
     assert resp.json()["is_active"] is True
 
+def test_deactivated_employee_existing_session_becomes_invalid(
+    client: TestClient,
+) -> None:
+    from serviceflow.main import create_app
+
+    _seed_owner()
+
+    # Owner session
+    owner_me = _login(client)
+    owner_headers = {"X-CSRF-Token": str(owner_me["csrf_token"])}
+
+    create_resp = client.post(
+        "/api/v1/users",
+        headers=owner_headers,
+        json=_employee_payload(),
+)
+    assert create_resp.status_code == 201, create_resp.text
+    created = create_resp.json()
+
+    # Separate Worker session — simulates another browser/device.
+    with TestClient(create_app()) as worker_client:
+        worker_me = _login(
+            worker_client,
+            email="ivo@a.bg",
+            password="парола-за-иво-123",
+        )
+
+        assert worker_me["email"] == "ivo@a.bg"
+        assert worker_client.get("/api/v1/auth/me").status_code == 200
+
+        # Owner deactivates the worker while worker's session already exists.
+        resp = client.patch(
+            f"/api/v1/users/{created['id']}",
+            headers=owner_headers,
+            json={"is_active": False},
+        )
+        assert resp.status_code == 200
+
+        # The original Worker cookie/session must no longer authorize requests.
+        resp = worker_client.get("/api/v1/auth/me")
+        assert resp.status_code == 401
+
 
 def test_promote_worker_to_owner(client: TestClient) -> None:
     _seed_owner()
