@@ -53,7 +53,7 @@ def prod_client(migrated_db: str, tmp_path) -> Iterator[TestClient]:  # noqa: AN
     get_settings.cache_clear()
     get_local_storage.cache_clear()
 
-    with TestClient(create_app()) as c:
+    with TestClient(create_app(), base_url="https://testserver") as c:
         yield c
 
     os.environ["SERVICEFLOW_DEBUG"] = "true"  # restore conftest's own default
