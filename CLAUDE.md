@@ -2,10 +2,9 @@
 
 **Web-first multi-tenant SaaS** service management platform for Bulgarian repair
 shops; a local edition is parked as a future option (11.07.2026 pivot, docs/14).
-**All product/architecture decisions live in `docs/` and are frozen** — read
-[docs/07_ADR_INDEX.md](docs/07_ADR_INDEX.md) first; it lists what is frozen and
-the change process. Current stage: see
-[docs/13_IMPLEMENTATION_PLAN.md](docs/13_IMPLEMENTATION_PLAN.md) (status line at top).
+**Product/architecture decisions live in `docs/`, spanning both frozen and
+active areas** — see [docs/INDEX.md](docs/INDEX.md) for the documentation map,
+freeze/change process, and current status.
 
 ## Hard rules (violations are review-blockers)
 
