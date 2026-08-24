@@ -71,7 +71,7 @@ Frozen as of this date (changes require the process below):
    ([01_DOMAIN_MODEL.md](01_DOMAIN_MODEL.md), incl. approved OQ-1…5 defaults).
 2. **Workflow** — status set, semantic kinds, transition matrix, role matrix
    ([02_BUSINESS_WORKFLOW.md](02_BUSINESS_WORKFLOW.md), incl. OQ-W1…W4 defaults).
-3. **Architecture decisions** — ADR-001…015 above.
+3. **Architecture decisions** — ADR-001…018 above.
 4. **Migration constraints C1–C8** ([06](06_LOCAL_TO_SAAS_MIGRATION.md) §2) — these
    bind all V1 implementation.
 5. **Operational designs** — update pipeline (04), backup/verification/restore (05),

@@ -9,3 +9,8 @@ Router only — each area owns its own detail, this file doesn't repeat it.
 | Professional Services module | **Implemented** | [../modules/professional-services/README.md](../modules/professional-services/README.md) |
 | Construction Supervision module | **Planned** | [../modules/construction-supervision/README.md](../modules/construction-supervision/README.md) |
 | Current project status | **Living** | [13_IMPLEMENTATION_PLAN.md](13_IMPLEMENTATION_PLAN.md) |
+
+## Living operational references
+
+- [ACCOUNTANT_REVIEW.md](ACCOUNTANT_REVIEW.md) — invoicing legal/VAT checklist
+- [DEV_TEST_ACCOUNTS.md](DEV_TEST_ACCOUNTS.md) — canonical dev/QA credentials
