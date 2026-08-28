@@ -3,7 +3,7 @@
 Status: **Architecture freeze in effect as of 10.07.2026** (PO approval of 00–06 +
 this ADR set) · Date: 10.07.2026
 
-## Accepted ADRs
+## V1 ADRs (ADR-001…018, frozen)
 
 | ADR | Decision | Source |
 |---|---|---|
@@ -26,23 +26,42 @@ this ADR set) · Date: 10.07.2026
 | [ADR-017](adr/ADR-017-cloud-deployment-cd.md) | Cloud deployment (EU host, Docker, managed PG) + CD; supersedes 002/005/014 for SaaS | 14 (pivot) |
 | [ADR-018](adr/ADR-018-subscription-billing.md) | SaaS subscriptions: trial, one monthly plan, provider port, webhook inbox; supersedes 009 | 14 (pivot) |
 
-## Business OS ADRs (Phase 1+, layered on the freeze above)
+## BusinessOS ADRs (ADR-BOS-*, active — not part of the V1 freeze)
 
-Not part of the 10.07.2026 ADR-001…018 freeze — these are later Business OS
-phase decisions (`docs/business-os/`), referenced inline throughout that
-subtree but not yet collected into a single index anywhere. Listed here only
-as each is found missing; the rest of the `ADR-BOS-*` series is not yet
-indexed.
+Later Business OS platform-core decisions (`docs/business-os/`). Layered on
+top of the freeze above, governed by that subtree's own PO-review process,
+not the V1 change process below.
 
-| ADR | Decision | Source |
+| ADR | Decision | Status |
 |---|---|---|
-| [ADR-BOS-005](adr/ADR-BOS-005-invoice-numbering-ownership.md) | `document_sequences` (order + invoice numbering) stays owned by `service_orders`; `commercial` calls out via `service_orders.contracts.get_next_invoice_number` | docs/business-os/09 Q2, 05 §1 |
+| [ADR-BOS-001](adr/ADR-BOS-001-modular-monolith.md) | Business OS evolves as a modular monolith | Proposed |
+| [ADR-BOS-002](adr/ADR-BOS-002-small-platform-core.md) | Small platform core (minimal shared kernel) | Proposed |
+| [ADR-BOS-003](adr/ADR-BOS-003-module-data-ownership.md) | Module data ownership | Proposed |
+| [ADR-BOS-004](adr/ADR-BOS-004-no-runtime-plugin-system-v1.md) | No runtime plugin system in v1 | Proposed |
+| [ADR-BOS-005](adr/ADR-BOS-005-invoice-numbering-ownership.md) | `document_sequences` (order + invoice numbering) stays owned by `service_orders`; `commercial` calls out via `service_orders.contracts.get_next_invoice_number` | Accepted |
+| [ADR-BOS-006](adr/ADR-BOS-006-global-search-platform-capability.md) | Global search is a platform capability; modules only index | Accepted |
+| [ADR-BOS-007](adr/ADR-BOS-007-stable-domain-event-naming.md) | Stable, module-namespaced domain event names | Accepted |
+| [ADR-BOS-008](adr/ADR-BOS-008-repository-identity-rename-deferred.md) | Repository identity rename, ServiceFlow → BusinessOS | Deferred |
+| [ADR-BOS-009](adr/ADR-BOS-009-vendor-control-plane-vs-tenant-workspace.md) | Vendor Control Plane vs Tenant Workspace | Proposed |
+| [ADR-BOS-010](adr/ADR-BOS-010-application-entitlement-ownership.md) | Application entitlement ownership | Proposed |
+| [ADR-BOS-011](adr/ADR-BOS-011-repairflow-business-profiles.md) | RepairFlow business profiles | Proposed |
+| [ADR-BOS-012](adr/ADR-BOS-012-subscription-lifecycle-v1-manual.md) | Subscription/licence lifecycle (V1, manually managed) | Proposed |
 
 **Pivot amendment 11.07.2026 ([14_WEB_FIRST_PIVOT.md](14_WEB_FIRST_PIVOT.md)):**
 web-first SaaS is the primary edition; the local edition is parked (ADR-002/005/
 009/014 marked superseded-or-parked; ADR-004/007 amended). Domain, workflow,
 schema, API and UI documents are unchanged by the pivot; documents 04/05/06 remain
 authoritative for the parked local edition and the artifact format.
+
+## Module ADR series
+
+Each vertical module owns and indexes its own ADR series — listed here by
+pointer only, not duplicated:
+
+| Module | Series | Index |
+|---|---|---|
+| Professional Services (implemented) | ADR-PS-001…013 | [modules/professional-services/docs/adr/README.md](../modules/professional-services/docs/adr/README.md) |
+| Construction Supervision (planned) | ADR-CS-001…007 | no ADR index — see [modules/construction-supervision/docs/adr/](../modules/construction-supervision/docs/adr/) |
 
 ## What the freeze covers
 
@@ -52,7 +71,7 @@ Frozen as of this date (changes require the process below):
    ([01_DOMAIN_MODEL.md](01_DOMAIN_MODEL.md), incl. approved OQ-1…5 defaults).
 2. **Workflow** — status set, semantic kinds, transition matrix, role matrix
    ([02_BUSINESS_WORKFLOW.md](02_BUSINESS_WORKFLOW.md), incl. OQ-W1…W4 defaults).
-3. **Architecture decisions** — ADR-001…015 above.
+3. **Architecture decisions** — ADR-001…018 above.
 4. **Migration constraints C1–C8** ([06](06_LOCAL_TO_SAAS_MIGRATION.md) §2) — these
    bind all V1 implementation.
 5. **Operational designs** — update pipeline (04), backup/verification/restore (05),

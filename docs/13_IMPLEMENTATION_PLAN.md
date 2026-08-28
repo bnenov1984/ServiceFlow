@@ -9,6 +9,23 @@ ADR-BOS-009…012 and
 [business-os/18_VENDOR_TENANT_ADMINISTRATION.md](business-os/18_VENDOR_TENANT_ADMINISTRATION.md)
 (audit-driven ownership model; documentation only, no stage timeline change).
 
+## Repo-Wide Status (authoritative)
+
+This block is the single current-status source for the whole repository.
+`docs/business-os/08_EVOLUTION_ROADMAP.md` and any acceptance-checklist
+snapshot (e.g. `docs/business-os/19_MVP_ACCEPTANCE_CHECKLIST.md`) describe
+plans or point-in-time verification, not current status — they defer to
+this block.
+
+| Field | Value |
+|---|---|
+| Platform/repository stage | Етап 3 (SaaS Shell & Administration) + Етап 4 (Commercial Documents) — both in progress, overlapping (see stage sections below) |
+| BusinessOS phase | Phase 4.5 — Vendor Control Plane & RepairFlow business profiles (docs/business-os/08_EVOLUTION_ROADMAP.md, amended 26.07.2026) |
+| Active vertical/module | RepairFlow (core) — active development; Professional Services — implemented; Construction Supervision — planned only, no backend |
+| Current focus | Post-deployment verification and hardening: end-to-end test coverage across core flows (auth, customer/order lifecycle) |
+| Deployment state | Live on Render (frontend + backend), backed by Neon PostgreSQL; cross-origin CORS and session-cookie configuration in place for the split-origin setup |
+| Last reviewed | 2026-08-24 |
+
 ## Етап 0 — Foundation ✅ (revalidated for SaaS)
 
 Done and kept: repo, module skeleton + import contracts, CI, health scaffold,
