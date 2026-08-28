@@ -274,11 +274,13 @@ def _customer_name_for(
 def list_invoices(
     db: TenantDbDep, tenant: TenantDep, status: str | None = None,
     order_id: uuid.UUID | None = None,
+    customer_id: uuid.UUID | None = None,
     limit: Annotated[int, Query(gt=0, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[InvoiceListItemOut]:
     invoices = service.list_invoices(
-        db, tenant, status=status, order_id=order_id, limit=limit, offset=offset,
+        db, tenant, status=status, order_id=order_id, customer_id=customer_id,
+        limit=limit, offset=offset,
     )
     orders = orders_contracts.get_order_summaries(db, tenant, (i.order_id for i in invoices))
     # Only Draft rows ever need a live customer lookup — issued rows resolve

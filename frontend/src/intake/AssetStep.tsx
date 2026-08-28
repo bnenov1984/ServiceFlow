@@ -236,18 +236,27 @@ export function AssetStep({
           </button>
         </div>
       ) : !selectedType ? (
-        <div className="grid grid-cols-4 gap-3">
-          {(types ?? []).map((type) => (
-            <button
-              key={type.code}
-              type="button"
-              onClick={() => { setSelectedType(type); setValues({}); setFieldErrors({}); }}
-              className="flex flex-col items-center gap-2 rounded-lg border border-slate-200 p-4 hover:border-blue-400 hover:bg-blue-50 min-h-touch"
-            >
-              <AssetTypeIcon code={type.code} className="h-7 w-7 text-slate-500" />
-              <span className="text-sm font-medium text-slate-700">{type.name_bg}</span>
-            </button>
-          ))}
+        <div>
+          <div className="grid grid-cols-4 gap-3">
+            {(types ?? []).map((type) => (
+              <button
+                key={type.code}
+                type="button"
+                onClick={() => { setSelectedType(type); setValues({}); setFieldErrors({}); }}
+                className="flex flex-col items-center gap-2 rounded-lg border border-slate-200 p-4 hover:border-blue-400 hover:bg-blue-50 min-h-touch"
+              >
+                <AssetTypeIcon code={type.code} className="h-7 w-7 text-slate-500" />
+                <span className="text-sm font-medium text-slate-700">{type.name_bg}</span>
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setMode("pick")}
+            className="mt-3 rounded-lg border border-slate-300 px-4 py-2 hover:bg-slate-50 min-h-touch"
+          >
+            {t("common.cancel")}
+          </button>
         </div>
       ) : (
         <form onSubmit={createAsset} className="flex flex-col gap-3">

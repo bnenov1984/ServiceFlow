@@ -103,6 +103,7 @@ export function App() {
         <Route path="invoices/:invoiceId" element={<InvoiceDetailPage />} />
         <Route path="ps" element={<PsPage />} />
         <Route path="ps/workflow-templates" element={<WorkflowTemplatesPage />} />
+        <Route path="settings" element={<Navigate to="/settings/employees" replace />} />
         <Route path="settings/employees" element={<EmployeesPage />} />
         <Route path="settings/company" element={<CompanyRequisitesPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />

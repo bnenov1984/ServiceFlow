@@ -181,6 +181,85 @@ describe("InvoicesPage: status filter", () => {
   });
 });
 
+describe("InvoicesPage: customer filter (Issue 39)", () => {
+  const customerHit = { id: "cust-1", name: "Иван Петров", phone: "0888123456", archived: false };
+
+  function mockInvoicesAndCustomerSearch() {
+    vi.mocked(api.get).mockImplementation((path: string) => {
+      if (path.startsWith("/customers")) return Promise.resolve([customerHit]) as never;
+      return Promise.resolve([]) as never;
+    });
+  }
+
+  it("selecting a customer from search sends customer_id, composed with the status filter", async () => {
+    const user = userEvent.setup();
+    mockInvoicesAndCustomerSearch();
+    renderPage();
+
+    await user.type(screen.getByPlaceholderText("Търсене по клиент…"), "Иван");
+    await user.click(await screen.findByText("Иван Петров"));
+
+    await waitFor(() => {
+      const lastUrl = vi.mocked(api.get).mock.calls.at(-1)?.[0] as string;
+      expect(lastUrl).toContain("/invoices");
+      expect(lastUrl).toContain(`customer_id=${customerHit.id}`);
+    });
+
+    await user.click(screen.getByRole("button", { name: "Издадени" }));
+    await waitFor(() => {
+      const lastUrl = vi.mocked(api.get).mock.calls.at(-1)?.[0] as string;
+      expect(lastUrl).toContain(`customer_id=${customerHit.id}`);
+      expect(lastUrl).toContain("status=issued");
+    });
+  });
+
+  it("clearing the selected customer removes customer_id from the next request", async () => {
+    const user = userEvent.setup();
+    mockInvoicesAndCustomerSearch();
+    renderPage();
+
+    await user.type(screen.getByPlaceholderText("Търсене по клиент…"), "Иван");
+    await user.click(await screen.findByText("Иван Петров"));
+    await screen.findByText(customerHit.name);
+
+    await user.click(screen.getByRole("button", { name: "Изчисти" }));
+
+    await waitFor(() => {
+      const lastUrl = vi.mocked(api.get).mock.calls.at(-1)?.[0] as string;
+      expect(lastUrl).not.toContain("customer_id");
+    });
+    expect(screen.getByPlaceholderText("Търсене по клиент…")).toBeInTheDocument();
+  });
+
+  it("Load More preserves the active customer filter on subsequent pages", async () => {
+    const user = userEvent.setup();
+    const fullInvoicePage = Array.from({ length: 50 }, (_, i) => ({
+      ...draftRow, id: `p1-${i}`, order_id: `order-p1-${i}`,
+    }));
+    vi.mocked(api.get).mockImplementation((path: string) => {
+      if (path.startsWith("/customers")) return Promise.resolve([customerHit]) as never;
+      return Promise.resolve(fullInvoicePage) as never;
+    });
+    renderPage();
+
+    await user.type(screen.getByPlaceholderText("Търсене по клиент…"), "Иван");
+    await user.click(await screen.findByText("Иван Петров"));
+    const loadMore = await screen.findByRole("button", { name: "Зареди още" });
+
+    vi.mocked(api.get).mockImplementation((path: string) => {
+      if (path.startsWith("/customers")) return Promise.resolve([customerHit]) as never;
+      return Promise.resolve([]) as never;
+    });
+    await user.click(loadMore);
+
+    await waitFor(() => {
+      const lastUrl = vi.mocked(api.get).mock.calls.at(-1)?.[0] as string;
+      expect(lastUrl).toContain("/invoices");
+      expect(lastUrl).toContain(`customer_id=${customerHit.id}`);
+    });
+  });
+});
+
 describe("InvoicesPage: Load More pagination", () => {
   function fullPage(prefix: string, n: number) {
     return Array.from({ length: n }, (_, i) => ({

@@ -72,6 +72,36 @@ describe("CustomerStep create flow", () => {
     expect(screen.getByLabelText("ЕИК / БУЛСТАТ")).toBeInTheDocument();
   });
 
+  it("switching the type toggle to Фирма relabels the name field as company name", async () => {
+    const user = userEvent.setup();
+    renderStep();
+    await enterCreateMode(user);
+
+    expect(screen.getByPlaceholderText("Име")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Име на фирма")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Фирма" }));
+
+    expect(screen.getByPlaceholderText("Име на фирма")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Име на фирма")).toBeRequired();
+    expect(screen.queryByPlaceholderText("Име")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Физическо лице" }));
+    expect(screen.getByPlaceholderText("Име")).toBeInTheDocument();
+  });
+
+  it("places the Individual/Company selector above the name field", async () => {
+    const user = userEvent.setup();
+    renderStep();
+    await enterCreateMode(user);
+
+    const toggle = screen.getByRole("group", { name: "Тип клиент" });
+    const nameField = screen.getByPlaceholderText("Име");
+
+    expect(toggle.compareDocumentPosition(nameField) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
+  });
+
   it("switching back to Физическо лице hides the company fields again", async () => {
     const user = userEvent.setup();
     renderStep();

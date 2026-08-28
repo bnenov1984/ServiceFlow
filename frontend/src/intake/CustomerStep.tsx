@@ -7,7 +7,11 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
-import { CustomerCompanyFields, type CompanyRequisitesForm } from "../customers/CustomerCompanyFields";
+import {
+  CustomerCompanyFields,
+  CustomerTypeToggle,
+  type CompanyRequisitesForm,
+} from "../customers/CustomerCompanyFields";
 import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
@@ -165,13 +169,14 @@ export function CustomerStep({
         </div>
       ) : (
         <form onSubmit={createCustomer} className="flex flex-col gap-3">
+          <CustomerTypeToggle isCompany={isCompany} onIsCompanyChange={setIsCompany} />
           <input
             type="text"
             required
             autoFocus
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
-            placeholder={t("intake.customer_name")}
+            placeholder={isCompany ? t("intake.customer_company_name") : t("intake.customer_name")}
             className="rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
           />
           <input
@@ -194,6 +199,7 @@ export function CustomerStep({
             onIsCompanyChange={setIsCompany}
             requisites={companyRequisites}
             onRequisitesChange={setCompanyRequisites}
+            showTypeToggle={false}
           />
           {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
           <div className="flex gap-2">

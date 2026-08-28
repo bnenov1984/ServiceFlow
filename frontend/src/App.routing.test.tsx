@@ -186,3 +186,12 @@ describe("Tenant login landing route (App.tsx IndexRoute) — RepairFlow is not 
     expect(await screen.findByRole("navigation", { name: /RepairFlow navigation/i })).toBeInTheDocument();
   });
 });
+
+describe("Settings default section (Issue 37) — bare /settings lands on Employees", () => {
+  it("redirects /settings to the employee list with the add-employee action visible", async () => {
+    renderAppAt("/settings", ["repairflow"]);
+
+    expect(await screen.findByRole("heading", { name: "Служители" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Добави служител" })).toBeInTheDocument();
+  });
+});

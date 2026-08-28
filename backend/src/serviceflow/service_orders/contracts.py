@@ -83,6 +83,18 @@ def get_order_summaries(db: Session, ctx: TenantContext,
     }
 
 
+def get_order_ids_for_customer(db: Session, ctx: TenantContext,
+                               customer_id: uuid.UUID) -> list[uuid.UUID]:
+    """Every order id belonging to this customer (archived or not) — the
+    sanctioned way for another module to build an IN-list filter keyed on
+    customer without reaching into `service_orders.models` itself. First
+    consumer: commercial's central invoice list (GET /invoices?customer_id=),
+    Issue 39 — an invoice has no customer_id of its own, only order_id, so
+    filtering "this customer's invoices" means resolving their order ids
+    first, in one query, not one per invoice."""
+    return _service.list_order_ids_for_customer(db, ctx, customer_id)
+
+
 def get_order_total(db: Session, ctx: TenantContext, order_id: uuid.UUID) -> Decimal:
     """The canonical order total (BR-3) — the single money formula every
     consumer must reuse, never reimplement. Wraps `lines.order_totals`."""

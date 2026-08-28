@@ -144,18 +144,31 @@ def get_issued(db: Session, ctx: TenantContext, invoice_id: uuid.UUID) -> Invoic
 
 
 def list_invoices(db: Session, ctx: TenantContext, *, status: str | None = None,
-                  order_id: uuid.UUID | None = None, limit: int = 50,
+                  order_id: uuid.UUID | None = None,
+                  customer_id: uuid.UUID | None = None, limit: int = 50,
                   offset: int = 0) -> list[Invoice]:
     """Newest-first, paginated at the query level (never load-then-slice in
     Python) — the central invoice list's (GET /invoices) primary query.
     `Invoice.id` is a secondary sort key purely to make paging deterministic
     across requests when two rows share the same `created_at` (UUIDv7 ids are
-    themselves time-ordered, so this never contradicts the primary key)."""
+    themselves time-ordered, so this never contradicts the primary key).
+
+    `customer_id` (Issue 39): an Invoice has no customer_id column of its
+    own, only order_id — so filtering by customer resolves that customer's
+    order ids first (one query, via the sanctioned service_orders contract,
+    never service_orders.models directly) and filters on the IN-list here,
+    same as the existing `order_id` filter. Composes with `status` and
+    pagination exactly like every other filter on this query — one WHERE
+    clause added before LIMIT/OFFSET, not a second query or a Python-side
+    filter."""
     stmt = scoped(select(Invoice), Invoice, ctx)
     if status:
         stmt = stmt.where(Invoice.status == status)
     if order_id:
         stmt = stmt.where(Invoice.order_id == order_id)
+    if customer_id:
+        order_ids = orders_contracts.get_order_ids_for_customer(db, ctx, customer_id)
+        stmt = stmt.where(Invoice.order_id.in_(order_ids))
     stmt = stmt.order_by(Invoice.created_at.desc(), Invoice.id.desc()).limit(limit).offset(offset)
     return list(db.scalars(stmt))
 

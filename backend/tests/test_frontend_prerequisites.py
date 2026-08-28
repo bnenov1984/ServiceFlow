@@ -126,7 +126,7 @@ def _seed_searchables(client: TestClient, h: dict[str, str]) -> dict[str, str]:
     }).json()["id"]
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
         "asset_type_code": "vehicle",
-        "field_values": {"brand": "VW", "model": "Golf", "vin": "WVWZZZ1JZ3W386752",
+        "field_values": {"brand": "Volkswagen", "model": "Golf", "vin": "WVWZZZ1JZ3W386752",
                          "reg_no": "ВН 1234 АК"},
     }).json()["id"]
     o = client.post("/api/v1/orders", headers=h, json={

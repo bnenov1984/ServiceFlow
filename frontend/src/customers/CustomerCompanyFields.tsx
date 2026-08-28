@@ -32,37 +32,56 @@ function toggleClass(active: boolean): string {
   }`;
 }
 
+export function CustomerTypeToggle({
+  isCompany,
+  onIsCompanyChange,
+}: {
+  isCompany: boolean;
+  onIsCompanyChange: (isCompany: boolean) => void;
+}) {
+  return (
+    <div className="flex gap-2" role="group" aria-label={t("customer.type_label")}>
+      <button
+        type="button"
+        aria-pressed={!isCompany}
+        onClick={() => onIsCompanyChange(false)}
+        className={toggleClass(!isCompany)}
+      >
+        {t("customer.type_individual")}
+      </button>
+      <button
+        type="button"
+        aria-pressed={isCompany}
+        onClick={() => onIsCompanyChange(true)}
+        className={toggleClass(isCompany)}
+      >
+        {t("customer.type_company")}
+      </button>
+    </div>
+  );
+}
+
 export function CustomerCompanyFields({
   isCompany,
   onIsCompanyChange,
   requisites,
   onRequisitesChange,
+  showTypeToggle = true,
 }: {
   isCompany: boolean;
   onIsCompanyChange: (isCompany: boolean) => void;
   requisites: CompanyRequisitesForm;
   onRequisitesChange: (requisites: CompanyRequisitesForm) => void;
+  /** CustomerStep places the toggle above the name field instead — see
+   * CustomerTypeToggle above — and renders this with `showTypeToggle={false}`
+   * so the two don't render side by side. */
+  showTypeToggle?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex gap-2" role="group" aria-label={t("customer.type_label")}>
-        <button
-          type="button"
-          aria-pressed={!isCompany}
-          onClick={() => onIsCompanyChange(false)}
-          className={toggleClass(!isCompany)}
-        >
-          {t("customer.type_individual")}
-        </button>
-        <button
-          type="button"
-          aria-pressed={isCompany}
-          onClick={() => onIsCompanyChange(true)}
-          className={toggleClass(isCompany)}
-        >
-          {t("customer.type_company")}
-        </button>
-      </div>
+      {showTypeToggle && (
+        <CustomerTypeToggle isCompany={isCompany} onIsCompanyChange={onIsCompanyChange} />
+      )}
 
       {isCompany && (
         <div className="flex flex-col gap-3">

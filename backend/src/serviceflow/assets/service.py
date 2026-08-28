@@ -35,7 +35,17 @@ DEFAULT_TYPES: list[dict[str, Any]] = [
     {
         "code": "vehicle", "name_bg": "Автомобил", "icon": "car", "sort": 2,
         "field_defs": [
-            {"key": "brand", "label_bg": "Марка", "type": "text"},
+            # Static V1 list (Issue 23) — no external make/model API. "Друго"
+            # is the escape hatch: a "choice" field rejects any value outside
+            # its list (validate_field_values below), so an uncommon brand
+            # must have somewhere to go.
+            {"key": "brand", "label_bg": "Марка", "type": "choice", "choices": [
+                "Audi", "BMW", "Chevrolet", "Citroën", "Dacia", "Fiat", "Ford",
+                "Honda", "Hyundai", "Kia", "Lada", "Land Rover", "Mazda",
+                "Mercedes-Benz", "Mini", "Mitsubishi", "Nissan", "Opel",
+                "Peugeot", "Renault", "Seat", "Škoda", "Subaru", "Suzuki",
+                "Toyota", "Volkswagen", "Volvo", "Друго",
+            ]},
             {"key": "model", "label_bg": "Модел", "type": "text"},
             {"key": "reg_no", "label_bg": "Рег. №", "type": "text", "identifier_kind": "reg"},
             {"key": "vin", "label_bg": "VIN", "type": "text", "identifier_kind": "vin"},
@@ -140,9 +150,20 @@ def _seed_types_on_company_provisioned(db: Session, event: DomainEvent) -> None:
     seed_default_types(db, event.company_id, business_profile)
 
 
-def validate_field_values(asset_type: AssetType,
-                          values: dict[str, Any]) -> dict[str, Any]:
-    """Rejects unknown keys and type mismatches; returns the cleaned dict."""
+def validate_field_values(asset_type: AssetType, values: dict[str, Any],
+                          existing: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Rejects unknown keys and type mismatches; returns the cleaned dict.
+
+    `existing` (Issue 23 follow-up): the asset's own field_values as already
+    stored, passed only by `update_fields` — never by `create`, which has no
+    "already stored" to grandfather. A "choice" field whose value already
+    matches what THIS asset already has for that key is accepted even if the
+    type's `choices` list has since moved on without it. Without this,
+    narrowing a field from free text to a fixed list (e.g. vehicle brand,
+    migration 0020) would make every asset already holding an old legacy
+    value (e.g. "VW") permanently unsavable — including for an edit that
+    never touches that field at all. A genuinely new/changed value is still
+    validated against the current list exactly as before."""
     defs = {d["key"]: d for d in asset_type.field_defs}
     errors: list[dict[str, str]] = []
     cleaned: dict[str, Any] = {}
@@ -161,7 +182,8 @@ def validate_field_values(asset_type: AssetType,
                 date.fromisoformat(str(raw))
             except ValueError:
                 errors.append({"loc": key, "type": "not_a_date"})
-        elif ftype == "choice" and raw not in d.get("choices", []):
+        elif (ftype == "choice" and raw not in d.get("choices", [])
+              and (existing is None or raw != existing.get(key))):
             errors.append({"loc": key, "type": "invalid_choice"})
         elif ftype == "text" and not isinstance(raw, str):
             errors.append({"loc": key, "type": "not_text"})
@@ -252,7 +274,9 @@ def list_for_customer(db: Session, ctx: TenantContext, customer_id: uuid.UUID,
 def update_fields(db: Session, ctx: TenantContext, asset: Asset,
                   asset_type: AssetType, values: dict[str, Any],
                   ) -> tuple[Asset, list[uuid.UUID]]:
-    cleaned = validate_field_values(asset_type, {**asset.field_values, **values})
+    cleaned = validate_field_values(
+        asset_type, {**asset.field_values, **values}, existing=asset.field_values,
+    )
     asset.field_values = cleaned
     asset.label = _label(asset_type, cleaned)
     asset.row_version += 1

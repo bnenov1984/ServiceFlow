@@ -120,6 +120,59 @@ describe("AssetStep numeric field coercion (form/schema boundary)", () => {
   });
 });
 
+describe("AssetStep choice-type field (Issue 23: automotive make dropdown)", () => {
+  const vehicleTypeWithChoiceBrand = {
+    code: "vehicle", name_bg: "Автомобил", icon: "car",
+    field_defs: [
+      { key: "brand", label_bg: "Марка", type: "choice",
+        choices: ["Audi", "Volkswagen", "Друго"] },
+      { key: "model", label_bg: "Модел", type: "text" },
+    ],
+  };
+
+  it("renders the brand field as a select limited to the given choices, not free text", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockReset();
+    vi.mocked(api.get).mockImplementation((path: string) => {
+      if (path === "/asset-types") return Promise.resolve([vehicleTypeWithChoiceBrand]) as never;
+      if (path.endsWith("/assets")) return Promise.resolve([]) as never;
+      return Promise.reject(new Error(`unexpected GET ${path}`));
+    });
+    vi.mocked(api.post).mockResolvedValue({
+      id: "a1", label: "Volkswagen Golf", asset_type_code: "vehicle",
+      archived: false, duplicate_asset_ids: [],
+    });
+    renderStep();
+
+    await selectVehicleType(user);
+    const brandSelect = inputForLabel("Марка");
+    expect(brandSelect.tagName).toBe("SELECT");
+    await user.selectOptions(brandSelect, "Volkswagen");
+    await user.type(inputForLabel("Модел"), "Golf");
+    await user.click(screen.getByRole("button", { name: "Продължи" }));
+
+    expect(api.post).toHaveBeenCalledWith(`/customers/${customerId}/assets`, {
+      asset_type_code: "vehicle",
+      field_values: { brand: "Volkswagen", model: "Golf" },
+    });
+  });
+});
+
+describe("AssetStep back navigation", () => {
+  it("lets the user cancel out of the type picker back to the asset list", async () => {
+    const user = userEvent.setup();
+    renderStep();
+
+    await user.click(await screen.findByText("+ Нов актив"));
+    expect(await screen.findByText("Автомобил")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Отказ" }));
+
+    expect(screen.getByText("+ Нов актив")).toBeInTheDocument();
+    expect(screen.queryByText("Автомобил")).not.toBeInTheDocument();
+  });
+});
+
 describe("coerceFieldValue", () => {
   const yearDef = { key: "year", label_bg: "Година", type: "number" as const };
   const brandDef = { key: "brand", label_bg: "Марка", type: "text" as const };

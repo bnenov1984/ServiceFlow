@@ -16,6 +16,7 @@ export const bg = {
   "nav.dashboard": "Табло",
   "nav.orders": "Поръчки",
   "nav.customers": "Клиенти",
+  "customer.back_to_customers": "← Клиенти",
   "nav.invoices": "Фактури",
   "nav.settings": "Настройки",
   "nav.coming_soon": "Очаквайте скоро",
@@ -156,6 +157,7 @@ export const bg = {
   "intake.no_customer_found": "Няма намерен клиент.",
   "intake.new_customer": "+ Нов клиент",
   "intake.customer_name": "Име",
+  "intake.customer_company_name": "Име на фирма",
   "intake.customer_phone": "Телефон",
   "intake.customer_email_optional": "Имейл (по желание)",
   "intake.duplicate_phone_hint": "Внимание: вече има клиент с този телефон.",
@@ -392,6 +394,8 @@ export const bg = {
   "invoices.empty": "Все още няма фактури.",
   "invoices.empty_hint": "Фактурите се създават от поръчките.",
   "invoices.load_more": "Зареди още",
+  "invoices.filter_customer_placeholder": "Търсене по клиент…",
+  "invoices.filter_customer_clear": "Изчисти",
 
   // Standalone Invoice Detail page (/invoices/{id}) — the invoice-centric
   // counterpart to order.invoice_* (which stays the order-centric section

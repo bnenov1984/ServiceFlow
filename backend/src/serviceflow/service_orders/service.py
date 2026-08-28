@@ -146,6 +146,21 @@ def get_many(db: Session, ctx: TenantContext,
     return {o.id: o for o in rows}
 
 
+def list_order_ids_for_customer(db: Session, ctx: TenantContext,
+                                customer_id: uuid.UUID) -> list[uuid.UUID]:
+    """Every order id belonging to this customer, archived or not — an
+    invoice filter (Issue 39) must never hide a customer's historical
+    invoices just because their order was later archived. ID-only and
+    unpaginated: one shop's one customer's order count is naturally small,
+    and this exists purely as an IN-list source for another module's own
+    paginated query (commercial.service.list_invoices), never rendered
+    itself."""
+    return list(db.scalars(
+        scoped(select(ServiceOrder.id), ServiceOrder, ctx)
+        .where(ServiceOrder.customer_id == customer_id)
+    ))
+
+
 def list_orders(db: Session, ctx: TenantContext, *, state: str = "open",
                 status_code: str | None = None, technician_id: uuid.UUID | None = None,
                 customer_id: uuid.UUID | None = None,

@@ -139,11 +139,6 @@ export function OrderPage() {
           )}
           <ComplaintBlock orderId={order.id} complaint={order.complaint} editable={!orderIsTerminal} />
           <DiagnosisCard orderId={order.id} diagnosis={order.diagnosis} editable={!orderIsTerminal} />
-          <MoneyCard
-            estimatedTotal={order.estimated_total}
-            paidAmount={order.paid_amount}
-            balance={order.balance}
-          />
           <InvoiceCard orderId={order.id} deliveredAt={order.delivered_at} customerId={order.customer_id} />
         </div>
 
@@ -151,6 +146,11 @@ export function OrderPage() {
           <TasksChecklist orderId={order.id} />
           <PartLinesSection orderId={order.id} />
           <LaborLinesSection orderId={order.id} />
+          <MoneyCard
+            estimatedTotal={order.estimated_total}
+            paidAmount={order.paid_amount}
+            balance={order.balance}
+          />
           <AccessoriesListSection orderId={order.id} />
           <PhotosGrid orderId={order.id} />
           <ContactsSection orderId={order.id} />

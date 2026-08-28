@@ -25,6 +25,13 @@ import { queryKeys } from "../lib/queryKeys";
 
 type StatusFilter = "all" | "draft" | "issued";
 
+interface CustomerHit {
+  id: string;
+  name: string;
+  phone: string;
+  archived: boolean;
+}
+
 interface InvoiceListItem {
   id: string;
   order_id: string;
@@ -120,8 +127,83 @@ const STATUS_FILTERS: { value: StatusFilter; labelKey: Parameters<typeof t>[0] }
   { value: "issued", labelKey: "invoices.filter_issued" },
 ];
 
+function useDebounced(value: string, ms: number): string {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), ms);
+    return () => clearTimeout(timer);
+  }, [value, ms]);
+  return debounced;
+}
+
+// Composed into the same server-side query as status/pagination (Issue 39)
+// — never a client-side post-filter, which would silently break Load More's
+// paging math.
+function CustomerFilter({
+  selected,
+  onSelect,
+  onClear,
+}: {
+  selected: { id: string; name: string } | null;
+  onSelect: (customer: { id: string; name: string }) => void;
+  onClear: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const debouncedQuery = useDebounced(query, 300);
+
+  const { data: hits } = useQuery({
+    queryKey: queryKeys.customers(debouncedQuery),
+    queryFn: () => api.get<CustomerHit[]>(`/customers?q=${encodeURIComponent(debouncedQuery)}`),
+    enabled: !selected && debouncedQuery.trim().length >= 2,
+  });
+
+  if (selected) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
+        <span className="font-medium text-slate-800">{selected.name}</span>
+        <button
+          type="button"
+          onClick={() => { onClear(); setQuery(""); }}
+          className="text-blue-700 hover:underline"
+        >
+          {t("invoices.filter_customer_clear")}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative" style={{ width: "16rem" }}>
+      <input
+        type="search"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder={t("invoices.filter_customer_placeholder")}
+        className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-h-touch"
+      />
+      {debouncedQuery.trim().length >= 2 && hits && hits.length > 0 && (
+        <ul className="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow-lg">
+          {hits.filter((h) => !h.archived).map((hit) => (
+            <li key={hit.id}>
+              <button
+                type="button"
+                onClick={() => { onSelect(hit); setQuery(""); }}
+                className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50"
+              >
+                <span className="font-medium text-slate-800">{hit.name}</span>
+                <span className="text-slate-500">{hit.phone}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export function InvoicesPage() {
   const [filter, setFilter] = useState<StatusFilter>("all");
+  const [customer, setCustomer] = useState<{ id: string; name: string } | null>(null);
   const [rows, setRows] = useState<InvoiceListItem[]>([]);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(false);
@@ -129,12 +211,14 @@ export function InvoicesPage() {
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
 
   const statusParam = filter === "all" ? "" : `&status=${filter}`;
+  const customerParam = customer ? `&customer_id=${customer.id}` : "";
 
   const {
     data: firstPage, isLoading, isError, error, refetch,
   } = useQuery({
-    queryKey: queryKeys.invoices(filter),
-    queryFn: () => api.get<InvoiceListItem[]>(`/invoices?limit=${PAGE_SIZE}${statusParam}`),
+    queryKey: queryKeys.invoices(filter, customer?.id),
+    queryFn: () =>
+      api.get<InvoiceListItem[]>(`/invoices?limit=${PAGE_SIZE}${statusParam}${customerParam}`),
   });
 
   // Seeds/replaces the accumulated rows whenever a *first* page resolves —
@@ -148,16 +232,31 @@ export function InvoicesPage() {
     }
   }, [firstPage]);
 
-  const changeFilter = (next: StatusFilter) => {
-    if (next === filter) return;
-    setFilter(next);
-    // Clear synchronously so a stale filter's rows never flash before the
-    // new filter's first page resolves (rather than waiting on the effect
-    // above, which only fires once `firstPage` itself changes identity).
+  // Shared by both filter changes — same reset, same reason: a stale
+  // filter's rows must never flash before the new filter's first page
+  // resolves (rather than waiting on the effect above, which only fires
+  // once `firstPage` itself changes identity).
+  const resetPaging = () => {
     setRows([]);
     setOffset(0);
     setHasMore(false);
     setLoadMoreError(null);
+  };
+
+  const changeFilter = (next: StatusFilter) => {
+    if (next === filter) return;
+    setFilter(next);
+    resetPaging();
+  };
+
+  const selectCustomer = (next: { id: string; name: string }) => {
+    setCustomer(next);
+    resetPaging();
+  };
+
+  const clearCustomer = () => {
+    setCustomer(null);
+    resetPaging();
   };
 
   const loadMore = async () => {
@@ -166,7 +265,7 @@ export function InvoicesPage() {
     setLoadMoreError(null);
     try {
       const next = await api.get<InvoiceListItem[]>(
-        `/invoices?limit=${PAGE_SIZE}&offset=${offset}${statusParam}`,
+        `/invoices?limit=${PAGE_SIZE}&offset=${offset}${statusParam}${customerParam}`,
       );
       setRows((prev) => [...prev, ...next]);
       setOffset((prev) => prev + next.length);
@@ -182,20 +281,23 @@ export function InvoicesPage() {
     <div>
       <h1 className="mb-4 text-2xl font-bold text-slate-900">{t("nav.invoices")}</h1>
 
-      <div className="mb-4 flex gap-1 rounded-lg border border-slate-300 p-1" style={{ width: "fit-content" }}>
-        {STATUS_FILTERS.map((f) => (
-          <button
-            key={f.value}
-            type="button"
-            aria-pressed={filter === f.value}
-            onClick={() => changeFilter(f.value)}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium min-h-touch ${
-              filter === f.value ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100"
-            }`}
-          >
-            {t(f.labelKey)}
-          </button>
-        ))}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="flex gap-1 rounded-lg border border-slate-300 p-1" style={{ width: "fit-content" }}>
+          {STATUS_FILTERS.map((f) => (
+            <button
+              key={f.value}
+              type="button"
+              aria-pressed={filter === f.value}
+              onClick={() => changeFilter(f.value)}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium min-h-touch ${
+                filter === f.value ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              {t(f.labelKey)}
+            </button>
+          ))}
+        </div>
+        <CustomerFilter selected={customer} onSelect={selectCustomer} onClear={clearCustomer} />
       </div>
 
       {isLoading ? (

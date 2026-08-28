@@ -150,7 +150,7 @@ def test_asset_creation_works_under_a_specialized_profile(client: TestClient) ->
                               json={"name": "Клиент", "phone": "0888000111"}).json()["id"]
     resp = client.post(f"/api/v1/customers/{customer_id}/assets", headers=headers, json={
         "asset_type_code": "vehicle",
-        "field_values": {"brand": "VW", "model": "Golf", "reg_no": "CA1234BT"},
+        "field_values": {"brand": "Volkswagen", "model": "Golf", "reg_no": "CA1234BT"},
     })
     assert resp.status_code == 201, resp.text
     assert resp.json()["asset_type_code"] == "vehicle"

@@ -56,6 +56,19 @@ def _order(client: TestClient, h: dict[str, str], *, customer_name: str = "Ив�
     }).json()["id"])
 
 
+def _order_for_existing_customer(client: TestClient, h: dict[str, str], cid: str) -> str:
+    """A second (or third...) order for a customer created by `_order()` —
+    `_order()` itself always creates a brand-new customer row, even given
+    the same name/phone, so this is the only way to get two orders that
+    genuinely share one customer_id."""
+    aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
+        "asset_type_code": "phone", "field_values": {"brand": "Apple"},
+    }).json()["id"]
+    return str(client.post("/api/v1/orders", headers=h, json={
+        "customer_id": cid, "asset_id": aid, "complaint": "Втора поръчка",
+    }).json()["id"])
+
+
 def _order_number(client: TestClient, h: dict[str, str], oid: str) -> str:
     return str(client.get(f"/api/v1/orders/{oid}", headers=h).json()["number"])
 
@@ -162,6 +175,80 @@ def test_order_id_filter_still_works(client: TestClient) -> None:
     body = client.get(f"/api/v1/invoices?order_id={oid_a}").json()
     assert len(body) == 1
     assert body[0]["order_id"] == oid_a
+
+
+# --- customer_id filter (Issue 39) --------------------------------------------
+
+def test_customer_id_filter(client: TestClient) -> None:
+    h = _login(client)
+    oid_a = _order(client, h, customer_name="Клиент А")
+    oid_b = _order(client, h, customer_name="Клиент Б")
+    invoice_a = _draft(client, h, oid_a)
+    _draft(client, h, oid_b)
+    cid_a = _customer_id_for_order(client, h, oid_a)
+
+    body = client.get(f"/api/v1/invoices?customer_id={cid_a}").json()
+    assert [row["id"] for row in body] == [invoice_a]
+
+
+def test_customer_id_filter_covers_all_of_that_customers_orders(client: TestClient) -> None:
+    """One customer, two separate orders/invoices — both must come back, not
+    just the first (an accidental single order_id match would miss this)."""
+    h = _login(client)
+    oid1 = _order(client, h, customer_name="Редовен клиент")
+    cid = _customer_id_for_order(client, h, oid1)
+    oid2 = _order_for_existing_customer(client, h, cid)
+    invoice1 = _draft(client, h, oid1)
+    invoice2 = _draft(client, h, oid2)
+
+    body = client.get(f"/api/v1/invoices?customer_id={cid}").json()
+    assert {row["id"] for row in body} == {invoice1, invoice2}
+
+
+def test_customer_id_filter_composes_with_status(client: TestClient) -> None:
+    h = _login(client)
+    _ready_seller(client, h)
+    oid = _order_with_lines(client, h, customer_name="Клиент А")
+    draft_id = _draft(client, h, oid)
+    cid = _customer_id_for_order(client, h, oid)
+    _issue(client, h, draft_id)
+
+    other_oid = _order(client, h, customer_name="Клиент Б")
+    _draft(client, h, other_oid)
+
+    body = client.get(f"/api/v1/invoices?customer_id={cid}&status=issued").json()
+    assert [row["id"] for row in body] == [draft_id]
+
+
+def test_customer_id_filter_composes_with_pagination(client: TestClient) -> None:
+    h = _login(client)
+    oid1 = _order(client, h, customer_name="Много поръчки")
+    cid = _customer_id_for_order(client, h, oid1)
+    invoice_ids = [_draft(client, h, oid1)]
+    for _ in range(4):
+        oid = _order_for_existing_customer(client, h, cid)
+        invoice_ids.append(_draft(client, h, oid))
+    newest_first = list(reversed(invoice_ids))
+
+    page1 = client.get(f"/api/v1/invoices?customer_id={cid}&limit=2&offset=0").json()
+    page2 = client.get(f"/api/v1/invoices?customer_id={cid}&limit=2&offset=2").json()
+    assert [row["id"] for row in page1] == newest_first[0:2]
+    assert [row["id"] for row in page2] == newest_first[2:4]
+
+
+def test_customer_id_filter_is_tenant_isolated(client: TestClient) -> None:
+    """A customer_id from another tenant must never leak that tenant's
+    invoices — get_order_ids_for_customer resolves through the same scoped()
+    chokepoint as every other tenant query, this proves it end to end."""
+    h_a = _login(client, "Сервиз А", "a@a.bg")
+    oid_a = _order(client, h_a, customer_name="Клиент А")
+    _draft(client, h_a, oid_a)
+    cid_a = _customer_id_for_order(client, h_a, oid_a)
+    client.post("/api/v1/auth/logout", headers=h_a)
+
+    _login(client, "Сервиз Б", "b@b.bg")
+    body = client.get(f"/api/v1/invoices?customer_id={cid_a}").json()
+    assert body == []
 
 
 # --- pagination --------------------------------------------------------------
