@@ -1,27 +1,11 @@
 
 import { test, expect } from '@playwright/test';
+import { getOwnerCredentials, loginAsOwner } from './support/login';
 
 test('owner can login', async ({ page }) => {
-  const ownerEmail = process.env.E2E_OWNER_EMAIL;
-  const ownerPassword = process.env.E2E_OWNER_PASSWORD;
+  const { email, password } = getOwnerCredentials();
 
-  if (!ownerEmail || !ownerPassword) {
-    throw new Error('E2E owner credentials are not configured');
-  }
-
-  await page.goto('/');
-
-  await page
-    .getByRole('textbox', { name: 'Имейл' })
-    .fill(ownerEmail);
-
-  await page
-    .getByRole('textbox', { name: 'Парола' })
-    .fill(ownerPassword);
-
-  await page
-    .getByRole('button', { name: 'Влез' })
-    .click();
+  await loginAsOwner(page, email, password);
 
   // Authentication/navigation check
   await expect(page).toHaveURL('/choose-app');
@@ -34,25 +18,12 @@ test('owner can login', async ({ page }) => {
 
 test('owner cannot login with invalid password', async ({ page }) => {
   const ownerEmail = process.env.E2E_OWNER_EMAIL;
-  const ownerPassword = process.env.E2E_OWNER_PASSWORD;
 
   if (!ownerEmail) {
     throw new Error('E2E owner email is not configured');
   }
 
-  await page.goto('/');
-
-  await page
-    .getByRole('textbox', { name: 'Имейл' })
-    .fill(ownerEmail);
-
-  await page
-    .getByRole('textbox', { name: 'Парола' })
-    .fill('pass123');
-
-  await page
-    .getByRole('button', { name: 'Влез' })
-    .click();
+  await loginAsOwner(page, ownerEmail, 'pass123');
 
   // Authentication/navigation check
   await expect(page).toHaveURL('/login?next=%2F');
