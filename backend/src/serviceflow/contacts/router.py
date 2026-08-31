@@ -23,7 +23,10 @@ router = APIRouter(dependencies=[Depends(require_repairflow_active)])
 
 
 class ContactRecordIn(BaseModel):
-    type: str = Field(pattern="^(call|email|message|visit|note)$")
+    # Wave 2 Issue 34: message/visit narrowed away as *new-entry* options,
+    # matching contacts.service.ALL_TYPES — existing historical rows of
+    # those types are untouched and still readable, just no longer creatable.
+    type: str = Field(pattern="^(call|email|note)$")
     direction: str | None = Field(default=None, pattern="^(in|out)$")
     summary: str = Field(min_length=1, max_length=5000)
     occurred_at: datetime | None = None

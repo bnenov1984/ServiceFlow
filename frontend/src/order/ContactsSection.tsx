@@ -1,7 +1,14 @@
-/** ContactsList (docs/15 §6.5/§6.7, docs/02 §10): call/email/message/visit/note,
+/** ContactsList (docs/15 §6.5/§6.7, docs/02 §10) — Wave 2 Issue 34: call/
+ * email/note (message/visit narrowed away as *new-entry* options; existing
+ * historical message/visit records stay readable, nothing is deleted),
  * editable by the author until frozen (end of day, OQ-1 default). Shared
- * between the order detail screen and the customer profile — same component,
- * a different base resource (docs/15 §6.7: "общият ContactsList компонент"). */
+ * between the order detail screen and the customer profile — order-scoped
+ * usage now passes `showHistory={false}`: its own history list would just
+ * duplicate what TimelineSection already shows inline (note_or_contact_
+ * recorded), so only the add-new-contact form renders there, and a
+ * successful add also invalidates the order timeline so the new entry
+ * appears immediately. Customer-level communication (no order) keeps the
+ * full list — it has no order timeline to defer to. */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -18,8 +25,8 @@ interface ContactRecordOut {
   editable: boolean;
 }
 
-const TYPES = ["call", "email", "message", "visit", "note"] as const;
-const TYPE_LABEL: Record<string, Parameters<typeof t>[0]> = {
+const TYPES = ["call", "email", "note"] as const;
+export const TYPE_LABEL: Record<string, Parameters<typeof t>[0]> = {
   call: "order.contact_call",
   email: "order.contact_email",
   message: "order.contact_message",
@@ -27,10 +34,10 @@ const TYPE_LABEL: Record<string, Parameters<typeof t>[0]> = {
   note: "order.contact_note",
 };
 
-type ContactsSectionProps = { orderId: string; customerId?: undefined }
-  | { orderId?: undefined; customerId: string };
+type ContactsSectionProps = { orderId: string; customerId?: undefined; showHistory?: boolean }
+  | { orderId?: undefined; customerId: string; showHistory?: boolean };
 
-export function ContactsSection({ orderId, customerId }: ContactsSectionProps) {
+export function ContactsSection({ orderId, customerId, showHistory = true }: ContactsSectionProps) {
   const [type, setType] = useState<(typeof TYPES)[number]>("call");
   const [direction, setDirection] = useState<"in" | "out">("out");
   const [summary, setSummary] = useState("");
@@ -42,6 +49,7 @@ export function ContactsSection({ orderId, customerId }: ContactsSectionProps) {
   const { data: records } = useQuery({
     queryKey: key,
     queryFn: () => api.get<ContactRecordOut[]>(`${basePath}/contact-records`),
+    enabled: showHistory,
   });
 
   const add = async () => {
@@ -53,6 +61,7 @@ export function ContactsSection({ orderId, customerId }: ContactsSectionProps) {
       });
       setSummary("");
       await queryClient.invalidateQueries({ queryKey: key });
+      if (orderId) await queryClient.invalidateQueries({ queryKey: queryKeys.orderTimeline(orderId) });
     } catch {
       setError(t("errors.internal"));
     }
@@ -63,20 +72,22 @@ export function ContactsSection({ orderId, customerId }: ContactsSectionProps) {
       <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
         {t("order.contacts")}
       </h3>
-      <ul className="mb-3 flex flex-col gap-2">
-        {(records ?? []).map((r) => (
-          <li key={r.id} className="text-sm">
-            <span className="mr-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-              {t(TYPE_LABEL[r.type] ?? "order.contact_note")}
-            </span>
-            <span className="text-slate-700">{r.summary}</span>
-            <span className="ml-2 text-xs text-slate-400">
-              {new Date(r.occurred_at).toLocaleDateString("bg-BG")}
-            </span>
-          </li>
-        ))}
-        {records?.length === 0 && <p className="text-sm text-slate-400">{t("order.contacts_none")}</p>}
-      </ul>
+      {showHistory && (
+        <ul className="mb-3 flex flex-col gap-2">
+          {(records ?? []).map((r) => (
+            <li key={r.id} className="text-sm">
+              <span className="mr-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                {t(TYPE_LABEL[r.type] ?? "order.contact_note")}
+              </span>
+              <span className="text-slate-700">{r.summary}</span>
+              <span className="ml-2 text-xs text-slate-400">
+                {new Date(r.occurred_at).toLocaleDateString("bg-BG")}
+              </span>
+            </li>
+          ))}
+          {records?.length === 0 && <p className="text-sm text-slate-400">{t("order.contacts_none")}</p>}
+        </ul>
+      )}
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap gap-2">
           {TYPES.map((tp) => (

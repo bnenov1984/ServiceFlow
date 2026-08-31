@@ -1,10 +1,17 @@
 /** TimelineSection (docs/15 §6.5, BR-5): read-only, newest first, actor + time.
- * Users never edit history (docs/01 §TimelineEvent). */
+ * Users never edit history (docs/01 §TimelineEvent).
+ *
+ * Wave 2 Issue 34: order-scoped communication (call/email/note, plus any
+ * historical message/visit record) has no separate ContactsSection on the
+ * order page any more — note_or_contact_recorded events render their actual
+ * content (type badge + summary) here instead of a generic label, the same
+ * content ContactsSection used to show in its own list. */
 
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
 import { t } from "../i18n/bg";
+import { TYPE_LABEL as CONTACT_TYPE_LABEL } from "./ContactsSection";
 
 interface TimelineEventOut {
   event_type: string;
@@ -66,17 +73,31 @@ export function TimelineSection({ orderId }: { orderId: string }) {
         {t("order.timeline")}
       </h3>
       <ol className="flex flex-col gap-2">
-        {(events ?? []).map((e, i) => (
-          <li key={i} className="flex items-start gap-3 text-sm">
-            <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-slate-300" />
-            <div>
-              <p className="text-slate-700">{t(EVENT_LABEL[e.event_type] ?? e.event_type)}</p>
-              <p className="text-xs text-slate-400">
-                {actorName(e.actor_user_id)} · {new Date(e.created_at).toLocaleString("bg-BG")}
-              </p>
-            </div>
-          </li>
-        ))}
+        {(events ?? []).map((e, i) => {
+          const contactType = e.event_type === "note_or_contact_recorded"
+            ? String(e.data.type ?? "") : null;
+          const contactSummary = contactType ? String(e.data.summary ?? "") : null;
+          return (
+            <li key={i} className="flex items-start gap-3 text-sm">
+              <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-slate-300" />
+              <div>
+                {contactType ? (
+                  <p className="text-slate-700">
+                    <span className="mr-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                      {t(CONTACT_TYPE_LABEL[contactType] ?? "order.contact_note")}
+                    </span>
+                    {contactSummary}
+                  </p>
+                ) : (
+                  <p className="text-slate-700">{t(EVENT_LABEL[e.event_type] ?? e.event_type)}</p>
+                )}
+                <p className="text-xs text-slate-400">
+                  {actorName(e.actor_user_id)} · {new Date(e.created_at).toLocaleString("bg-BG")}
+                </p>
+              </div>
+            </li>
+          );
+        })}
         {events?.length === 0 && <p className="text-sm text-slate-400">{t("order.timeline_none")}</p>}
       </ol>
     </div>

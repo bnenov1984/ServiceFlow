@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { AuthProvider } from "./auth/AuthContext";
+import { ToastProvider } from "./components/Toast";
 import { ApiError } from "./lib/api";
 
 const mockGet = vi.fn();
@@ -44,6 +45,10 @@ function stubDataEndpoints(getMe: () => ReturnType<typeof meFor> | null) {
       });
     }
     if (path.startsWith("/ps/")) return Promise.resolve([]);
+    // Issue 3: RepairFlow's index route now renders OrdersPage (Dashboard
+    // summary + Orders workspace merged) instead of the old standalone
+    // DashboardPage, so its own GET /orders needs a stub too.
+    if (path.startsWith("/orders")) return Promise.resolve([]);
     if (path === "/users") return Promise.resolve([]);
     return Promise.reject(new Error(`unexpected GET ${path}`));
   });
@@ -54,11 +59,13 @@ function renderAppAt(path: string, activeModules: string[]) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <MemoryRouter initialEntries={[path]}>
-          <App />
-        </MemoryRouter>
-      </AuthProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={[path]}>
+            <App />
+          </MemoryRouter>
+        </AuthProvider>
+      </ToastProvider>
     </QueryClientProvider>,
   );
 }
@@ -124,11 +131,13 @@ describe("Tenant login landing route (App.tsx IndexRoute) — RepairFlow is not 
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <MemoryRouter initialEntries={["/login"]}>
-            <App />
-          </MemoryRouter>
-        </AuthProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <MemoryRouter initialEntries={["/login"]}>
+              <App />
+            </MemoryRouter>
+          </AuthProvider>
+        </ToastProvider>
       </QueryClientProvider>,
     );
     const user = userEvent.setup();
@@ -157,11 +166,13 @@ describe("Tenant login landing route (App.tsx IndexRoute) — RepairFlow is not 
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <MemoryRouter initialEntries={["/"]}>
-            <App />
-          </MemoryRouter>
-        </AuthProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <MemoryRouter initialEntries={["/"]}>
+              <App />
+            </MemoryRouter>
+          </AuthProvider>
+        </ToastProvider>
       </QueryClientProvider>,
     );
     const user = userEvent.setup();

@@ -358,9 +358,9 @@ export function AppShell() {
           )}
           {currentApp?.id === "repairflow" && (
             <>
-              <NavLink to="/" end className={({ isActive }) => navClass(isActive)}>
-                {t("nav.dashboard")}
-              </NavLink>
+              {/* Wave 2 Issue 3: "/" and "/orders" render the identical
+                  merged summary+workspace screen now — one nav entry, not
+                  two links to the same place. */}
               <NavLink to="/orders" className={({ isActive }) => navClass(isActive)}>
                 {t("nav.orders")}
               </NavLink>
@@ -408,15 +408,16 @@ export function AppShell() {
           control so it never renders for a company without that entitlement. */}
       {currentApp?.id === "repairflow" && (
         <nav aria-label="RepairFlow mobile navigation" className="sticky bottom-0 flex border-t border-slate-200 bg-white md:hidden">
+          {/* Wave 2 Issue 3: "/" redirects to "/orders" (merged summary +
+              workspace screen) — one nav entry, not two links to the same
+              place. */}
           {[
-            { to: "/", label: t("nav.dashboard") },
             { to: "/orders", label: t("nav.orders") },
             { to: "/customers", label: t("nav.customers") },
           ].map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
-              end={item.to === "/"}
               className={({ isActive }) =>
                 `flex flex-1 items-center justify-center py-3 text-sm font-medium min-h-touch ${
                   isActive ? "text-blue-700" : "text-slate-500"

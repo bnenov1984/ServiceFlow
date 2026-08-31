@@ -62,6 +62,18 @@ def test_note_type_has_no_direction(client: TestClient) -> None:
     assert r.json()["type"] == "note"
 
 
+def test_message_and_visit_are_no_longer_creatable_types(client: TestClient) -> None:
+    """Wave 2 Issue 34: communication types narrowed to call/email/note —
+    "message"/"visit" are rejected for *new* records (existing historical
+    rows of those types are untouched elsewhere; this only guards writes)."""
+    h = _login(client)
+    cid = _customer(client, h)
+    for bad_type in ("message", "visit"):
+        r = client.post(f"/api/v1/customers/{cid}/contact-records", headers=h,
+                        json={"type": bad_type, "direction": "in", "summary": "x"})
+        assert r.status_code == 400, bad_type
+
+
 def test_order_bound_note_derives_customer_and_writes_timeline(client: TestClient) -> None:
     h = _login(client)
     cid = _customer(client, h)
@@ -82,7 +94,7 @@ def test_visible_from_both_order_and_customer_views(client: TestClient) -> None:
     cid = _customer(client, h)
     oid = _order(client, h, cid)
     client.post(f"/api/v1/orders/{oid}/contact-records", headers=h,
-               json={"type": "visit", "direction": "in", "summary": "Дойде да пита"})
+               json={"type": "call", "direction": "in", "summary": "Дойде да пита"})
 
     order_view = client.get(f"/api/v1/orders/{oid}/contact-records").json()
     customer_view = client.get(f"/api/v1/customers/{cid}/contact-records").json()

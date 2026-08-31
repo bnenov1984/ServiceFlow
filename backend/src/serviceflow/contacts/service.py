@@ -13,7 +13,13 @@ from business_os.shared_kernel.events import DomainEvent, publish
 from serviceflow.contacts.models import ContactRecord
 from serviceflow.service_orders.models import ServiceOrder
 
-COMMUNICATION_TYPES = ("call", "email", "message", "visit")
+# Wave 2 Issue 34: "message"/"visit" narrowed away as *new-entry* options —
+# call/email/note only, matching the frontend's own narrower TYPES. The DB's
+# ck_contact_records_type CHECK constraint is deliberately left at its wider
+# original set (migration 0006): existing message/visit rows must stay
+# readable, and this validation function is the actual gate new writes go
+# through, so narrowing it here is sufficient — no migration needed.
+COMMUNICATION_TYPES = ("call", "email")
 ALL_TYPES = (*COMMUNICATION_TYPES, "note")
 
 

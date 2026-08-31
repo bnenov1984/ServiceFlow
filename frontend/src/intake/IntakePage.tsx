@@ -29,7 +29,7 @@ interface OrderOut {
 }
 
 const DEFAULT_ORDER_VALUE: OrderStepValue = {
-  complaint: "", accessories: [], photos: [], promisedOn: null,
+  complaint: "", accessories: [], photos: [], partLines: [],
   priority: "normal", technicianId: null,
 };
 
@@ -80,7 +80,6 @@ export function IntakePage() {
         asset_id: asset.id,
         complaint: orderValue.complaint,
         priority: orderValue.priority,
-        promised_on: orderValue.promisedOn,
         technician_id: orderValue.technicianId,
       });
 
@@ -105,11 +104,27 @@ export function IntakePage() {
         }
       }
 
+      // Issue 29: parts already known at intake, same best-effort pattern —
+      // a failed part line never loses the created order.
+      let partFailures = 0;
+      for (const line of orderValue.partLines) {
+        try {
+          await api.post(`/orders/${order.id}/part-lines`, {
+            name: line.name, unit_price: line.unitPrice,
+          });
+        } catch {
+          partFailures++;
+        }
+      }
+
       if (accessoryFailures > 0) {
         pushToast("error", t("intake.accessories_failed", { count: accessoryFailures }));
       }
       if (photoFailures > 0) {
         pushToast("error", t("intake.photos_failed", { count: photoFailures }));
+      }
+      if (partFailures > 0) {
+        pushToast("error", t("intake.parts_failed", { count: partFailures }));
       }
 
       // Same-origin navigation carries the session cookie automatically.

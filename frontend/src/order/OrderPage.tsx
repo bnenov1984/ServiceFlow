@@ -23,6 +23,8 @@ import { MoneyCard } from "./MoneyCard";
 import { OrderHeader } from "./OrderHeader";
 import { PartLinesSection } from "./PartLinesSection";
 import { PhotosGrid } from "./PhotosGrid";
+import { PromisedDateBlock } from "./PromisedDateBlock";
+import { ReadySummary } from "./ReadySummary";
 import { TasksChecklist } from "./TasksChecklist";
 import { TimelineSection } from "./TimelineSection";
 
@@ -34,6 +36,7 @@ interface OrderDetailOut {
   complaint: string;
   status_code: string;
   archived: boolean;
+  promised_on: string | null;
   diagnosis: DiagnosisValue | null;
   estimated_total: number;
   paid_amount: number;
@@ -115,6 +118,15 @@ export function OrderPage() {
   }
 
   const orderIsTerminal = order.archived || isTerminal(order.status_code);
+  // Issue 8: "ready" is operationally frozen — complaint/diagnosis/parts/
+  // labor render as a single read-only recap instead of their normal
+  // editable sections. Corrections go back through the existing workflow
+  // (move the order back to "repair" first via OrderHeader's status menu,
+  // unchanged), not an edit control here. Nothing about the underlying
+  // stored order/diagnosis/part/labor data changes — this is presentation
+  // only, and every other section (tasks, accessories, photos, invoice,
+  // timeline) keeps working exactly as it does for any other open order.
+  const isReady = order.status_code === "ready";
 
   return (
     <div className="flex flex-col gap-4">
@@ -137,23 +149,43 @@ export function OrderPage() {
               fieldValues={asset.field_values}
             />
           )}
-          <ComplaintBlock orderId={order.id} complaint={order.complaint} editable={!orderIsTerminal} />
-          <DiagnosisCard orderId={order.id} diagnosis={order.diagnosis} editable={!orderIsTerminal} />
+          {isReady ? (
+            <ReadySummary
+              orderId={order.id}
+              complaint={order.complaint}
+              diagnosis={order.diagnosis}
+              estimatedTotal={order.estimated_total}
+              paidAmount={order.paid_amount}
+              balance={order.balance}
+            />
+          ) : (
+            <>
+              <ComplaintBlock orderId={order.id} complaint={order.complaint} editable={!orderIsTerminal} />
+              <DiagnosisCard orderId={order.id} diagnosis={order.diagnosis} editable={!orderIsTerminal} />
+            </>
+          )}
+          <PromisedDateBlock orderId={order.id} promisedOn={order.promised_on} editable={!orderIsTerminal} />
           <InvoiceCard orderId={order.id} deliveredAt={order.delivered_at} customerId={order.customer_id} />
         </div>
 
         <div className="flex flex-col gap-4">
           <TasksChecklist orderId={order.id} />
-          <PartLinesSection orderId={order.id} />
-          <LaborLinesSection orderId={order.id} />
-          <MoneyCard
-            estimatedTotal={order.estimated_total}
-            paidAmount={order.paid_amount}
-            balance={order.balance}
-          />
+          {!isReady && (
+            <>
+              <PartLinesSection orderId={order.id} />
+              <LaborLinesSection orderId={order.id} />
+              <MoneyCard
+                estimatedTotal={order.estimated_total}
+                paidAmount={order.paid_amount}
+                balance={order.balance}
+              />
+            </>
+          )}
           <AccessoriesListSection orderId={order.id} />
           <PhotosGrid orderId={order.id} />
-          <ContactsSection orderId={order.id} />
+          {/* Issue 34: history lives in the timeline below now — this stays
+              only as the add-a-contact form, no duplicate list. */}
+          <ContactsSection orderId={order.id} showHistory={false} />
         </div>
       </div>
 

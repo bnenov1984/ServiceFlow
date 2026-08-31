@@ -173,6 +173,8 @@ export const bg = {
   "intake.accessory_add": "Добави",
   "intake.photos": "Снимки",
   "intake.photos_drop_hint": "Плъзнете снимки тук или щракнете, за да изберете",
+  "intake.parts": "Части (по избор)",
+  "intake.parts_none": "Няма добавени части.",
   "intake.promised_on": "Обещана дата",
   "intake.promised_today": "Днес",
   "intake.promised_tomorrow": "Утре",
@@ -187,12 +189,14 @@ export const bg = {
   "intake.create_order": "Създай поръчка",
   "intake.accessories_failed": "{count} аксесоара не бяха добавени.",
   "intake.photos_failed": "{count} снимки не бяха качени.",
+  "intake.parts_failed": "{count} части не бяха добавени.",
 
   // --- order detail (docs/15 §6.5-6.6) ---
   "order.back_to_orders": "← Поръчки",
   "order.customer": "Клиент",
   "order.asset": "Актив",
   "order.complaint": "Оплакване",
+  "order.promised_on_none": "Няма зададена дата.",
   "order.diagnosis": "Диагноза",
   "order.diagnosis_add": "+ Добави диагноза",
   "order.diagnosis_none": "Няма диагноза.",

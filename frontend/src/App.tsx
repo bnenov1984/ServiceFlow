@@ -7,7 +7,6 @@ import { LoginPage } from "./auth/LoginPage";
 import { useAuth } from "./auth/AuthContext";
 import { CustomerProfilePage } from "./customers/CustomerProfilePage";
 import { CustomersPage } from "./customers/CustomersPage";
-import { DashboardPage } from "./dashboard/DashboardPage";
 import { t } from "./i18n/bg";
 import { IntakePage } from "./intake/IntakePage";
 import { InvoiceDetailPage } from "./invoices/InvoiceDetailPage";
@@ -47,12 +46,16 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-/** "/" is RepairFlow's own dashboard route — never the default just because
+/** "/" is RepairFlow's own landing route — never the default just because
  * it's first in the list (PO decision, 01.08.2026: no application is active
  * by default, and RepairFlow is not privileged over PropertyFlow). The
  * landing page is derived entirely from the authenticated company's
  * active_modules:
- * - RepairFlow only -> this route's own <DashboardPage />
+ * - RepairFlow only -> redirect to "/orders" (Wave 2 Issue 3: the compact
+ *   dashboard summary + Orders workspace merged into one screen there —
+ *   there is no separate standalone Dashboard destination any more, so "/"
+ *   just canonicalizes to the one real URL instead of duplicating its
+ *   content at two paths)
  * - PropertyFlow only -> redirect to "/ps"
  * - both -> the remembered last-used app (lastApp.ts), or the chooser if
  *   there's no preference yet - never silently RepairFlow
@@ -70,11 +73,11 @@ function IndexRoute() {
   if (hasRepairFlow && hasPropertyFlow) {
     const last = getLastApp();
     if (last === "propertyflow") return <Navigate to="/ps" replace />;
-    if (last === "repairflow") return <DashboardPage />;
+    if (last === "repairflow") return <Navigate to="/orders" replace />;
     return <Navigate to="/choose-app" replace />;
   }
   if (hasPropertyFlow) return <Navigate to="/ps" replace />;
-  if (hasRepairFlow) return <DashboardPage />;
+  if (hasRepairFlow) return <Navigate to="/orders" replace />;
   return <Navigate to="/no-apps" replace />;
 }
 

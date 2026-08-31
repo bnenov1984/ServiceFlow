@@ -169,7 +169,8 @@ describe("Business OS shell: global header vs RepairFlow toolbar (26.07.2026)", 
     renderShell("/", ["repairflow", "professional-services"]);
     expect(screen.getByRole("button", { name: /RepairFlow/ })).toBeInTheDocument();
     const desktopNav = screen.getByRole("navigation", { name: "RepairFlow navigation" });
-    expect(within(desktopNav).getByText("Табло")).toBeInTheDocument();
+    // Wave 2 Issue 3: "/" now redirects to "/orders" (merged summary +
+    // workspace screen) — no separate "Табло" nav entry any more.
     expect(within(desktopNav).getByText("Поръчки")).toBeInTheDocument();
     expect(within(desktopNav).getByText("Клиенти")).toBeInTheDocument();
   });
