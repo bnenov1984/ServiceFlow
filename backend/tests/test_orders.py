@@ -55,15 +55,32 @@ def test_create_order_numbering_and_default_status(client: TestClient) -> None:
     assert o2["number"] == f"{year}-00002"
 
 
-def test_asset_must_belong_to_customer(client: TestClient) -> None:
+def test_order_may_use_an_asset_owned_by_a_different_customer(client: TestClient) -> None:
+    """Wave 3 Issue 20: the person bringing an asset in is not necessarily its
+    current owner ("Използвай автомобила" keeps the vehicle under its
+    existing owner while the order belongs to whoever is at the counter) —
+    an order's customer_id and its asset's Asset.customer_id are deliberately
+    independent, so this is now a valid order, not a 400."""
     h = _login(client)
     cid1, _ = _customer_and_asset(client, h, "0888111222")
     _, aid2 = _customer_and_asset(client, h, "0888333444")
     r = client.post("/api/v1/orders", headers=h, json={
         "customer_id": cid1, "asset_id": aid2, "complaint": "x",
     })
-    assert r.status_code == 400
-    assert r.json()["detail"]["code"] == "asset_mismatch"
+    assert r.status_code == 201, r.text
+    assert r.json()["customer_id"] == cid1
+    assert r.json()["asset_id"] == aid2
+
+
+def test_order_rejects_unknown_asset(client: TestClient) -> None:
+    h = _login(client)
+    cid1, _ = _customer_and_asset(client, h, "0888111222")
+    r = client.post("/api/v1/orders", headers=h, json={
+        "customer_id": cid1, "asset_id": "00000000-0000-0000-0000-000000000000",
+        "complaint": "x",
+    })
+    assert r.status_code == 404
+    assert r.json()["detail"]["code"] == "not_found"
 
 
 def test_status_transitions_ok_warn_no(client: TestClient) -> None:

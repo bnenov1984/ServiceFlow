@@ -44,6 +44,17 @@ interface AssetOut extends AssetHit {
   duplicate_asset_ids: string[];
 }
 
+// Issue 20: tenant-wide VIN lookup response (GET /assets/by-vin) — includes
+// the current owner so the intake choice dialog can name them without a
+// second round trip.
+interface AssetByVinOut {
+  id: string;
+  label: string;
+  asset_type_code: string;
+  customer_id: string;
+  customer_name: string;
+}
+
 // Format hints for identifier fields (docs/15 §6.4) — presentation only, the
 // backend is the actual validator.
 const IDENTIFIER_HINTS: Record<string, Parameters<typeof t>[0]> = {
@@ -139,6 +150,10 @@ export function AssetStep({
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  // Issue 20: set when a VIN typed into the create form already matches a
+  // vehicle owned by a different customer — blocks the normal create submit
+  // until the user explicitly picks reuse-as-is or transfer.
+  const [ownerConflict, setOwnerConflict] = useState<AssetByVinOut | null>(null);
   const queryClient = useQueryClient();
 
   const { data: types } = useQuery({
@@ -173,6 +188,23 @@ export function AssetStep({
     );
   }
 
+  // Issue 20: VIN must be looked up tenant-wide *before* a vehicle is
+  // created, never after. Returns null when there's nothing to check (not a
+  // vehicle, or no VIN field def) or no match was found (404) — either way
+  // the caller should just proceed with the normal create.
+  const lookupVinConflict = async (): Promise<AssetByVinOut | null> => {
+    if (selectedType?.code !== "vehicle") return null;
+    const vinDef = selectedType.field_defs.find((d) => d.identifier_kind === "vin");
+    const vin = vinDef ? values[vinDef.key]?.trim() : "";
+    if (!vin) return null;
+    try {
+      return await api.get<AssetByVinOut>(`/assets/by-vin?vin=${encodeURIComponent(vin)}`);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) return null;
+      throw err;
+    }
+  };
+
   const createAsset = async (e: FormEvent) => {
     e.preventDefault();
     if (!selectedType) return;
@@ -180,6 +212,18 @@ export function AssetStep({
     setFieldErrors({});
     setSubmitting(true);
     try {
+      const match = await lookupVinConflict();
+      if (match) {
+        if (match.customer_id === customerId) {
+          // Already this customer's own vehicle — reuse it outright, same
+          // as picking it from the "pick existing" list would have done.
+          onResolved({ id: match.id, label: match.label, assetTypeCode: match.asset_type_code });
+        } else {
+          setOwnerConflict(match);
+        }
+        return;
+      }
+
       const fieldDefsByKey = new Map(selectedType.field_defs.map((def) => [def.key, def]));
       const created = await api.post<AssetOut>(`/customers/${customerId}/assets`, {
         asset_type_code: selectedType.code,
@@ -202,6 +246,36 @@ export function AssetStep({
           t(FIELD_ERROR_KEYS[fe.type] ?? "errors.assets.field_unknown"),
         ])));
       }
+      setError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // "Използвай автомобила" — MUST NOT change Asset.customer_id or ownership
+  // history; the new order simply uses this intake's customer together with
+  // the existing vehicle's asset_id (docs/business-os Wave 3, Issue 20).
+  const useExistingVehicle = () => {
+    if (!ownerConflict) return;
+    onResolved({
+      id: ownerConflict.id, label: ownerConflict.label,
+      assetTypeCode: ownerConflict.asset_type_code,
+    });
+    setOwnerConflict(null);
+  };
+
+  // "Смени собственик" — the only explicit action that reassigns ownership.
+  const transferOwner = async () => {
+    if (!ownerConflict) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const asset = await api.post<AssetOut>(`/assets/${ownerConflict.id}/transfer-owner`, {
+        customer_id: customerId,
+      });
+      onResolved({ id: asset.id, label: asset.label, assetTypeCode: asset.asset_type_code });
+      setOwnerConflict(null);
+    } catch (err) {
       setError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
     } finally {
       setSubmitting(false);
@@ -257,6 +331,31 @@ export function AssetStep({
           >
             {t("common.cancel")}
           </button>
+        </div>
+      ) : ownerConflict ? (
+        <div className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <p className="text-sm text-slate-800">
+            {t("intake.vin_owner_conflict", { owner: ownerConflict.customer_name })}
+          </p>
+          {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={useExistingVehicle}
+              disabled={submitting}
+              className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-50 min-h-touch"
+            >
+              {t("intake.use_existing_vehicle")}
+            </button>
+            <button
+              type="button"
+              onClick={() => void transferOwner()}
+              disabled={submitting}
+              className="rounded-lg border border-slate-300 px-4 py-2 hover:bg-slate-50 disabled:opacity-50 min-h-touch"
+            >
+              {t("intake.transfer_owner")}
+            </button>
+          </div>
         </div>
       ) : (
         <form onSubmit={createAsset} className="flex flex-col gap-3">

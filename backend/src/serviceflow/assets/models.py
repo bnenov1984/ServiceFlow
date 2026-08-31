@@ -69,7 +69,13 @@ class Asset(Base, TimestampMixin):
 class AssetIdentifier(Base):
     """Searchable identifiers (IMEI/VIN/serial/рег.№) extracted from field_values
     on every save — real columns because search and duplicate hints need real
-    indexes (ADR-010, docs/08 §assets)."""
+    indexes (ADR-010, docs/08 §assets).
+
+    VIN is the one kind with a hard uniqueness rule (Wave 3 Issue 20, migration
+    0023's partial unique index on (company_id, value_normalized) WHERE
+    kind='vin') — one normalized VIN identifies exactly one vehicle Asset per
+    tenant. IMEI/serial/рег.№ keep the original soft-duplicate-hint behavior
+    (`assets.service.find_duplicates_by_identifiers`) unchanged."""
 
     __tablename__ = "asset_identifiers"
 
@@ -81,3 +87,29 @@ class AssetIdentifier(Base):
     kind: Mapped[str]  # imei | serial | vin | reg | other
     value: Mapped[str]
     value_normalized: Mapped[str] = mapped_column(index=True)
+
+
+class AssetOwnership(Base):
+    """Append-only ownership-span history per Asset (Wave 3 Issue 20).
+
+    `Asset.customer_id` remains the current-owner pointer (unchanged);
+    `ServiceOrder.asset_id`/`.customer_id` already need no change of their
+    own — an order already correctly records which customer walked in that
+    day, and asset_id already correctly identifies the one persistent
+    vehicle regardless of who owned it then. This table only adds the
+    missing piece: a queryable "who owned this asset, and when" history, so
+    an ownership change never has to duplicate the Asset row to represent a
+    new owner (see `serviceflow.assets.service.transfer_owner`).
+
+    At most one row per asset has `ended_at IS NULL` (the current span) —
+    enforced by migration 0023's partial unique index
+    `uq_asset_ownership_open`, not just by convention."""
+
+    __tablename__ = "asset_ownership"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=new_id)
+    company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("companies.id"))
+    asset_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("assets.id"), index=True)
+    customer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("customers.id"))
+    started_at: Mapped[datetime]
+    ended_at: Mapped[datetime | None] = mapped_column(default=None)

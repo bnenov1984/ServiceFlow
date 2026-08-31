@@ -7,13 +7,13 @@ from collections.abc import Iterable
 from datetime import UTC, date, datetime
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from business_os.shared_kernel.db import TenantContext, bind_tenant_scope, scoped
-from business_os.shared_kernel.events import DomainEvent, subscribe
+from business_os.shared_kernel.events import DomainEvent, publish, subscribe
 from business_os.shared_kernel.normalize import normalize_identifier
-from serviceflow.assets.models import Asset, AssetIdentifier, AssetType
+from serviceflow.assets.models import Asset, AssetIdentifier, AssetOwnership, AssetType
 
 # Identical to migration 0015's frozen SEED_TYPES copy (migrations never
 # import application code, so that copy and this one are deliberately kept
@@ -84,6 +84,17 @@ _FALLBACK_BUSINESS_PROFILE = "generic_repair"
 class FieldValidationError(Exception):
     def __init__(self, field_errors: list[dict[str, str]]) -> None:
         self.field_errors = field_errors
+
+
+class VinConflictError(Exception):
+    """Raised when a create/update would give a vehicle Asset a VIN that
+    another Asset in this tenant already holds (Issue 20's final product
+    rule: one normalized VIN = one vehicle Asset per tenant). Carries the
+    conflicting asset's id so the caller can offer the reuse/transfer choice
+    instead of a bare rejection."""
+
+    def __init__(self, existing_asset_id: uuid.UUID) -> None:
+        self.existing_asset_id = existing_asset_id
 
 
 def list_types(db: Session, ctx: TenantContext) -> list[AssetType]:
@@ -218,6 +229,49 @@ def _extract_identifiers(asset: Asset, asset_type: AssetType) -> list[AssetIdent
     return rows
 
 
+def _check_vin_conflicts(db: Session, ctx: TenantContext, asset_type: AssetType,
+                         values: dict[str, Any], exclude_asset_id: uuid.UUID | None) -> None:
+    """Hard-rejects a create/update that would give this tenant two vehicle
+    Assets with the same normalized VIN (Issue 20). Runs against the
+    cleaned, not-yet-persisted values — before any row is added/mutated —
+    so a rejection here, like FieldValidationError above, never leaves a
+    half-written asset behind. Blank/missing VIN never reaches here at all:
+    `raw` empty just skips the check, same as `_extract_identifiers` skips
+    building an identifier row for it."""
+    for d in asset_type.field_defs:
+        if d.get("identifier_kind") != "vin":
+            continue
+        raw = str(values.get(d["key"], "") or "").strip()
+        if not raw:
+            continue
+        normalized = normalize_identifier(raw)
+        stmt = scoped(select(AssetIdentifier.asset_id), AssetIdentifier, ctx).where(
+            AssetIdentifier.kind == "vin", AssetIdentifier.value_normalized == normalized,
+        )
+        if exclude_asset_id is not None:
+            stmt = stmt.where(AssetIdentifier.asset_id != exclude_asset_id)
+        existing = db.scalar(stmt)
+        if existing is not None:
+            raise VinConflictError(existing)
+
+
+def find_by_vin(db: Session, ctx: TenantContext, vin: str) -> Asset | None:
+    """Tenant-wide VIN lookup (Issue 20) — deliberately NOT scoped to any one
+    customer, unlike `list_for_customer`: intake must be able to find a
+    vehicle regardless of which customer it is currently attached to, so a
+    car that changed hands (or was mistakenly re-entered under a different
+    customer) can be reused instead of duplicated."""
+    normalized = normalize_identifier(vin)
+    if not normalized:
+        return None
+    stmt = (
+        scoped(select(Asset), Asset, ctx)
+        .join(AssetIdentifier, AssetIdentifier.asset_id == Asset.id)
+        .where(AssetIdentifier.kind == "vin", AssetIdentifier.value_normalized == normalized)
+    )
+    return db.scalar(stmt)
+
+
 def find_duplicates_by_identifiers(db: Session, ctx: TenantContext,
                                    identifiers: list[AssetIdentifier],
                                    exclude_asset_id: uuid.UUID | None = None,
@@ -236,6 +290,7 @@ def find_duplicates_by_identifiers(db: Session, ctx: TenantContext,
 def create(db: Session, ctx: TenantContext, customer_id: uuid.UUID,
            asset_type: AssetType, values: dict[str, Any]) -> tuple[Asset, list[uuid.UUID]]:
     cleaned = validate_field_values(asset_type, values)
+    _check_vin_conflicts(db, ctx, asset_type, cleaned, exclude_asset_id=None)
     asset = Asset(
         company_id=ctx.company_id, customer_id=customer_id,
         asset_type_id=asset_type.id, label=_label(asset_type, cleaned),
@@ -246,6 +301,13 @@ def create(db: Session, ctx: TenantContext, customer_id: uuid.UUID,
     identifiers = _extract_identifiers(asset, asset_type)
     duplicates = find_duplicates_by_identifiers(db, ctx, identifiers, asset.id)
     db.add_all(identifiers)
+    # Issue 20: every asset gets an opening ownership span at creation time —
+    # never left without one (the migration 0023 backfill covers assets that
+    # existed before this table did; this covers every asset created since).
+    db.add(AssetOwnership(
+        company_id=ctx.company_id, asset_id=asset.id, customer_id=customer_id,
+        started_at=datetime.now(UTC), ended_at=None,
+    ))
     db.commit()
     return asset, duplicates
 
@@ -277,6 +339,7 @@ def update_fields(db: Session, ctx: TenantContext, asset: Asset,
     cleaned = validate_field_values(
         asset_type, {**asset.field_values, **values}, existing=asset.field_values,
     )
+    _check_vin_conflicts(db, ctx, asset_type, cleaned, exclude_asset_id=asset.id)
     asset.field_values = cleaned
     asset.label = _label(asset_type, cleaned)
     asset.row_version += 1
@@ -291,3 +354,54 @@ def update_fields(db: Session, ctx: TenantContext, asset: Asset,
 def archive(db: Session, asset: Asset) -> None:
     asset.archived_at = datetime.now(UTC)
     db.commit()
+
+
+def list_ownership_history(db: Session, ctx: TenantContext,
+                           asset_id: uuid.UUID) -> list[AssetOwnership]:
+    """Newest span first — the open one (`ended_at IS NULL`), if any, leads."""
+    stmt = (
+        scoped(select(AssetOwnership), AssetOwnership, ctx)
+        .where(AssetOwnership.asset_id == asset_id)
+        .order_by(AssetOwnership.started_at.desc())
+    )
+    return list(db.scalars(stmt))
+
+
+def transfer_owner(db: Session, ctx: TenantContext, asset: Asset,
+                   new_customer_id: uuid.UUID) -> Asset:
+    """Explicit ownership transfer ("Смени собственик") — the only sanctioned
+    way `Asset.customer_id` changes after creation. Idempotent: transferring
+    to the already-current owner is a no-op, not an error (step 2 of the
+    product spec) — this matters because the intake choice dialog can be
+    re-submitted (double click, retry) without side effects. Never touches
+    ServiceOrder rows: an order's own `customer_id` is who walked in that
+    day, which stays true regardless of who owns the vehicle now or later."""
+    if asset.customer_id == new_customer_id:
+        return asset
+
+    now = datetime.now(UTC)
+    old_customer_id = asset.customer_id
+    db.execute(
+        update(AssetOwnership)
+        .where(AssetOwnership.asset_id == asset.id, AssetOwnership.ended_at.is_(None))
+        .values(ended_at=now)
+    )
+    db.add(AssetOwnership(
+        company_id=ctx.company_id, asset_id=asset.id, customer_id=new_customer_id,
+        started_at=now, ended_at=None,
+    ))
+    asset.customer_id = new_customer_id
+    asset.row_version += 1
+    # Not added to timeline.service.KNOWN_EVENT_TYPES on purpose: TimelineEvent.
+    # order_id has an FK to service_orders, and this event's subject is an
+    # asset — recording it there would either violate that FK or misattribute
+    # the change to whichever order happens to be open. Published on the same
+    # bus (ADR-011) so a future asset-scoped audit trail can subscribe to it
+    # without this function changing.
+    publish(db, DomainEvent(
+        type="asset_owner_changed", company_id=ctx.company_id, actor_user_id=ctx.user_id,
+        subject_id=asset.id,
+        data={"from_customer_id": str(old_customer_id), "to_customer_id": str(new_customer_id)},
+    ))
+    db.commit()
+    return asset

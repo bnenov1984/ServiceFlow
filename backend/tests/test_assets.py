@@ -1,6 +1,7 @@
 """Assets: seed types, field validation, identifier extraction + duplicates, isolation."""
 
 import os
+import uuid
 from typing import Any
 
 import pytest
@@ -155,18 +156,25 @@ def test_patch_reextracts_identifiers(client: TestClient) -> None:
     assert r.status_code == 200
     assert r.json()["row_version"] == 2
 
-    # Verify via API: the old VIN's identifier row must have been replaced.
+    # Verify via API: the old VIN's identifier row must have been replaced,
+    # so it's free for a genuinely different vehicle to use.
     r2 = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
         "asset_type_code": "vehicle",
         "field_values": {"brand": "Volkswagen", "model": "Golf", "vin": "WVWZZZ1JZ3W386752"},
     })
+    assert r2.status_code == 201, r2.text
     assert r2.json()["duplicate_asset_ids"] == []  # old VIN row was replaced
 
+    # Wave 3 Issue 20: VIN is now hard-unique per tenant (not just a soft
+    # duplicate hint) — a third vehicle claiming `aid`'s current VIN is
+    # rejected outright, never created.
     r3 = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
         "asset_type_code": "vehicle",
         "field_values": {"brand": "Audi", "model": "A4", "vin": "WAUZZZ8K9A123456"},
     })
-    assert aid in r3.json()["duplicate_asset_ids"]
+    assert r3.status_code == 409, r3.text
+    assert r3.json()["detail"]["code"] == "vin_conflict"
+    assert r3.json()["detail"]["conflicting_asset_id"] == aid
 
 
 def test_assets_are_tenant_isolated(client: TestClient) -> None:
@@ -180,3 +188,148 @@ def test_assets_are_tenant_isolated(client: TestClient) -> None:
     _login(client, "Сервиз Б", "b@b.bg")
     assert client.get(f"/api/v1/assets/{aid}").status_code == 404
     assert client.get(f"/api/v1/customers/{cid_a}/assets").status_code == 404
+
+
+# --- Wave 3 Issue 20: VIN-first identification + ownership history ---------
+
+def _vehicle(client: TestClient, h: dict[str, str], cid: str, vin: str,
+            model: str = "Golf") -> str:
+    r = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
+        "asset_type_code": "vehicle",
+        "field_values": {"brand": "Volkswagen", "model": model, "vin": vin},
+    })
+    assert r.status_code == 201, r.text
+    return str(r.json()["id"])
+
+
+def test_by_vin_finds_asset_tenant_wide_regardless_of_customer(client: TestClient) -> None:
+    h = _login(client)
+    cid1 = _customer(client, h, "0888111222")
+    cid2 = _customer(client, h, "0888333444")
+    aid = _vehicle(client, h, cid1, "WVWZZZ1JZ3W386752")
+
+    # A different customer's intake looks the VIN up — must still find it.
+    r = client.get("/api/v1/assets/by-vin?vin=WVWZZZ1JZ3W386752", headers=h)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["id"] == aid
+    assert body["customer_id"] == cid1
+
+    # Normalization-tolerant: spaces/dashes/case must not matter.
+    r2 = client.get("/api/v1/assets/by-vin?vin=wvwzzz1jz3-w38 6752", headers=h)
+    assert r2.status_code == 200
+    assert r2.json()["id"] == aid
+
+    r3 = client.get("/api/v1/assets/by-vin?vin=NOSUCHVIN0000000", headers=h)
+    assert r3.status_code == 404
+    assert r3.json()["detail"]["code"] == "not_found"
+
+    # customer2 is otherwise unrelated — just proves the lookup didn't
+    # accidentally require it.
+    assert cid2
+
+
+def test_by_vin_is_tenant_isolated(client: TestClient) -> None:
+    h_a = _login(client, "Сервиз А", "a@a.bg")
+    cid_a = _customer(client, h_a)
+    _vehicle(client, h_a, cid_a, "WVWZZZ1JZ3W386752")
+    client.post("/api/v1/auth/logout", headers=h_a)
+
+    h_b = _login(client, "Сервиз Б", "b@b.bg")
+    r = client.get("/api/v1/assets/by-vin?vin=WVWZZZ1JZ3W386752", headers=h_b)
+    assert r.status_code == 404
+
+
+def test_vin_uniqueness_is_scoped_per_tenant_not_global(client: TestClient) -> None:
+    """Two different companies may legitimately have on-file the same VIN
+    (e.g. both saw the car before it was sold across shops) — uniqueness is
+    per (company_id, value_normalized), never a bare global constraint."""
+    h_a = _login(client, "Сервиз А", "a@a.bg")
+    cid_a = _customer(client, h_a)
+    _vehicle(client, h_a, cid_a, "WVWZZZ1JZ3W386752")
+    client.post("/api/v1/auth/logout", headers=h_a)
+
+    h_b = _login(client, "Сервиз Б", "b@b.bg")
+    cid_b = _customer(client, h_b)
+    aid_b = _vehicle(client, h_b, cid_b, "WVWZZZ1JZ3W386752")
+    assert aid_b
+
+
+def test_transfer_owner_moves_current_owner_and_preserves_orders(client: TestClient) -> None:
+    h = _login(client)
+    cid1 = _customer(client, h, "0888111222")
+    cid2 = _customer(client, h, "0888333444")
+    aid = _vehicle(client, h, cid1, "WVWZZZ1JZ3W386752")
+    order = client.post("/api/v1/orders", headers=h, json={
+        "customer_id": cid1, "asset_id": aid, "complaint": "Смяна на масло",
+    }).json()
+
+    r = client.post(f"/api/v1/assets/{aid}/transfer-owner", headers=h,
+                    json={"customer_id": cid2})
+    assert r.status_code == 200, r.text
+    assert r.json()["customer_id"] == cid2
+    assert r.json()["row_version"] == 2
+
+    # The car's own record now reads as owned by the new customer...
+    assert client.get(f"/api/v1/assets/{aid}", headers=h).json()["customer_id"] == cid2
+    # ...but the pre-existing order is untouched — still the original customer.
+    order_after = client.get(f"/api/v1/orders/{order['id']}", headers=h).json()
+    assert order_after["customer_id"] == cid1
+    assert order_after["asset_id"] == aid
+
+    # Ownership history: the old span is closed, a new open span exists —
+    # nothing was rewritten in place (service-layer read, no API surface yet).
+    from sqlalchemy import text as _text
+
+    from business_os.shared_kernel.db import TenantContext, open_session
+    from serviceflow.assets import service as assets_service
+
+    for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
+        company_id = db.execute(
+            _text("SELECT company_id FROM customers WHERE id = :cid"), {"cid": cid1},
+        ).scalar_one()
+        user_id = db.execute(
+            _text("SELECT id FROM users WHERE company_id = :company_id LIMIT 1"),
+            {"company_id": company_id},
+        ).scalar_one()
+        ctx = TenantContext(company_id=company_id, user_id=user_id, is_owner=True)
+        history = assets_service.list_ownership_history(db, ctx, uuid.UUID(aid))
+        assert len(history) == 2
+        open_rows = [h for h in history if h.ended_at is None]
+        closed_rows = [h for h in history if h.ended_at is not None]
+        assert len(open_rows) == 1
+        assert len(closed_rows) == 1
+        assert str(open_rows[0].customer_id) == cid2
+        assert str(closed_rows[0].customer_id) == cid1
+
+
+def test_transfer_owner_to_current_owner_is_idempotent(client: TestClient) -> None:
+    h = _login(client)
+    cid = _customer(client, h)
+    aid = _vehicle(client, h, cid, "WVWZZZ1JZ3W386752")
+
+    r = client.post(f"/api/v1/assets/{aid}/transfer-owner", headers=h,
+                    json={"customer_id": cid})
+    assert r.status_code == 200
+    # No-op: row_version must NOT have been bumped by a transfer to the
+    # already-current owner (product spec step 2: idempotent, not an error).
+    assert r.json()["row_version"] == 1
+
+
+def test_transfer_owner_rejects_cross_tenant_customer(client: TestClient) -> None:
+    h_a = _login(client, "Сервиз А", "a@a.bg")
+    cid_a = _customer(client, h_a)
+    aid = _vehicle(client, h_a, cid_a, "WVWZZZ1JZ3W386752")
+    client.post("/api/v1/auth/logout", headers=h_a)
+
+    h_b = _login(client, "Сервиз Б", "b@b.bg")
+    cid_b = _customer(client, h_b)
+    client.post("/api/v1/auth/logout", headers=h_b)
+
+    # Back to company A: try to "transfer" the vehicle to a customer that
+    # belongs to company B — must be rejected, not silently cross tenants.
+    h_a2 = _login(client, "Сервиз А", "a@a.bg")
+    r = client.post(f"/api/v1/assets/{aid}/transfer-owner", headers=h_a2,
+                    json={"customer_id": cid_b})
+    assert r.status_code == 404
+    assert client.get(f"/api/v1/assets/{aid}", headers=h_a2).json()["customer_id"] == cid_a

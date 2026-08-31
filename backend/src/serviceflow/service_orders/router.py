@@ -296,11 +296,17 @@ def create_order(body: OrderIn, db: TenantDbDep, tenant: TenantDep) -> OrderOut:
         raise HTTPException(status_code=404, detail={
             "code": "not_found", "message_key": "errors.customers.not_found", "params": {},
         })
+    # Issue 20: an order's customer_id and its asset's current owner are
+    # deliberately independent — the person bringing a vehicle in is not
+    # necessarily its legal/current owner (e.g. "Използвай автомобила" keeps
+    # the vehicle under its existing owner while the order itself belongs to
+    # whoever is standing at the counter). Only tenant scope is enforced
+    # here (assets_service.get already applies it); no customer_id equality
+    # check remains.
     asset = assets_service.get(db, tenant, body.asset_id)
-    if asset is None or asset.customer_id != body.customer_id:
-        raise HTTPException(status_code=400, detail={
-            "code": "asset_mismatch", "message_key": "errors.orders.asset_mismatch",
-            "params": {},
+    if asset is None:
+        raise HTTPException(status_code=404, detail={
+            "code": "not_found", "message_key": "errors.assets.not_found", "params": {},
         })
     order = service.create(
         db, tenant, customer_id=body.customer_id, asset_id=body.asset_id,

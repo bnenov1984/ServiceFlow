@@ -64,6 +64,22 @@ class AssetOut(BaseModel):
         )
 
 
+class AssetByVinOut(BaseModel):
+    """Issue 20 intake lookup: the vehicle plus who currently owns it, so the
+    client can decide between "Използвай автомобила" (reuse, no ownership
+    change) and "Смени собственик" (transfer) without a second round trip."""
+
+    id: uuid.UUID
+    label: str
+    asset_type_code: str
+    customer_id: uuid.UUID
+    customer_name: str
+
+
+class TransferOwnerIn(BaseModel):
+    customer_id: uuid.UUID
+
+
 def _err(status: int, code: str, key: str, **extra: Any) -> HTTPException:
     return HTTPException(status_code=status, detail={
         "code": code, "message_key": key, "params": {}, **extra,
@@ -104,7 +120,27 @@ def create_asset(customer_id: uuid.UUID, body: AssetIn, db: TenantDbDep,
     except service.FieldValidationError as e:
         raise _err(400, "field_validation", "errors.assets.invalid_fields",
                    field_errors=e.field_errors) from e
+    except service.VinConflictError as e:
+        raise _err(409, "vin_conflict", "errors.assets.vin_conflict",
+                   conflicting_asset_id=str(e.existing_asset_id)) from e
     return AssetOut.of(asset, asset_type.code, duplicates)
+
+
+@router.get("/assets/by-vin")
+def get_asset_by_vin(vin: str, db: TenantDbDep, tenant: TenantDep) -> AssetByVinOut:
+    """Issue 20: tenant-wide VIN lookup for intake — must run before a
+    vehicle Asset is blindly created, so a car already on file (under any
+    customer) is found and offered for reuse/transfer instead of duplicated."""
+    asset = service.find_by_vin(db, tenant, vin)
+    if asset is None:
+        raise _err(404, "not_found", "errors.assets.vin_not_found")
+    asset_type = _type_or_500(db, tenant, asset)
+    owner = customers_service.get(db, tenant, asset.customer_id)
+    assert owner is not None, (
+        "an asset's own customer_id must always resolve within its own company"
+    )
+    return AssetByVinOut(id=asset.id, label=asset.label, asset_type_code=asset_type.code,
+                         customer_id=owner.id, customer_name=owner.name)
 
 
 def _get_or_404(db: TenantDbDep, tenant: TenantDep, asset_id: uuid.UUID) -> Asset:
@@ -141,6 +177,9 @@ def patch_asset(asset_id: uuid.UUID, body: AssetPatch, db: TenantDbDep,
     except service.FieldValidationError as e:
         raise _err(400, "field_validation", "errors.assets.invalid_fields",
                    field_errors=e.field_errors) from e
+    except service.VinConflictError as e:
+        raise _err(409, "vin_conflict", "errors.assets.vin_conflict",
+                   conflicting_asset_id=str(e.existing_asset_id)) from e
     return AssetOut.of(asset, asset_type.code, duplicates)
 
 
@@ -150,4 +189,21 @@ def archive_asset(asset_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep) -> As
     asset = _get_or_404(db, tenant, asset_id)
     asset_type = _type_or_500(db, tenant, asset)
     service.archive(db, asset)
+    return AssetOut.of(asset, asset_type.code)
+
+
+@router.post("/assets/{asset_id}/transfer-owner",
+             dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
+def transfer_owner(asset_id: uuid.UUID, body: TransferOwnerIn, db: TenantDbDep,
+                   tenant: TenantDep) -> AssetOut:
+    """Issue 20's explicit "Смени собственик" action. Both the asset and the
+    new customer are resolved through tenant-scoped lookups (`_get_or_404`,
+    `customers_service.get`) — a customer_id from another tenant simply
+    doesn't resolve (404), which is what makes cross-tenant transfer
+    impossible without a dedicated check."""
+    asset = _get_or_404(db, tenant, asset_id)
+    asset_type = _type_or_500(db, tenant, asset)
+    if customers_service.get(db, tenant, body.customer_id) is None:
+        raise _err(404, "not_found", "errors.customers.not_found")
+    asset = service.transfer_owner(db, tenant, asset, body.customer_id)
     return AssetOut.of(asset, asset_type.code)
