@@ -5654,6 +5654,12 @@
       },
       "CustomerCompanyRequisites": {
         "properties": {
+          "country": {
+            "type": "string",
+            "pattern": "^[A-Z]{2}$",
+            "title": "Country",
+            "default": "BG"
+          },
           "address": {
             "anyOf": [
               {
@@ -5694,7 +5700,7 @@
         "additionalProperties": false,
         "type": "object",
         "title": "CustomerCompanyRequisites",
-        "description": "Buyer-company legal requisites for a future Invoice.buyer snapshot\n(docs/ACCOUNTANT_REVIEW.md §4 B1, LAW-CONFIRMED core list) — replaces\nthe previously fully-unconstrained `dict[str, Any]`; `extra=\"forbid\"`\nis the allow-list enforcement point, same pattern as the seller-side\n`CompanyRequisitesPatch`. `vat_number` (Customer VAT Identity\nprerequisite slice) is the buyer-side counterpart to R2's law-confirmed\n\"BG\" + ЕИК seller VAT number — explicitly entered, never derived/\nauto-generated from `eik` alone, since a company's VAT-registration\nstatus is a fact this module cannot infer (see\n`customers/service.py`'s `_validate_vat_identity`)."
+        "description": "Buyer-company legal requisites for a future Invoice.buyer snapshot\n(docs/ACCOUNTANT_REVIEW.md §4 B1, LAW-CONFIRMED core list) — replaces\nthe previously fully-unconstrained `dict[str, Any]`; `extra=\"forbid\"`\nis the allow-list enforcement point, same pattern as the seller-side\n`CompanyRequisitesPatch`. `vat_number` is auto-derived (Wave 5) only\nwhen `country == \"BG\"`, `vat_registered` is explicitly True, and `eik`\nis structurally valid — see `customers/service.py`'s\n`_derive_bg_vat_number`; the VAT-registration status itself is still\nnever inferred from `eik` alone.\n\n`country` (Wave 5 Issue 11/12): ISO 3166-1 alpha-2, defaults to \"BG\" —\nevery company customer created before this field existed only ever was\nBulgarian, so a stored blob with no \"country\" key reads back as \"BG\"\n(see CustomerOut.of), never rewritten to add the key."
       },
       "CustomerContactRecordIn": {
         "properties": {
@@ -5752,6 +5758,23 @@
           "summary"
         ],
         "title": "CustomerContactRecordIn"
+      },
+      "CustomerDeliveryAddress": {
+        "properties": {
+          "address": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Address"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "address"
+        ],
+        "title": "CustomerDeliveryAddress",
+        "description": "Wave 5 Issue 12: ONE optional default delivery address — individual\nor company customer alike, independent of company_requisites.address\n(the registered/legal address). No address history."
       },
       "CustomerHitOut": {
         "properties": {
@@ -5841,6 +5864,16 @@
               }
             ]
           },
+          "delivery_address": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CustomerDeliveryAddress"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "notes": {
             "type": "string",
             "maxLength": 5000,
@@ -5917,6 +5950,16 @@
               }
             ]
           },
+          "delivery_address": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CustomerDeliveryAddress"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "notes": {
             "type": "string",
             "title": "Notes"
@@ -5957,6 +6000,7 @@
           "is_company",
           "vat_registered",
           "company_requisites",
+          "delivery_address",
           "notes",
           "archived",
           "anonymized",
@@ -6028,6 +6072,16 @@
               }
             ]
           },
+          "delivery_address": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CustomerDeliveryAddress"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "notes": {
             "type": "string",
             "title": "Notes"
@@ -6064,6 +6118,7 @@
           "is_company",
           "vat_registered",
           "company_requisites",
+          "delivery_address",
           "notes",
           "archived",
           "anonymized",
@@ -6149,6 +6204,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/CustomerCompanyRequisites"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "delivery_address": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CustomerDeliveryAddress"
               },
               {
                 "type": "null"
@@ -6266,6 +6331,22 @@
           "changed_at"
         ],
         "title": "DeadlineChangeOut"
+      },
+      "DeliveryAddressIn": {
+        "properties": {
+          "address": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Address"
+          }
+        },
+        "type": "object",
+        "required": [
+          "address"
+        ],
+        "title": "DeliveryAddressIn",
+        "description": "Wave 5 Issue 12: same minimal shape as customers.router's\nCustomerDeliveryAddress — deliberately a separate, local definition\nrather than an import: an order's own copy of the address has no\ndependency on the customer contract's shape evolving independently."
       },
       "DiagnosisIn": {
         "properties": {
@@ -7440,6 +7521,27 @@
             ],
             "title": "Mileage"
           },
+          "delivery_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery Method"
+          },
+          "delivery_address": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeliveryAddressIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "has_completion_snapshot": {
             "type": "boolean",
             "title": "Has Completion Snapshot",
@@ -7617,6 +7719,28 @@
               }
             ],
             "title": "Mileage"
+          },
+          "delivery_method": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(pickup|courier)$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery Method"
+          },
+          "delivery_address": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeliveryAddressIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -7752,6 +7876,27 @@
               }
             ],
             "title": "Mileage"
+          },
+          "delivery_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery Method"
+          },
+          "delivery_address": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeliveryAddressIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "has_completion_snapshot": {
             "type": "boolean",
@@ -7945,6 +8090,27 @@
               }
             ],
             "title": "Mileage"
+          },
+          "delivery_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery Method"
+          },
+          "delivery_address": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeliveryAddressIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "has_completion_snapshot": {
             "type": "boolean",

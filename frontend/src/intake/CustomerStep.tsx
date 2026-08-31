@@ -60,8 +60,11 @@ export function CustomerStep({
   const [newEmail, setNewEmail] = useState("");
   const [isCompany, setIsCompany] = useState(false);
   const [companyRequisites, setCompanyRequisites] = useState<CompanyRequisitesForm>({
-    address: "", eik: "", vatRegistered: null, vatNumber: "",
+    country: "BG", address: "", eik: "", vatRegistered: null, vatNumber: "",
   });
+  // Wave 5 Issue 12: unconditional — an individual customer may have a
+  // default delivery address too, not just companies.
+  const [deliveryAddress, setDeliveryAddress] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const queryClient = useQueryClient();
@@ -108,12 +111,14 @@ export function CustomerStep({
         vat_registered: isCompany ? companyRequisites.vatRegistered : null,
         company_requisites: isCompany
           ? {
+              country: companyRequisites.country,
               address: companyRequisites.address.trim() || null,
               eik: companyRequisites.eik.trim() || null,
               vat_number: companyRequisites.vatRegistered === true
                 ? (companyRequisites.vatNumber.trim() || null) : null,
             }
           : null,
+        delivery_address: deliveryAddress.trim() ? { address: deliveryAddress.trim() } : null,
       });
       await queryClient.invalidateQueries({ queryKey: ["customers"] });
       onResolved({
@@ -200,6 +205,13 @@ export function CustomerStep({
             requisites={companyRequisites}
             onRequisitesChange={setCompanyRequisites}
             showTypeToggle={false}
+          />
+          <input
+            type="text"
+            value={deliveryAddress}
+            onChange={(e) => setDeliveryAddress(e.target.value)}
+            placeholder={t("intake.customer_delivery_address_optional")}
+            className="rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
           />
           {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
           <div className="flex gap-2">

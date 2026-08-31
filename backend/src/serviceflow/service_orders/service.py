@@ -112,13 +112,15 @@ def create(db: Session, ctx: TenantContext, *, customer_id: uuid.UUID,
            asset_id: uuid.UUID, complaint: str, priority: str = "normal",
            promised_on: Any = None, technician_id: uuid.UUID | None = None,
            origin_order_id: uuid.UUID | None = None,
-           mileage: int | None = None) -> ServiceOrder:
+           mileage: int | None = None, delivery_method: str | None = None,
+           delivery_address: dict[str, Any] | None = None) -> ServiceOrder:
     order = ServiceOrder(
         company_id=ctx.company_id, number=next_order_number(db, ctx),
         customer_id=customer_id, asset_id=asset_id, complaint=complaint,
         status_code="received", priority=priority, promised_on=promised_on,
         technician_id=technician_id, origin_order_id=origin_order_id,
         status_changed_at=_now(), created_by=ctx.user_id, mileage=mileage,
+        delivery_method=delivery_method, delivery_address=delivery_address,
     )
     db.add(order)
     db.flush()

@@ -18,21 +18,23 @@ beforeEach(() => {
 const individualCustomer: CustomerDetail = {
   id: "c1", name: "Иван Петров", phone: "0888123456", phone2: null, email: null,
   is_company: false, vat_registered: null, company_requisites: null,
-  archived: false, anonymized: false,
+  delivery_address: null, archived: false, anonymized: false,
 };
 
 const companyCustomerUnknown: CustomerDetail = {
   id: "c2", name: "Пример ЕООД", phone: "029001122", phone2: null, email: null,
   is_company: true, vat_registered: null,
-  company_requisites: { address: "гр. София", eik: "130489869", vat_number: null },
-  archived: false, anonymized: false,
+  company_requisites: { country: "BG", address: "гр. София", eik: "130489869", vat_number: null },
+  delivery_address: null, archived: false, anonymized: false,
 };
 
 const companyCustomerRegistered: CustomerDetail = {
   id: "c3", name: "ДДС ЕООД", phone: "029001133", phone2: null, email: null,
   is_company: true, vat_registered: true,
-  company_requisites: { address: "гр. Варна", eik: "130489869", vat_number: "BG130489869" },
-  archived: false, anonymized: false,
+  company_requisites: {
+    country: "BG", address: "гр. Варна", eik: "130489869", vat_number: "BG130489869",
+  },
+  delivery_address: null, archived: false, anonymized: false,
 };
 
 function renderSection(customer: CustomerDetail) {
@@ -104,7 +106,7 @@ describe("CustomerCompanyDetailsSection", () => {
     expect(api.patch).toHaveBeenCalledWith("/customers/c2", {
       is_company: true,
       vat_registered: null,
-      company_requisites: { address: "гр. София", eik: "175074752", vat_number: null },
+      company_requisites: { country: "BG", address: "гр. София", eik: "175074752", vat_number: null },
     });
   });
 
@@ -121,24 +123,25 @@ describe("CustomerCompanyDetailsSection", () => {
     expect(api.patch).toHaveBeenCalledWith("/customers/c3", {
       is_company: true,
       vat_registered: false,
-      company_requisites: { address: "гр. Варна", eik: "130489869", vat_number: null },
+      company_requisites: { country: "BG", address: "гр. Варна", eik: "130489869", vat_number: null },
     });
   });
 
-  it("choosing VAT status 'Да' and entering a number saves it", async () => {
+  it("choosing VAT status 'Да' saves the (Wave 5 auto-prefilled) VAT number", async () => {
     const user = userEvent.setup();
     vi.mocked(api.patch).mockResolvedValue({});
     renderSection(companyCustomerUnknown);
 
     await user.click(screen.getByRole("button", { name: "Промени" }));
+    // EIK "130489869" is already on file, so choosing "Да" alone already
+    // fills the VAT number (Wave 5) — no manual typing needed.
     await user.click(screen.getByRole("button", { name: "Да" }));
-    await user.type(screen.getByLabelText("ДДС номер"), "BG130489869");
     await user.click(screen.getByRole("button", { name: "Запази" }));
 
     expect(api.patch).toHaveBeenCalledWith("/customers/c2", {
       is_company: true,
       vat_registered: true,
-      company_requisites: { address: "гр. София", eik: "130489869", vat_number: "BG130489869" },
+      company_requisites: { country: "BG", address: "гр. София", eik: "130489869", vat_number: "BG130489869" },
     });
   });
 
@@ -155,7 +158,7 @@ describe("CustomerCompanyDetailsSection", () => {
     expect(api.patch).toHaveBeenCalledWith("/customers/c3", {
       is_company: false,
       vat_registered: true,
-      company_requisites: { address: "гр. Варна", eik: "130489869", vat_number: "BG130489869" },
+      company_requisites: { country: "BG", address: "гр. Варна", eik: "130489869", vat_number: "BG130489869" },
     });
   });
 
@@ -170,5 +173,52 @@ describe("CustomerCompanyDetailsSection", () => {
     expect(screen.getByLabelText("ЕИК / БУЛСТАТ")).toHaveValue("");
     expect(screen.getByRole("button", { name: "Не е проверено" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByLabelText("ДДС номер")).not.toBeInTheDocument();
+  });
+});
+
+describe("CustomerCompanyDetailsSection — Wave 5 Issue 11/12 (country + BG VAT prefill)", () => {
+  it("defaults a brand-new company's country to България", async () => {
+    const user = userEvent.setup();
+    renderSection(individualCustomer);
+
+    await user.click(screen.getByRole("button", { name: "Промени" }));
+    await user.click(screen.getByRole("button", { name: "Фирма" }));
+
+    expect(screen.getByLabelText("Държава")).toHaveValue("BG");
+  });
+
+  it("prefills the VAT number from a valid BG EIK once VAT registration is confirmed", async () => {
+    const user = userEvent.setup();
+    renderSection(companyCustomerUnknown);
+
+    await user.click(screen.getByRole("button", { name: "Промени" }));
+    await user.click(screen.getByRole("button", { name: "Да" }));
+
+    expect(screen.getByLabelText("ДДС номер")).toHaveValue("BG130489869");
+  });
+
+  it("does not prefill a VAT number for a non-BG country", async () => {
+    const user = userEvent.setup();
+    renderSection(companyCustomerUnknown);
+
+    await user.click(screen.getByRole("button", { name: "Промени" }));
+    await user.selectOptions(screen.getByLabelText("Държава"), "DE");
+    await user.click(screen.getByRole("button", { name: "Да" }));
+
+    expect(screen.getByLabelText("ДДС номер")).toHaveValue("");
+  });
+
+  it("saves the selected country in the requisites payload", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.patch).mockResolvedValue({});
+    renderSection(companyCustomerUnknown);
+
+    await user.click(screen.getByRole("button", { name: "Промени" }));
+    await user.selectOptions(screen.getByLabelText("Държава"), "DE");
+    await user.click(screen.getByRole("button", { name: "Запази" }));
+
+    expect(api.patch).toHaveBeenCalledWith("/customers/c2", expect.objectContaining({
+      company_requisites: expect.objectContaining({ country: "DE" }),
+    }));
   });
 });

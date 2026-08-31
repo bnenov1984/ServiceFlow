@@ -398,3 +398,141 @@ def test_vehicle_service_history_is_tenant_isolated(client: TestClient) -> None:
 
     _login(client, "Сервиз Б", "b@b.bg")
     assert client.get(f"/api/v1/assets/{aid}/service-history").status_code == 404
+
+
+# --- Wave 5 Issue 12: order-level delivery method/address ------------------
+
+def test_pickup_order_works_without_delivery_address(client: TestClient) -> None:
+    h = _login(client)
+    cid, aid = _customer_and_asset(client, h)
+    r = client.post("/api/v1/orders", headers=h, json={
+        "customer_id": cid, "asset_id": aid, "complaint": "x",
+        "delivery_method": "pickup",
+    })
+    assert r.status_code == 201, r.text
+    assert r.json()["delivery_method"] == "pickup"
+    assert r.json()["delivery_address"] is None
+
+
+def test_order_defaults_to_no_delivery_method_when_omitted(client: TestClient) -> None:
+    h = _login(client)
+    cid, aid = _customer_and_asset(client, h)
+    order = _order(client, h, cid, aid)
+    assert order["delivery_method"] is None
+    assert order["delivery_address"] is None
+
+
+def test_courier_order_stores_its_own_explicit_delivery_address(client: TestClient) -> None:
+    h = _login(client)
+    cid, aid = _customer_and_asset(client, h)
+    r = client.post("/api/v1/orders", headers=h, json={
+        "customer_id": cid, "asset_id": aid, "complaint": "x",
+        "delivery_method": "courier",
+        "delivery_address": {"address": "ул. Куриерска 1"},
+    })
+    assert r.status_code == 201, r.text
+    assert r.json()["delivery_method"] == "courier"
+    assert r.json()["delivery_address"] == {"address": "ул. Куриерска 1"}
+
+
+def test_courier_order_prefills_from_customer_default_delivery_address(
+    client: TestClient,
+) -> None:
+    h = _login(client)
+    cid = client.post("/api/v1/customers", headers=h, json={
+        "name": "Иван", "phone": "0888111222",
+        "delivery_address": {"address": "адрес по подразбиране"},
+    }).json()["id"]
+    aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
+        "asset_type_code": "phone", "field_values": {"brand": "Apple"},
+    }).json()["id"]
+
+    r = client.post("/api/v1/orders", headers=h, json={
+        "customer_id": cid, "asset_id": aid, "complaint": "x", "delivery_method": "courier",
+    })
+    assert r.status_code == 201, r.text
+    assert r.json()["delivery_address"] == {"address": "адрес по подразбиране"}
+
+
+def test_courier_order_explicit_address_overrides_customer_default(client: TestClient) -> None:
+    h = _login(client)
+    cid = client.post("/api/v1/customers", headers=h, json={
+        "name": "Иван", "phone": "0888111222",
+        "delivery_address": {"address": "адрес по подразбиране"},
+    }).json()["id"]
+    aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
+        "asset_type_code": "phone", "field_values": {"brand": "Apple"},
+    }).json()["id"]
+
+    r = client.post("/api/v1/orders", headers=h, json={
+        "customer_id": cid, "asset_id": aid, "complaint": "x", "delivery_method": "courier",
+        "delivery_address": {"address": "адрес за конкретната поръчка"},
+    })
+    assert r.status_code == 201
+    assert r.json()["delivery_address"] == {"address": "адрес за конкретната поръчка"}
+
+
+def test_order_delivery_address_is_independent_of_later_customer_address_edits(
+    client: TestClient,
+) -> None:
+    h = _login(client)
+    cid = client.post("/api/v1/customers", headers=h, json={
+        "name": "Иван", "phone": "0888111222",
+        "delivery_address": {"address": "стар адрес"},
+    }).json()["id"]
+    aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
+        "asset_type_code": "phone", "field_values": {"brand": "Apple"},
+    }).json()["id"]
+    oid = client.post("/api/v1/orders", headers=h, json={
+        "customer_id": cid, "asset_id": aid, "complaint": "x", "delivery_method": "courier",
+    }).json()["id"]
+
+    client.patch(f"/api/v1/customers/{cid}", headers=h, json={
+        "delivery_address": {"address": "нов адрес"},
+    })
+
+    order_after = client.get(f"/api/v1/orders/{oid}", headers=h).json()
+    assert order_after["delivery_address"] == {"address": "стар адрес"}
+
+
+def test_pickup_order_ignores_customer_default_address(client: TestClient) -> None:
+    h = _login(client)
+    cid = client.post("/api/v1/customers", headers=h, json={
+        "name": "Иван", "phone": "0888111222",
+        "delivery_address": {"address": "адрес по подразбиране"},
+    }).json()["id"]
+    aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
+        "asset_type_code": "phone", "field_values": {"brand": "Apple"},
+    }).json()["id"]
+
+    r = client.post("/api/v1/orders", headers=h, json={
+        "customer_id": cid, "asset_id": aid, "complaint": "x", "delivery_method": "pickup",
+    })
+    assert r.status_code == 201
+    assert r.json()["delivery_address"] is None
+
+
+def test_invalid_delivery_method_is_rejected(client: TestClient) -> None:
+    h = _login(client)
+    cid, aid = _customer_and_asset(client, h)
+    r = client.post("/api/v1/orders", headers=h, json={
+        "customer_id": cid, "asset_id": aid, "complaint": "x",
+        "delivery_method": "drone",
+    })
+    assert r.status_code == 422
+
+
+def test_payment_method_is_unaffected_by_delivery_method(client: TestClient) -> None:
+    """Payment.method and ServiceOrder.delivery_method are independent —
+    creating a courier order must not change payment behavior at all."""
+    h = _login(client)
+    cid, aid = _customer_and_asset(client, h)
+    oid = client.post("/api/v1/orders", headers=h, json={
+        "customer_id": cid, "asset_id": aid, "complaint": "x",
+        "delivery_method": "courier", "delivery_address": {"address": "адрес"},
+    }).json()["id"]
+
+    payment = client.post(f"/api/v1/orders/{oid}/payments", headers=h,
+                          json={"amount": "10.00", "method": "cash", "note": ""})
+    assert payment.status_code == 201, payment.text
+    assert payment.json()["method"] == "cash"

@@ -3,7 +3,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from business_os.identity.deps import (
     TenantDbDep,
@@ -25,48 +25,73 @@ from serviceflow.service_orders import service as orders_service
 
 router = APIRouter(dependencies=[Depends(require_repairflow_active)])
 
+# Wave 5 Issue 11: BG-specific structural validation (EIK, "BG"+EIK VAT
+# shape) only applies when country == this. Every other country is accepted
+# as an opaque, manually-entered identifier — no per-country tax validation
+# in this Wave (explicitly out of scope; see docs/business-os Wave 5 audit).
+_BG = "BG"
+
 
 class CustomerCompanyRequisites(BaseModel):
     """Buyer-company legal requisites for a future Invoice.buyer snapshot
     (docs/ACCOUNTANT_REVIEW.md §4 B1, LAW-CONFIRMED core list) — replaces
     the previously fully-unconstrained `dict[str, Any]`; `extra="forbid"`
     is the allow-list enforcement point, same pattern as the seller-side
-    `CompanyRequisitesPatch`. `vat_number` (Customer VAT Identity
-    prerequisite slice) is the buyer-side counterpart to R2's law-confirmed
-    "BG" + ЕИК seller VAT number — explicitly entered, never derived/
-    auto-generated from `eik` alone, since a company's VAT-registration
-    status is a fact this module cannot infer (see
-    `customers/service.py`'s `_validate_vat_identity`)."""
+    `CompanyRequisitesPatch`. `vat_number` is auto-derived (Wave 5) only
+    when `country == "BG"`, `vat_registered` is explicitly True, and `eik`
+    is structurally valid — see `customers/service.py`'s
+    `_derive_bg_vat_number`; the VAT-registration status itself is still
+    never inferred from `eik` alone.
+
+    `country` (Wave 5 Issue 11/12): ISO 3166-1 alpha-2, defaults to "BG" —
+    every company customer created before this field existed only ever was
+    Bulgarian, so a stored blob with no "country" key reads back as "BG"
+    (see CustomerOut.of), never rewritten to add the key."""
 
     model_config = ConfigDict(extra="forbid")
 
+    country: str = Field(default=_BG, pattern="^[A-Z]{2}$")
     address: str | None = Field(default=None, max_length=500)
     eik: str | None = Field(default=None, max_length=20)
     vat_number: str | None = Field(default=None, max_length=20)
 
     @field_validator("eik")
     @classmethod
-    def _validate_eik(cls, value: str | None) -> str | None:
+    def _normalize_eik_field(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        normalized = normalize_eik(value)
-        if not normalized:
-            return None
-        if not is_valid_eik(normalized):
-            raise ValueError("invalid EIK/BULSTAT: expected 9 or 13 digits")
-        return normalized
+        return normalize_eik(value) or None
 
     @field_validator("vat_number")
     @classmethod
-    def _validate_vat_number(cls, value: str | None) -> str | None:
+    def _normalize_vat_number_field(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        normalized = normalize_vat_number(value)
-        if not normalized:
-            return None
-        if not is_valid_vat_number(normalized):
+        return normalize_vat_number(value) or None
+
+    @model_validator(mode="after")
+    def _validate_bg_identifiers(self) -> "CustomerCompanyRequisites":
+        # Structural EIK/VAT-shape checks are BG-specific (docs/
+        # ACCOUNTANT_REVIEW.md §3 R1/R2) — a foreign company's identifier is
+        # accepted as typed, normalized (trimmed) only, never format-checked
+        # against a rule that was never true for it.
+        if self.country != _BG:
+            return self
+        if self.eik is not None and not is_valid_eik(self.eik):
+            raise ValueError("invalid EIK/BULSTAT: expected 9 or 13 digits")
+        if self.vat_number is not None and not is_valid_vat_number(self.vat_number):
             raise ValueError('invalid VAT number: expected "BG" + 9 or 13 digits')
-        return normalized
+        return self
+
+
+class CustomerDeliveryAddress(BaseModel):
+    """Wave 5 Issue 12: ONE optional default delivery address — individual
+    or company customer alike, independent of company_requisites.address
+    (the registered/legal address). No address history."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    address: str = Field(min_length=1, max_length=500)
 
 
 class CustomerIn(BaseModel):
@@ -80,6 +105,7 @@ class CustomerIn(BaseModel):
     # payload is expected to resolve on its own. See Customer.vat_registered.
     vat_registered: bool | None = None
     company_requisites: CustomerCompanyRequisites | None = None
+    delivery_address: CustomerDeliveryAddress | None = None
     notes: str = Field(default="", max_length=5000)
 
 
@@ -91,6 +117,7 @@ class CustomerPatch(BaseModel):
     is_company: bool | None = None
     vat_registered: bool | None = None
     company_requisites: CustomerCompanyRequisites | None = None
+    delivery_address: CustomerDeliveryAddress | None = None
     notes: str | None = Field(default=None, max_length=5000)
 
 
@@ -103,6 +130,7 @@ class CustomerOut(BaseModel):
     is_company: bool
     vat_registered: bool | None
     company_requisites: CustomerCompanyRequisites | None
+    delivery_address: CustomerDeliveryAddress | None
     notes: str
     archived: bool
     anonymized: bool
@@ -118,14 +146,23 @@ class CustomerOut(BaseModel):
         raw = c.company_requisites or None
         requisites = (
             CustomerCompanyRequisites(
+                # Wave 5: absent "country" (every pre-Wave-5 row) reads as
+                # "BG" — the only country this product ever supported before
+                # this field existed, never a migration/backfill.
+                country=raw.get("country") or _BG,
                 address=raw.get("address"), eik=raw.get("eik"), vat_number=raw.get("vat_number"),
             )
             if raw else None
         )
+        raw_delivery = c.delivery_address or None
+        delivery_address = (
+            CustomerDeliveryAddress(address=raw_delivery["address"])
+            if raw_delivery and raw_delivery.get("address") else None
+        )
         return CustomerOut(
             id=c.id, name=c.name, phone=c.phone, phone2=c.phone2, email=c.email,
             is_company=c.is_company, vat_registered=c.vat_registered,
-            company_requisites=requisites,
+            company_requisites=requisites, delivery_address=delivery_address,
             notes=c.notes, archived=c.archived_at is not None,
             anonymized=c.anonymized_at is not None, row_version=c.row_version,
             duplicate_ids=duplicate_ids or [],

@@ -9,11 +9,14 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { t } from "../i18n/bg";
 import { api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
 import { AccessoriesChecklist } from "./AccessoriesChecklist";
+
+const DELIVERY_METHODS = ["pickup", "courier"] as const;
+export type DeliveryMethod = (typeof DELIVERY_METHODS)[number];
 
 export interface PartLineDraft {
   name: string;
@@ -32,6 +35,10 @@ export interface OrderStepValue {
   // the submit boundary (IntakePage), same convention as AssetStep's number
   // fields.
   mileage: string;
+  // Wave 5 Issue 12: "pickup" is the default/common path — the delivery
+  // address only matters (and only renders) once "courier" is chosen.
+  deliveryMethod: DeliveryMethod;
+  deliveryAddress: string;
 }
 
 interface UserOut {
@@ -44,6 +51,7 @@ interface UserOut {
 export function OrderStep({
   value,
   assetTypeCode,
+  defaultDeliveryAddress,
   onChange,
   onSubmit,
   submitting,
@@ -53,6 +61,10 @@ export function OrderStep({
   // Gates the mileage field (Issue 21: automotive only, never required for
   // other asset types).
   assetTypeCode: string;
+  // Wave 5 Issue 12: the resolved customer's own default delivery address
+  // (if any) — prefills the courier address once, never overwrites a value
+  // the user already typed/edited.
+  defaultDeliveryAddress: string | null;
   // Updater-only (never a raw next-value): every mutation computes its result
   // from `prev` at apply-time, so React can chain multiple same-batch updates
   // correctly regardless of dispatch order (see AccessoriesChecklist for the
@@ -67,6 +79,14 @@ export function OrderStep({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [partName, setPartName] = useState("");
   const [partPrice, setPartPrice] = useState("");
+
+  useEffect(() => {
+    if (value.deliveryMethod !== "courier") return;
+    if (value.deliveryAddress.trim()) return;
+    if (!defaultDeliveryAddress) return;
+    onChange((prev) => ({ ...prev, deliveryAddress: defaultDeliveryAddress }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value.deliveryMethod, defaultDeliveryAddress]);
 
   const { data: users } = useQuery({
     queryKey: queryKeys.users,
@@ -225,6 +245,42 @@ export function OrderStep({
             {t("intake.accessory_add")}
           </button>
         </div>
+      </div>
+
+      <div>
+        <label className="mb-1 block text-sm font-medium text-slate-700">
+          {t("intake.delivery_method")}
+        </label>
+        <div className="flex gap-2">
+          {DELIVERY_METHODS.map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => onChange((prev) => ({ ...prev, deliveryMethod: m }))}
+              aria-pressed={value.deliveryMethod === m}
+              className={`rounded-full border px-3 py-1.5 text-sm font-medium min-h-touch ${
+                value.deliveryMethod === m
+                  ? "border-blue-600 bg-blue-600 text-white"
+                  : "border-slate-300 text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {t(m === "courier" ? "intake.delivery_method_courier" : "intake.delivery_method_pickup")}
+            </button>
+          ))}
+        </div>
+        {value.deliveryMethod === "courier" && (
+          <input
+            type="text"
+            value={value.deliveryAddress}
+            onChange={(e) => {
+              const deliveryAddress = e.target.value;
+              onChange((prev) => ({ ...prev, deliveryAddress }));
+            }}
+            placeholder={t("intake.delivery_address")}
+            aria-label={t("intake.delivery_address")}
+            className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
+          />
+        )}
       </div>
 
       <div className="flex gap-6">

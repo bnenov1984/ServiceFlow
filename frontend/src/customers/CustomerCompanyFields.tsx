@@ -15,13 +15,47 @@
  * place that already decides what to actually send on save.
  */
 
+import { useEffect } from "react";
 import { t } from "../i18n/bg";
 
 export interface CompanyRequisitesForm {
+  country: string;
   address: string;
   eik: string;
   vatRegistered: boolean | null;
   vatNumber: string;
+}
+
+// Wave 5 Issue 11: a static V1 list, no external registry — same "fixed
+// choices + escape hatch" idiom Issue 23's vehicle-brand dropdown already
+// established (AssetStep/serviceflow.assets.service.DEFAULT_TYPES). BG
+// first/default; "Друга" reveals a free-text 2-letter code input for
+// anything not listed, mirroring "Друго" there.
+const COUNTRIES: { code: string; label: string }[] = [
+  { code: "BG", label: "България" },
+  { code: "DE", label: "Германия" },
+  { code: "GR", label: "Гърция" },
+  { code: "RO", label: "Румъния" },
+  { code: "RS", label: "Сърбия" },
+  { code: "MK", label: "Северна Македония" },
+  { code: "TR", label: "Турция" },
+  { code: "IT", label: "Италия" },
+  { code: "FR", label: "Франция" },
+  { code: "ES", label: "Испания" },
+  { code: "GB", label: "Обединено кралство" },
+  { code: "US", label: "САЩ" },
+];
+const KNOWN_COUNTRY_CODES = new Set(COUNTRIES.map((c) => c.code));
+
+// Wave 5 Issue 11/12: mirrors backend's is_valid_eik/derive_seller_vat_number
+// (business_os.shared_kernel.normalize) — a UI-only prefill convenience;
+// the backend independently re-derives/validates on save regardless, so a
+// mismatch here can never produce a wrong stored value.
+function deriveBgVatNumber(eik: string): string | null {
+  const digits = eik.trim();
+  if (!/^\d+$/.test(digits)) return null;
+  if (digits.length !== 9 && digits.length !== 13) return null;
+  return `BG${digits}`;
 }
 
 function toggleClass(active: boolean): string {
@@ -77,6 +111,18 @@ export function CustomerCompanyFields({
    * so the two don't render side by side. */
   showTypeToggle?: boolean;
 }) {
+  // Wave 5 Issue 11/12: prefill (never force) the VAT number once VAT is
+  // explicitly registered and the EIK on file already structurally looks
+  // like a valid BG one — only ever fills a blank field, so a value the
+  // user already typed (correction or otherwise) is never overwritten.
+  useEffect(() => {
+    if (requisites.country !== "BG" || requisites.vatRegistered !== true) return;
+    if (requisites.vatNumber.trim()) return;
+    const derived = deriveBgVatNumber(requisites.eik);
+    if (derived) onRequisitesChange({ ...requisites, vatNumber: derived });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requisites.country, requisites.vatRegistered, requisites.eik]);
+
   return (
     <div className="flex flex-col gap-3">
       {showTypeToggle && (
@@ -85,6 +131,39 @@ export function CustomerCompanyFields({
 
       {isCompany && (
         <div className="flex flex-col gap-3">
+          <div>
+            <label
+              className="mb-1 block text-sm font-medium text-slate-700"
+              htmlFor="customer-company-country"
+            >
+              {t("company.field_country")}
+            </label>
+            <select
+              id="customer-company-country"
+              value={KNOWN_COUNTRY_CODES.has(requisites.country) ? requisites.country : ""}
+              onChange={(e) => onRequisitesChange({ ...requisites, country: e.target.value })}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
+            >
+              {COUNTRIES.map((c) => (
+                <option key={c.code} value={c.code}>{c.label}</option>
+              ))}
+              <option value="">{t("company.country_other")}</option>
+            </select>
+            {!KNOWN_COUNTRY_CODES.has(requisites.country) && (
+              <input
+                type="text"
+                value={requisites.country}
+                onChange={(e) => onRequisitesChange({
+                  ...requisites, country: e.target.value.toUpperCase().slice(0, 2),
+                })}
+                placeholder={t("company.field_country")}
+                maxLength={2}
+                aria-label={t("company.country_other")}
+                className="mt-2 w-24 rounded-lg border border-slate-300 px-3 py-2 uppercase min-h-touch"
+              />
+            )}
+          </div>
+
           <div>
             <label
               className="mb-1 block text-sm font-medium text-slate-700"

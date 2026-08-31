@@ -15,6 +15,10 @@ import type { CustomerDetail } from "./types";
 
 function requisitesFrom(customer: CustomerDetail) {
   return {
+    // "BG" is the correct default even when a company_requisites blob
+    // already exists but predates Wave 5 (no "country" key at all) — see
+    // CustomerOut.of's own identical defaulting on the backend.
+    country: customer.company_requisites?.country ?? "BG",
     address: customer.company_requisites?.address ?? "",
     eik: customer.company_requisites?.eik ?? "",
     vatRegistered: customer.vat_registered,
@@ -61,6 +65,7 @@ export function CustomerCompanyDetailsSection({
         vat_registered: isCompany ? requisites.vatRegistered : customer.vat_registered,
         company_requisites: isCompany
           ? {
+              country: requisites.country,
               address: requisites.address.trim() || null,
               eik: requisites.eik.trim() || null,
               // A stale VAT number never lingers under a non-registered/
@@ -126,6 +131,12 @@ export function CustomerCompanyDetailsSection({
         </div>
       ) : customer.is_company ? (
         <dl className="flex flex-col gap-2 text-sm text-slate-700">
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              {t("company.field_country")}
+            </dt>
+            <dd className="mt-0.5">{customer.company_requisites?.country ?? "BG"}</dd>
+          </div>
           <div>
             <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
               {t("company.field_address")}

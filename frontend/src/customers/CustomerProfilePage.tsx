@@ -17,6 +17,7 @@ import { ContactsSection } from "../order/ContactsSection";
 import { AnonymizeDialog } from "./AnonymizeDialog";
 import { CustomerAssetsSection } from "./CustomerAssetsSection";
 import { CustomerCompanyDetailsSection } from "./CustomerCompanyDetailsSection";
+import { CustomerDeliveryAddressSection } from "./CustomerDeliveryAddressSection";
 import { CustomerOrdersSection } from "./CustomerOrdersSection";
 import type { CustomerDetail } from "./types";
 
@@ -162,6 +163,7 @@ export function CustomerProfilePage() {
         </div>
         <div className="flex flex-col gap-4">
           <CustomerCompanyDetailsSection customerId={customerId} customer={customer} />
+          <CustomerDeliveryAddressSection customerId={customerId} customer={customer} />
           <ContactsSection customerId={customerId} />
         </div>
       </div>

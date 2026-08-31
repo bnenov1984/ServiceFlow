@@ -1,9 +1,14 @@
 /** Shared shapes for the customers screens (docs/15 §6.7). */
 
 export interface CustomerCompanyRequisites {
+  country: string;
   address: string | null;
   eik: string | null;
   vat_number: string | null;
+}
+
+export interface CustomerDeliveryAddress {
+  address: string;
 }
 
 export interface CustomerListItem {
@@ -26,6 +31,7 @@ export interface CustomerDetail {
   is_company: boolean;
   vat_registered: boolean | null;
   company_requisites: CustomerCompanyRequisites | null;
+  delivery_address: CustomerDeliveryAddress | null;
   archived: boolean;
   anonymized: boolean;
 }

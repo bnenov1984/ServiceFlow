@@ -29,7 +29,18 @@ class Customer(Base, TimestampMixin):
     # customers/service.py's _validate_vat_identity). No server default —
     # every pre-existing row reads back NULL, not False (migration 0019).
     vat_registered: Mapped[bool | None] = mapped_column(default=None)
+    # Wave 5 Issue 11/12: `country` lives *inside* this existing JSONB blob
+    # (key "country", ISO 3166-1 alpha-2, e.g. "BG") — no schema change to
+    # add it. A row with no "country" key at all (every pre-Wave-5 company
+    # customer) is read back as "BG" by the router's own defaulting, never
+    # backfilled: BG was the only country this product ever supported before
+    # now, so treating "absent" as "BG" is simply true, not a migration.
     company_requisites: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
+    # Wave 5 Issue 12: ONE optional default delivery address, individual or
+    # company customer alike (unlike company_requisites, never gated by
+    # is_company). Same JSONB-bag-with-an-"address"-key shape as
+    # company_requisites — {"address": str} — no address-history subsystem.
+    delivery_address: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
     notes: Mapped[str] = mapped_column(default="", server_default="")
     # Shadow columns (ADR-010) — maintained by the service layer, never by hand.
     phone_normalized: Mapped[str] = mapped_column(index=True)

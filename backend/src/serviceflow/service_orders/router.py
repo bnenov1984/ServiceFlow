@@ -36,6 +36,15 @@ from serviceflow.timeline import service as timeline_service
 router = APIRouter(dependencies=[Depends(require_repairflow_active)])
 
 
+class DeliveryAddressIn(BaseModel):
+    """Wave 5 Issue 12: same minimal shape as customers.router's
+    CustomerDeliveryAddress — deliberately a separate, local definition
+    rather than an import: an order's own copy of the address has no
+    dependency on the customer contract's shape evolving independently."""
+
+    address: str = Field(min_length=1, max_length=500)
+
+
 class OrderIn(BaseModel):
     customer_id: uuid.UUID
     asset_id: uuid.UUID
@@ -47,6 +56,10 @@ class OrderIn(BaseModel):
     # accepted for any asset type — not required, never enforced by
     # asset_type here (the frontend decides when to show the field).
     mileage: int | None = Field(default=None, ge=0)
+    # Wave 5 Issue 12: smallest order-level logistics model. No DB CHECK
+    # (same precedent as `priority` above) — validated here only.
+    delivery_method: str | None = Field(default=None, pattern="^(pickup|courier)$")
+    delivery_address: DeliveryAddressIn | None = None
 
 
 class OrderPatch(BaseModel):
@@ -91,6 +104,10 @@ class OrderOut(BaseModel):
     archived: bool
     row_version: int
     mileage: int | None = None
+    # Wave 5 Issue 12: independent copy taken at creation — never a live
+    # reference back to the customer's own delivery_address.
+    delivery_method: str | None = None
+    delivery_address: DeliveryAddressIn | None = None
     # Wave 4 Issue 7: lets the client decide whether "Протокол за предаване"
     # can open the PDF directly or must show the unavailable message
     # up front, without a doomed round trip to a new tab.
@@ -99,12 +116,17 @@ class OrderOut(BaseModel):
 
     @staticmethod
     def of(o: ServiceOrder, warning: str | None = None) -> "OrderOut":
+        delivery_address = (
+            DeliveryAddressIn(address=o.delivery_address["address"])
+            if o.delivery_address and o.delivery_address.get("address") else None
+        )
         return OrderOut(
             id=o.id, number=o.number, customer_id=o.customer_id, asset_id=o.asset_id,
             complaint=o.complaint, status_code=o.status_code,
             status_kind=statuses.kind_of(o.status_code).value,
             technician_id=o.technician_id, priority=o.priority,
             promised_on=o.promised_on, warranty_days=o.warranty_days,
+            delivery_method=o.delivery_method, delivery_address=delivery_address,
             origin_order_id=o.origin_order_id, delivered_at=o.delivered_at,
             terminal_reason=o.terminal_reason, archived=o.archived_at is not None,
             row_version=o.row_version, mileage=o.mileage,
@@ -376,11 +398,20 @@ def create_order(body: OrderIn, db: TenantDbDep, tenant: TenantDep) -> OrderOut:
         raise HTTPException(status_code=404, detail={
             "code": "not_found", "message_key": "errors.assets.not_found", "params": {},
         })
+    # Wave 5 Issue 12: an explicit per-order address always wins; a courier
+    # order with none given falls back to the customer's own default — a
+    # plain copy, taken once, here, never a live reference (a later edit to
+    # Customer.delivery_address must not retroactively change this order).
+    delivery_address = body.delivery_address.model_dump() if body.delivery_address else None
+    if body.delivery_method == "courier" and delivery_address is None and customer.delivery_address:
+        delivery_address = dict(customer.delivery_address)
+
     order = service.create(
         db, tenant, customer_id=body.customer_id, asset_id=body.asset_id,
         complaint=body.complaint, priority=body.priority,
         promised_on=body.promised_on, technician_id=body.technician_id,
         mileage=body.mileage,
+        delivery_method=body.delivery_method, delivery_address=delivery_address,
     )
     return OrderOut.of(order)
 

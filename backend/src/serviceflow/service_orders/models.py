@@ -62,6 +62,18 @@ class ServiceOrder(Base, TimestampMixin):
     # orders. `created_at` (TimestampMixin) is the visit timestamp; no
     # separate mileage date column. NULL for every non-vehicle/legacy order.
     mileage: Mapped[int | None] = mapped_column(default=None)
+    # Wave 5 Issue 12: the smallest order-level logistics model. "pickup" or
+    # "courier" (validated at the Pydantic layer, same no-DB-CHECK precedent
+    # as `priority` above — not a lifecycle field like part_lines.state, so
+    # no transition matrix, no constraint). `delivery_address` is a plain
+    # copy taken at order-creation time (prefilled from the customer's own
+    # `Customer.delivery_address` when present) — independent of that
+    # customer field from the moment it's copied, the same "never a live
+    # reference" discipline completion_snapshot/Invoice.buyer already use,
+    # just without the "frozen at a later event" timing since there's
+    # nothing to freeze here: it's fixed by construction, not by a later step.
+    delivery_method: Mapped[str | None] = mapped_column(default=None)
+    delivery_address: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
     origin_order_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("service_orders.id"), default=None
     )

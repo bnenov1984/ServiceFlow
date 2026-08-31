@@ -1859,14 +1859,23 @@ export interface components {
          *     (docs/ACCOUNTANT_REVIEW.md §4 B1, LAW-CONFIRMED core list) — replaces
          *     the previously fully-unconstrained `dict[str, Any]`; `extra="forbid"`
          *     is the allow-list enforcement point, same pattern as the seller-side
-         *     `CompanyRequisitesPatch`. `vat_number` (Customer VAT Identity
-         *     prerequisite slice) is the buyer-side counterpart to R2's law-confirmed
-         *     "BG" + ЕИК seller VAT number — explicitly entered, never derived/
-         *     auto-generated from `eik` alone, since a company's VAT-registration
-         *     status is a fact this module cannot infer (see
-         *     `customers/service.py`'s `_validate_vat_identity`).
+         *     `CompanyRequisitesPatch`. `vat_number` is auto-derived (Wave 5) only
+         *     when `country == "BG"`, `vat_registered` is explicitly True, and `eik`
+         *     is structurally valid — see `customers/service.py`'s
+         *     `_derive_bg_vat_number`; the VAT-registration status itself is still
+         *     never inferred from `eik` alone.
+         *
+         *     `country` (Wave 5 Issue 11/12): ISO 3166-1 alpha-2, defaults to "BG" —
+         *     every company customer created before this field existed only ever was
+         *     Bulgarian, so a stored blob with no "country" key reads back as "BG"
+         *     (see CustomerOut.of), never rewritten to add the key.
          */
         CustomerCompanyRequisites: {
+            /**
+             * Country
+             * @default BG
+             */
+            country: string;
             /** Address */
             address?: string | null;
             /** Eik */
@@ -1886,6 +1895,16 @@ export interface components {
             occurred_at?: string | null;
             /** Order Id */
             order_id?: string | null;
+        };
+        /**
+         * CustomerDeliveryAddress
+         * @description Wave 5 Issue 12: ONE optional default delivery address — individual
+         *     or company customer alike, independent of company_requisites.address
+         *     (the registered/legal address). No address history.
+         */
+        CustomerDeliveryAddress: {
+            /** Address */
+            address: string;
         };
         /** CustomerHitOut */
         CustomerHitOut: {
@@ -1917,6 +1936,7 @@ export interface components {
             /** Vat Registered */
             vat_registered?: boolean | null;
             company_requisites?: components["schemas"]["CustomerCompanyRequisites"] | null;
+            delivery_address?: components["schemas"]["CustomerDeliveryAddress"] | null;
             /**
              * Notes
              * @default
@@ -1947,6 +1967,7 @@ export interface components {
             /** Vat Registered */
             vat_registered: boolean | null;
             company_requisites: components["schemas"]["CustomerCompanyRequisites"] | null;
+            delivery_address: components["schemas"]["CustomerDeliveryAddress"] | null;
             /** Notes */
             notes: string;
             /** Archived */
@@ -1983,6 +2004,7 @@ export interface components {
             /** Vat Registered */
             vat_registered: boolean | null;
             company_requisites: components["schemas"]["CustomerCompanyRequisites"] | null;
+            delivery_address: components["schemas"]["CustomerDeliveryAddress"] | null;
             /** Notes */
             notes: string;
             /** Archived */
@@ -2012,6 +2034,7 @@ export interface components {
             /** Vat Registered */
             vat_registered?: boolean | null;
             company_requisites?: components["schemas"]["CustomerCompanyRequisites"] | null;
+            delivery_address?: components["schemas"]["CustomerDeliveryAddress"] | null;
             /** Notes */
             notes?: string | null;
         };
@@ -2055,6 +2078,17 @@ export interface components {
              * Format: date-time
              */
             changed_at: string;
+        };
+        /**
+         * DeliveryAddressIn
+         * @description Wave 5 Issue 12: same minimal shape as customers.router's
+         *     CustomerDeliveryAddress — deliberately a separate, local definition
+         *     rather than an import: an order's own copy of the address has no
+         *     dependency on the customer contract's shape evolving independently.
+         */
+        DeliveryAddressIn: {
+            /** Address */
+            address: string;
         };
         /** DiagnosisIn */
         DiagnosisIn: {
@@ -2495,6 +2529,9 @@ export interface components {
             row_version: number;
             /** Mileage */
             mileage?: number | null;
+            /** Delivery Method */
+            delivery_method?: string | null;
+            delivery_address?: components["schemas"]["DeliveryAddressIn"] | null;
             /**
              * Has Completion Snapshot
              * @default false
@@ -2555,6 +2592,9 @@ export interface components {
             technician_id?: string | null;
             /** Mileage */
             mileage?: number | null;
+            /** Delivery Method */
+            delivery_method?: string | null;
+            delivery_address?: components["schemas"]["DeliveryAddressIn"] | null;
         };
         /**
          * OrderListItemOut
@@ -2605,6 +2645,9 @@ export interface components {
             row_version: number;
             /** Mileage */
             mileage?: number | null;
+            /** Delivery Method */
+            delivery_method?: string | null;
+            delivery_address?: components["schemas"]["DeliveryAddressIn"] | null;
             /**
              * Has Completion Snapshot
              * @default false
@@ -2666,6 +2709,9 @@ export interface components {
             row_version: number;
             /** Mileage */
             mileage?: number | null;
+            /** Delivery Method */
+            delivery_method?: string | null;
+            delivery_address?: components["schemas"]["DeliveryAddressIn"] | null;
             /**
              * Has Completion Snapshot
              * @default false

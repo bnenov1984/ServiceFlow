@@ -46,6 +46,7 @@ describe("CustomerStep create flow", () => {
     expect(api.post).toHaveBeenCalledWith("/customers", {
       name: "Иван Петров", phone: "0888123456", email: null,
       is_company: false, vat_registered: null, company_requisites: null,
+      delivery_address: null,
     });
     expect(onResolved).toHaveBeenCalledWith(
       expect.objectContaining({ id: "c1", name: "Иван Петров", phone: "0888123456" }),
@@ -132,7 +133,8 @@ describe("CustomerStep create flow", () => {
     expect(api.post).toHaveBeenCalledWith("/customers", {
       name: "Пример ЕООД", phone: "029001122", email: null,
       is_company: true, vat_registered: null,
-      company_requisites: { address: "гр. София", eik: "130489869", vat_number: null },
+      company_requisites: { country: "BG", address: "гр. София", eik: "130489869", vat_number: null },
+      delivery_address: null,
     });
   });
 
@@ -149,14 +151,16 @@ describe("CustomerStep create flow", () => {
     await user.click(screen.getByRole("button", { name: "Фирма" }));
     await user.type(screen.getByLabelText("Адрес"), "гр. Варна");
     await user.type(screen.getByLabelText("ЕИК / БУЛСТАТ"), "130489869");
+    // Wave 5: a valid BG EIK is already on file, so choosing "Да" alone
+    // already fills the VAT number — no manual typing needed.
     await user.click(screen.getByRole("button", { name: "Да" }));
-    await user.type(screen.getByLabelText("ДДС номер"), "BG130489869");
     await user.click(screen.getByRole("button", { name: "Продължи" }));
 
     expect(api.post).toHaveBeenCalledWith("/customers", {
       name: "ДДС ЕООД", phone: "029001133", email: null,
       is_company: true, vat_registered: true,
-      company_requisites: { address: "гр. Варна", eik: "130489869", vat_number: "BG130489869" },
+      company_requisites: { country: "BG", address: "гр. Варна", eik: "130489869", vat_number: "BG130489869" },
+      delivery_address: null,
     });
   });
 
@@ -181,5 +185,63 @@ describe("CustomerStep create flow", () => {
     expect(screen.queryByLabelText("ДДС номер")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Да" }));
     expect(screen.getByLabelText("ДДС номер")).toBeInTheDocument();
+  });
+});
+
+describe("CustomerStep — Wave 5 Issue 12 (default delivery address)", () => {
+  it("sends the entered delivery address, individual customer", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.post).mockResolvedValue({
+      id: "c4", name: "Мария", phone: "0888555444", archived: false, duplicate_ids: [],
+    });
+    renderStep();
+
+    await enterCreateMode(user);
+    await user.type(screen.getByPlaceholderText("Име"), "Мария");
+    await user.type(screen.getByPlaceholderText("Телефон"), "0888555444");
+    await user.type(
+      screen.getByPlaceholderText("Адрес за доставка (по желание)"), "ул. Тестова 5",
+    );
+    await user.click(screen.getByRole("button", { name: "Продължи" }));
+
+    expect(api.post).toHaveBeenCalledWith("/customers", expect.objectContaining({
+      delivery_address: { address: "ул. Тестова 5" },
+    }));
+  });
+
+  it("omits the delivery address entirely when left blank", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.post).mockResolvedValue({
+      id: "c5", name: "Петър", phone: "0888555111", archived: false, duplicate_ids: [],
+    });
+    renderStep();
+
+    await enterCreateMode(user);
+    await user.type(screen.getByPlaceholderText("Име"), "Петър");
+    await user.type(screen.getByPlaceholderText("Телефон"), "0888555111");
+    await user.click(screen.getByRole("button", { name: "Продължи" }));
+
+    expect(api.post).toHaveBeenCalledWith("/customers", expect.objectContaining({
+      delivery_address: null,
+    }));
+  });
+});
+
+describe("CustomerStep — Wave 5 Issue 11 (BG VAT-number prefill at create)", () => {
+  it("prefills the VAT number once a valid BG EIK is entered and VAT is confirmed registered", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.post).mockResolvedValue({
+      id: "c6", name: "ДДС ЕООД", phone: "029001199", archived: false, duplicate_ids: [],
+    });
+    renderStep();
+
+    await enterCreateMode(user);
+    await user.type(screen.getByPlaceholderText("Име"), "ДДС ЕООД");
+    await user.type(screen.getByPlaceholderText("Телефон"), "029001199");
+    await user.click(screen.getByRole("button", { name: "Фирма" }));
+    await user.type(screen.getByLabelText("ЕИК / БУЛСТАТ"), "130489869");
+    await user.click(screen.getByRole("button", { name: "Да" }));
+
+    expect(screen.getByLabelText("ДДС номер")).toHaveValue("BG130489869");
   });
 });

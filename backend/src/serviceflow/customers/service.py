@@ -10,7 +10,12 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from business_os.shared_kernel.db import TenantContext, scoped
-from business_os.shared_kernel.normalize import normalize_phone, transliterate
+from business_os.shared_kernel.normalize import (
+    derive_seller_vat_number,
+    is_valid_eik,
+    normalize_phone,
+    transliterate,
+)
 from serviceflow.customers.models import Customer
 
 
@@ -34,6 +39,30 @@ def _validate_vat_identity(is_company: bool, vat_registered: bool | None,
     vat_number = (company_requisites or {}).get("vat_number")
     if not vat_number:
         raise CustomerError("errors.customers.vat_number_required")
+
+
+def _derive_bg_vat_number(company_requisites: dict[str, Any] | None,
+                          vat_registered: bool | None) -> dict[str, Any] | None:
+    """Wave 5 Issues 11/12: once VAT-registered is explicitly True (never
+    inferred — see _validate_vat_identity) and a structurally valid BG EIK
+    is on file, the VAT number is never an independently-entered fact for
+    Bulgaria — the exact same "BG" + EIK rule already LAW-CONFIRMED and
+    reused seller-side by commercial.service.issue()/derive_seller_vat_
+    number, applied here buyer-side so the user never has to type the same
+    digits twice. Only fills a BLANK vat_number — never overwrites one
+    already on file (may be a deliberate correction). Absent/non-"BG"
+    `country` is left untouched entirely: this rule is explicitly BG-only,
+    never applied by inference to a foreign company."""
+    if not isinstance(company_requisites, dict) or vat_registered is not True:
+        return company_requisites
+    if (company_requisites.get("country") or "BG") != "BG":
+        return company_requisites
+    if company_requisites.get("vat_number"):
+        return company_requisites
+    eik = company_requisites.get("eik")
+    if not eik or not is_valid_eik(eik):
+        return company_requisites
+    return {**company_requisites, "vat_number": derive_seller_vat_number(eik)}
 
 
 def _refresh_shadows(customer: Customer) -> None:
@@ -62,6 +91,8 @@ def create(db: Session, ctx: TenantContext, **fields: object) -> Customer:
     assert isinstance(is_company, bool)
     assert vat_registered is None or isinstance(vat_registered, bool)
     assert company_requisites is None or isinstance(company_requisites, dict)
+    company_requisites = _derive_bg_vat_number(company_requisites, vat_registered)
+    fields["company_requisites"] = company_requisites
     _validate_vat_identity(is_company, vat_registered, company_requisites)
 
     customer = Customer(company_id=ctx.company_id, **fields)
@@ -110,7 +141,11 @@ def update(db: Session, ctx: TenantContext, customer: Customer,
     # patch), not the raw patch body alone — a PATCH touching only
     # vat_registered (leaving a previously-stored company_requisites
     # untouched) must still be checked against what the record will
-    # actually read as afterward.
+    # actually read as afterward. Same reason BG VAT-number derivation runs
+    # here too, against the merged state, not just this patch's own fields.
+    customer.company_requisites = _derive_bg_vat_number(
+        customer.company_requisites, customer.vat_registered,
+    )
     _validate_vat_identity(
         customer.is_company, customer.vat_registered, customer.company_requisites,
     )

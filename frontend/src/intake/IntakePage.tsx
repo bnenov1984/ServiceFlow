@@ -5,12 +5,14 @@
  * blocked flow).
  */
 
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ApiError, api } from "../lib/api";
 import { apiUrl } from "../lib/apiUrl";
 import { t } from "../i18n/bg";
 import { useToast } from "../components/Toast";
+import { queryKeys } from "../lib/queryKeys";
 import { AssetStep, type ResolvedAsset } from "./AssetStep";
 import { CustomerStep, type ResolvedCustomer } from "./CustomerStep";
 import { OrderStep, type OrderStepValue } from "./OrderStep";
@@ -28,9 +30,14 @@ interface OrderOut {
   number: string;
 }
 
+interface CustomerDetailOut {
+  delivery_address: { address: string } | null;
+}
+
 const DEFAULT_ORDER_VALUE: OrderStepValue = {
   complaint: "", accessories: [], photos: [], partLines: [],
   priority: "normal", technicianId: null, mileage: "",
+  deliveryMethod: "pickup", deliveryAddress: "",
 };
 
 function StepSection({
@@ -70,6 +77,15 @@ export function IntakePage() {
   const navigate = useNavigate();
   const pushToast = useToast();
 
+  // Wave 5 Issue 12: the resolved customer's own default delivery address,
+  // for OrderStep's courier-address prefill — a plain read, unrelated to
+  // whether the customer was just created or picked from search.
+  const { data: customerDetail } = useQuery({
+    queryKey: queryKeys.customer(customer?.id ?? ""),
+    queryFn: () => api.get<CustomerDetailOut>(`/customers/${customer!.id}`),
+    enabled: !!customer,
+  });
+
   const handleSubmit = async () => {
     if (!customer || !asset) return;
     setSubmitting(true);
@@ -83,6 +99,9 @@ export function IntakePage() {
         priority: orderValue.priority,
         technician_id: orderValue.technicianId,
         mileage: mileage !== null && !Number.isNaN(mileage) ? mileage : null,
+        delivery_method: orderValue.deliveryMethod,
+        delivery_address: orderValue.deliveryMethod === "courier" && orderValue.deliveryAddress.trim()
+          ? { address: orderValue.deliveryAddress.trim() } : null,
       });
 
       let accessoryFailures = 0;
@@ -167,6 +186,7 @@ export function IntakePage() {
           <OrderStep
             value={orderValue}
             assetTypeCode={asset.assetTypeCode}
+            defaultDeliveryAddress={customerDetail?.delivery_address?.address ?? null}
             onChange={setOrderValue}
             onSubmit={() => void handleSubmit()}
             submitting={submitting}
