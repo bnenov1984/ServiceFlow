@@ -447,6 +447,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/assets/by-vin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Asset By Vin
+         * @description Issue 20: tenant-wide VIN lookup for intake — must run before a
+         *     vehicle Asset is blindly created, so a car already on file (under any
+         *     customer) is found and offered for reuse/transfer instead of duplicated.
+         */
+        get: operations["get_asset_by_vin_api_v1_assets_by_vin_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/assets/{asset_id}": {
         parameters: {
             query?: never;
@@ -476,6 +498,30 @@ export interface paths {
         put?: never;
         /** Archive Asset */
         post: operations["archive_asset_api_v1_assets__asset_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assets/{asset_id}/transfer-owner": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transfer Owner
+         * @description Issue 20's explicit "Смени собственик" action. Both the asset and the
+         *     new customer are resolved through tenant-scoped lookups (`_get_or_404`,
+         *     `customers_service.get`) — a customer_id from another tenant simply
+         *     doesn't resolve (404), which is what makes cross-tenant transfer
+         *     impossible without a dedicated check.
+         */
+        post: operations["transfer_owner_api_v1_assets__asset_id__transfer_owner_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -595,6 +641,31 @@ export interface paths {
         };
         /** Order Timeline */
         get: operations["order_timeline_api_v1_orders__order_id__timeline_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assets/{asset_id}/service-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Asset Service History
+         * @description Wave 3 Issues 21/26/27: every visit against this vehicle, keyed on
+         *     asset_id — survives an ownership change (Issue 20) since it is never
+         *     filtered by customer_id. Lives here rather than in `serviceflow.assets`
+         *     because the data is fundamentally order data; `assets_service` is
+         *     already a legal import from service_orders (see create_order above),
+         *     so no new cross-module edge is introduced.
+         */
+        get: operations["asset_service_history_api_v1_assets__asset_id__service_history_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1399,6 +1470,30 @@ export interface components {
              */
             audit_id: string;
         };
+        /**
+         * AssetByVinOut
+         * @description Issue 20 intake lookup: the vehicle plus who currently owns it, so the
+         *     client can decide between "Използвай автомобила" (reuse, no ownership
+         *     change) and "Смени собственик" (transfer) without a second round trip.
+         */
+        AssetByVinOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Label */
+            label: string;
+            /** Asset Type Code */
+            asset_type_code: string;
+            /**
+             * Customer Id
+             * Format: uuid
+             */
+            customer_id: string;
+            /** Customer Name */
+            customer_name: string;
+        };
         /** AssetHitOut */
         AssetHitOut: {
             /**
@@ -1463,6 +1558,20 @@ export interface components {
             field_values?: {
                 [key: string]: unknown;
             };
+        };
+        /** AssetServiceHistoryOut */
+        AssetServiceHistoryOut: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Asset Label */
+            asset_label: string;
+            /** Current Mileage */
+            current_mileage: number | null;
+            /** Visits */
+            visits: components["schemas"]["ServiceHistoryEntryOut"][];
         };
         /** AssetTypeOut */
         AssetTypeOut: {
@@ -2365,6 +2474,8 @@ export interface components {
             archived: boolean;
             /** Row Version */
             row_version: number;
+            /** Mileage */
+            mileage?: number | null;
             /** Warning */
             warning?: string | null;
             diagnosis: components["schemas"]["DiagnosisOut"] | null;
@@ -2418,6 +2529,8 @@ export interface components {
             promised_on?: string | null;
             /** Technician Id */
             technician_id?: string | null;
+            /** Mileage */
+            mileage?: number | null;
         };
         /**
          * OrderListItemOut
@@ -2466,6 +2579,8 @@ export interface components {
             archived: boolean;
             /** Row Version */
             row_version: number;
+            /** Mileage */
+            mileage?: number | null;
             /** Warning */
             warning?: string | null;
             /** Customer Name */
@@ -2520,6 +2635,8 @@ export interface components {
             archived: boolean;
             /** Row Version */
             row_version: number;
+            /** Mileage */
+            mileage?: number | null;
             /** Warning */
             warning?: string | null;
         };
@@ -2772,6 +2889,40 @@ export interface components {
              */
             audit_id: string;
         };
+        /**
+         * ServiceHistoryEntryOut
+         * @description One visit in a vehicle's service history (Wave 3 Issues 21/26/27) —
+         *     only data already naturally available from the order itself, no new
+         *     aggregation. `customer_name` is the customer at THAT visit, which may
+         *     differ from the asset's current owner after a transfer (Issue 20).
+         */
+        ServiceHistoryEntryOut: {
+            /**
+             * Order Id
+             * Format: uuid
+             */
+            order_id: string;
+            /** Order Number */
+            order_number: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Status Code */
+            status_code: string;
+            /**
+             * Customer Id
+             * Format: uuid
+             */
+            customer_id: string;
+            /** Customer Name */
+            customer_name: string;
+            /** Complaint */
+            complaint: string;
+            /** Mileage */
+            mileage: number | null;
+        };
         /** SetPinRequest */
         SetPinRequest: {
             /** Pin */
@@ -2917,6 +3068,14 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /** TransferOwnerIn */
+        TransferOwnerIn: {
+            /**
+             * Customer Id
+             * Format: uuid
+             */
+            customer_id: string;
         };
         /** UnlockRequest */
         UnlockRequest: {
@@ -3828,6 +3987,37 @@ export interface operations {
             };
         };
     };
+    get_asset_by_vin_api_v1_assets_by_vin_get: {
+        parameters: {
+            query: {
+                vin: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetByVinOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_asset_api_v1_assets__asset_id__get: {
         parameters: {
             query?: never;
@@ -3904,6 +4094,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transfer_owner_api_v1_assets__asset_id__transfer_owner_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferOwnerIn"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -4215,6 +4440,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TimelineEventOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    asset_service_history_api_v1_assets__asset_id__service_history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetServiceHistoryOut"];
                 };
             };
             /** @description Validation Error */
@@ -4670,6 +4926,7 @@ export interface operations {
             query?: {
                 status?: string | null;
                 order_id?: string | null;
+                customer_id?: string | null;
                 limit?: number;
                 offset?: number;
             };

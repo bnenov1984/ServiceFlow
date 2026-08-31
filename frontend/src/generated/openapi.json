@@ -1135,6 +1135,49 @@
         }
       }
     },
+    "/api/v1/assets/by-vin": {
+      "get": {
+        "tags": [
+          "assets"
+        ],
+        "summary": "Get Asset By Vin",
+        "description": "Issue 20: tenant-wide VIN lookup for intake — must run before a\nvehicle Asset is blindly created, so a car already on file (under any\ncustomer) is found and offered for reuse/transfer instead of duplicated.",
+        "operationId": "get_asset_by_vin_api_v1_assets_by_vin_get",
+        "parameters": [
+          {
+            "name": "vin",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vin"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetByVinOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/assets/{asset_id}": {
       "get": {
         "tags": [
@@ -1248,6 +1291,60 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assets/{asset_id}/transfer-owner": {
+      "post": {
+        "tags": [
+          "assets"
+        ],
+        "summary": "Transfer Owner",
+        "description": "Issue 20's explicit \"Смени собственик\" action. Both the asset and the\nnew customer are resolved through tenant-scoped lookups (`_get_or_404`,\n`customers_service.get`) — a customer_id from another tenant simply\ndoesn't resolve (404), which is what makes cross-tenant transfer\nimpossible without a dedicated check.",
+        "operationId": "transfer_owner_api_v1_assets__asset_id__transfer_owner_post",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Asset Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferOwnerIn"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -1770,6 +1867,50 @@
                     "$ref": "#/components/schemas/TimelineEventOut"
                   },
                   "title": "Response Order Timeline Api V1 Orders  Order Id  Timeline Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assets/{asset_id}/service-history": {
+      "get": {
+        "tags": [
+          "orders"
+        ],
+        "summary": "Asset Service History",
+        "description": "Wave 3 Issues 21/26/27: every visit against this vehicle, keyed on\nasset_id — survives an ownership change (Issue 20) since it is never\nfiltered by customer_id. Lives here rather than in `serviceflow.assets`\nbecause the data is fundamentally order data; `assets_service` is\nalready a legal import from service_orders (see create_order above),\nso no new cross-module edge is introduced.",
+        "operationId": "asset_service_history_api_v1_assets__asset_id__service_history_get",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Asset Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetServiceHistoryOut"
                 }
               }
             }
@@ -2479,6 +2620,23 @@
                 }
               ],
               "title": "Order Id"
+            }
+          },
+          {
+            "name": "customer_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Customer Id"
             }
           },
           {
@@ -4529,6 +4687,42 @@
         "title": "ArchiveResponse",
         "description": "Mirrors `service.ArchiveResult` field-for-field."
       },
+      "AssetByVinOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "asset_type_code": {
+            "type": "string",
+            "title": "Asset Type Code"
+          },
+          "customer_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Customer Id"
+          },
+          "customer_name": {
+            "type": "string",
+            "title": "Customer Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "asset_type_code",
+          "customer_id",
+          "customer_name"
+        ],
+        "title": "AssetByVinOut",
+        "description": "Issue 20 intake lookup: the vehicle plus who currently owns it, so the\nclient can decide between \"Използвай автомобила\" (reuse, no ownership\nchange) and \"Смени собственик\" (transfer) without a second round trip."
+      },
       "AssetHitOut": {
         "properties": {
           "id": {
@@ -4649,6 +4843,45 @@
         },
         "type": "object",
         "title": "AssetPatch"
+      },
+      "AssetServiceHistoryOut": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "asset_label": {
+            "type": "string",
+            "title": "Asset Label"
+          },
+          "current_mileage": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Mileage"
+          },
+          "visits": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceHistoryEntryOut"
+            },
+            "type": "array",
+            "title": "Visits"
+          }
+        },
+        "type": "object",
+        "required": [
+          "asset_id",
+          "asset_label",
+          "current_mileage",
+          "visits"
+        ],
+        "title": "AssetServiceHistoryOut"
       },
       "AssetTypeOut": {
         "properties": {
@@ -5231,7 +5464,7 @@
         "properties": {
           "type": {
             "type": "string",
-            "pattern": "^(call|email|message|visit|note)$",
+            "pattern": "^(call|email|note)$",
             "title": "Type"
           },
           "direction": {
@@ -5407,7 +5640,7 @@
         "properties": {
           "type": {
             "type": "string",
-            "pattern": "^(call|email|message|visit|note)$",
+            "pattern": "^(call|email|note)$",
             "title": "Type"
           },
           "direction": {
@@ -7132,6 +7365,17 @@
             "type": "integer",
             "title": "Row Version"
           },
+          "mileage": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mileage"
+          },
           "warning": {
             "anyOf": [
               {
@@ -7292,6 +7536,18 @@
               }
             ],
             "title": "Technician Id"
+          },
+          "mileage": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mileage"
           }
         },
         "type": "object",
@@ -7416,6 +7672,17 @@
           "row_version": {
             "type": "integer",
             "title": "Row Version"
+          },
+          "mileage": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mileage"
           },
           "warning": {
             "anyOf": [
@@ -7593,6 +7860,17 @@
           "row_version": {
             "type": "integer",
             "title": "Row Version"
+          },
+          "mileage": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mileage"
           },
           "warning": {
             "anyOf": [
@@ -8236,6 +8514,65 @@
         "title": "SeatLimitResponse",
         "description": "Mirrors `service.SeatLimitResult` field-for-field."
       },
+      "ServiceHistoryEntryOut": {
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Order Id"
+          },
+          "order_number": {
+            "type": "string",
+            "title": "Order Number"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "status_code": {
+            "type": "string",
+            "title": "Status Code"
+          },
+          "customer_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Customer Id"
+          },
+          "customer_name": {
+            "type": "string",
+            "title": "Customer Name"
+          },
+          "complaint": {
+            "type": "string",
+            "title": "Complaint"
+          },
+          "mileage": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mileage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "order_id",
+          "order_number",
+          "created_at",
+          "status_code",
+          "customer_id",
+          "customer_name",
+          "complaint",
+          "mileage"
+        ],
+        "title": "ServiceHistoryEntryOut",
+        "description": "One visit in a vehicle's service history (Wave 3 Issues 21/26/27) —\nonly data already naturally available from the order itself, no new\naggregation. `customer_name` is the customer at THAT visit, which may\ndiffer from the asset's current owner after a transfer (Issue 20)."
+      },
       "SetPinRequest": {
         "properties": {
           "pin": {
@@ -8644,6 +8981,20 @@
           "created_at"
         ],
         "title": "TimelineEventOut"
+      },
+      "TransferOwnerIn": {
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Customer Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "customer_id"
+        ],
+        "title": "TransferOwnerIn"
       },
       "UnlockRequest": {
         "properties": {
