@@ -11,10 +11,18 @@ vi.mock("../lib/api", async (importOriginal) => {
   return { ...actual, api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() } };
 });
 
+// Wave 4 Issue 38: PartLinesSection now reads the company parts-warranty
+// default via useAuth() to prefill new-part rows.
+const mockUseAuth = vi.fn();
+vi.mock("../auth/AuthContext", () => ({
+  useAuth: () => mockUseAuth(),
+}));
+
 beforeEach(() => {
   vi.mocked(api.get).mockReset();
   vi.mocked(api.post).mockReset();
   vi.mocked(api.patch).mockReset();
+  mockUseAuth.mockReturnValue({ me: { warranty_defaults: { parts_days: null } } });
 });
 
 interface Line {
@@ -164,7 +172,99 @@ describe("PartLinesSection — status selector", () => {
     await user.click(screen.getByRole("button", { name: "Добави" }));
 
     expect(api.post).toHaveBeenCalledWith("/orders/order-1/part-lines", {
-      name: "USB-C конектор", unit_price: 18,
+      name: "USB-C конектор", unit_price: 18, warranty_days: null,
     });
+  });
+});
+
+describe("PartLinesSection — Wave 4 PART WARRANTY", () => {
+  function renderWithDefault(partsDefault: number | null) {
+    mockUseAuth.mockReturnValue({ me: { warranty_defaults: { parts_days: partsDefault } } });
+    vi.mocked(api.get).mockResolvedValue([]);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={client}>
+        <ToastProvider>
+          <PartLinesSection orderId="order-1" />
+        </ToastProvider>
+      </QueryClientProvider>,
+    );
+  }
+
+  it("prefills the warranty-days input from the company parts default", async () => {
+    renderWithDefault(30);
+    expect(await screen.findByLabelText("Гаранция (дни)")).toHaveValue(30);
+  });
+
+  it("leaves the warranty-days input empty when no company default is configured", async () => {
+    renderWithDefault(null);
+    expect(await screen.findByLabelText("Гаранция (дни)")).toHaveValue(null);
+  });
+
+  it("sends the prefilled default, an explicit 0, or an overridden value on add", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.post).mockResolvedValue({});
+    renderWithDefault(30);
+
+    await user.type(await screen.findByPlaceholderText("Име на частта…"), "Дисплей");
+    await user.click(screen.getByRole("button", { name: "Добави" }));
+
+    expect(api.post).toHaveBeenCalledWith("/orders/order-1/part-lines", {
+      name: "Дисплей", unit_price: 0, warranty_days: 30,
+    });
+  });
+
+  it("sends warranty_days: 0 when the user explicitly clears it to zero", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.post).mockResolvedValue({});
+    renderWithDefault(30);
+
+    const warrantyInput = await screen.findByLabelText("Гаранция (дни)");
+    await user.clear(warrantyInput);
+    await user.type(warrantyInput, "0");
+    await user.type(screen.getByPlaceholderText("Име на частта…"), "Батерия");
+    await user.click(screen.getByRole("button", { name: "Добави" }));
+
+    expect(api.post).toHaveBeenCalledWith("/orders/order-1/part-lines", {
+      name: "Батерия", unit_price: 0, warranty_days: 0,
+    });
+  });
+
+  it("resets the warranty-days input back to the company default after adding", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.post).mockResolvedValue({});
+    renderWithDefault(30);
+
+    const warrantyInput = await screen.findByLabelText("Гаранция (дни)");
+    await user.clear(warrantyInput);
+    await user.type(warrantyInput, "90");
+    await user.type(screen.getByPlaceholderText("Име на частта…"), "Дисплей");
+    await user.click(screen.getByRole("button", { name: "Добави" }));
+
+    expect(warrantyInput).toHaveValue(30);
+  });
+
+  it("renders each warranty state distinctly: none shown, explicit zero, positive days", async () => {
+    mockUseAuth.mockReturnValue({ me: { warranty_defaults: { parts_days: null } } });
+    vi.mocked(api.get).mockResolvedValue([
+      { id: "p1", name: "Част А", qty: 1, unit_cost: 0, unit_price: 10, state: "ordered", warranty_days: null },
+      { id: "p2", name: "Част Б", qty: 1, unit_cost: 0, unit_price: 10, state: "ordered", warranty_days: 0 },
+      { id: "p3", name: "Част В", qty: 1, unit_cost: 0, unit_price: 10, state: "ordered", warranty_days: 90 },
+    ]);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <ToastProvider>
+          <PartLinesSection orderId="order-1" />
+        </ToastProvider>
+      </QueryClientProvider>,
+    );
+
+    await screen.findByText("Част А");
+    expect(screen.getByText("без гаранция")).toBeInTheDocument();
+    expect(screen.getByText("90 дни гаранция")).toBeInTheDocument();
+    // "Част А" has no warranty info at all — its own row must not mention days/none.
+    const rowA = screen.getByText("Част А").closest("li");
+    expect(rowA?.textContent).not.toMatch(/гаранция/);
   });
 });

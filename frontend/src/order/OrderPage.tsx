@@ -48,6 +48,8 @@ interface OrderDetailOut {
   delivered_at: string | null;
   // Wave 3 Issues 21/26/27 — mileage recorded on THIS visit, if any.
   mileage: number | null;
+  // Wave 4 Issue 38 — this order's own labor/work warranty, if already chosen.
+  warranty_days: number | null;
 }
 
 interface AssetServiceHistoryOut {
@@ -149,6 +151,7 @@ export function OrderPage() {
         number={order.number}
         statusCode={order.status_code}
         archived={order.archived}
+        warrantyDays={order.warranty_days}
       />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

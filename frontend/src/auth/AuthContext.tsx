@@ -10,6 +10,11 @@ import { ApiError, api, setCsrfToken } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
 import { clearLastApp } from "../shell/lastApp";
 
+export interface WarrantyDefaults {
+  labor_days: number | null;
+  parts_days: number | null;
+}
+
 export interface Me {
   user_id: string;
   name: string;
@@ -22,6 +27,11 @@ export interface Me {
   seat_limit: number | null;
   seat_usage: number;
   has_pin: boolean;
+  // Optional on the TS shape (not on the wire — the backend always sends
+  // it) so the many existing test fixtures that build a `Me` object by
+  // hand don't all need updating for a field they don't exercise; real
+  // consumers (DeliveryDialog, part-warranty prefill) read it defensively.
+  warranty_defaults?: WarrantyDefaults;
 }
 
 interface AuthState {

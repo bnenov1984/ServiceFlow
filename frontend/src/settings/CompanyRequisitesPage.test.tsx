@@ -129,3 +129,75 @@ describe("CompanyRequisitesPage", () => {
     )).toBeInTheDocument();
   });
 });
+
+describe("CompanyRequisitesPage — Wave 4 Issue 38 (warranty defaults)", () => {
+  function mockGetByPath(byPath: Record<string, unknown>) {
+    vi.mocked(api.get).mockImplementation((path: string) => {
+      if (path in byPath) return Promise.resolve(byPath[path]) as never;
+      return Promise.reject(new Error(`unexpected GET ${path}`));
+    });
+  }
+
+  const REQUISITES = { address: null, phone: null, eik: null, vat_registered: false };
+
+  it("shows an empty input for a null default and the literal 0 for an explicit zero", async () => {
+    mockGetByPath({
+      "/company/requisites": REQUISITES,
+      "/company/warranty-defaults": { labor_days: 0, parts_days: null },
+    });
+    renderPage();
+
+    expect(await screen.findByLabelText("Гаранция за труд (дни)")).toHaveValue(0);
+    expect(screen.getByLabelText("Гаранция за части (дни)")).toHaveValue(null);
+  });
+
+  it("prefills positive-day defaults", async () => {
+    mockGetByPath({
+      "/company/requisites": REQUISITES,
+      "/company/warranty-defaults": { labor_days: 90, parts_days: 30 },
+    });
+    renderPage();
+
+    expect(await screen.findByLabelText("Гаранция за труд (дни)")).toHaveValue(90);
+    expect(screen.getByLabelText("Гаранция за части (дни)")).toHaveValue(30);
+  });
+
+  it("saves warranty defaults via its own PATCH, independent of the requisites form", async () => {
+    const user = userEvent.setup();
+    mockGetByPath({
+      "/company/requisites": REQUISITES,
+      "/company/warranty-defaults": { labor_days: null, parts_days: null },
+    });
+    vi.mocked(api.patch).mockResolvedValue({ labor_days: 90, parts_days: 0 });
+    renderPage();
+
+    await user.type(await screen.findByLabelText("Гаранция за труд (дни)"), "90");
+    await user.type(screen.getByLabelText("Гаранция за части (дни)"), "0");
+    await user.click(screen.getByRole("button", { name: "Запази гаранцията" }));
+
+    expect(api.patch).toHaveBeenCalledWith("/company/warranty-defaults", {
+      labor_days: 90, parts_days: 0,
+    });
+    expect(await screen.findByText("Гаранцията по подразбиране е запазена.")).toBeInTheDocument();
+    // The requisites PATCH must never have been touched by this save.
+    expect(api.patch).not.toHaveBeenCalledWith("/company/requisites", expect.anything());
+  });
+
+  it("sends null for a field left empty", async () => {
+    const user = userEvent.setup();
+    mockGetByPath({
+      "/company/requisites": REQUISITES,
+      "/company/warranty-defaults": { labor_days: 90, parts_days: 30 },
+    });
+    vi.mocked(api.patch).mockResolvedValue({ labor_days: null, parts_days: 30 });
+    renderPage();
+
+    const laborInput = await screen.findByLabelText("Гаранция за труд (дни)");
+    await user.clear(laborInput);
+    await user.click(screen.getByRole("button", { name: "Запази гаранцията" }));
+
+    expect(api.patch).toHaveBeenCalledWith("/company/warranty-defaults", {
+      labor_days: null, parts_days: 30,
+    });
+  });
+});

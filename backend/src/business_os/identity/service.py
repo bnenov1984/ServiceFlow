@@ -266,6 +266,51 @@ def update_company_requisites(
     return company
 
 
+# --- RepairFlow warranty defaults (Wave 4 Issue 38) -------------------------
+#
+# Tenant/company configuration, Owner-editable — NOT Vendor provisioning data,
+# unlike `settings.repairflow.business_profile` above (that one is set once at
+# provisioning and never exposed for the tenant to edit). Stored inside the
+# same `companies.settings` JSONB bag, same `repairflow.*` namespace
+# `set_business_profile`/`_activate_module` already established — no new
+# table, no schema change. `labor_days`/`parts_days` are independent optional
+# integers: NULL/missing = no default configured, 0 = explicitly "Без
+# гаранция", positive = days. Negative is rejected at the router (Pydantic
+# `ge=0`), never reaches here.
+WARRANTY_DEFAULT_KEYS = ("labor_days", "parts_days")
+
+
+def get_warranty_defaults(db: Session, company_id: uuid.UUID) -> dict[str, int | None]:
+    company = get_company(db, company_id)
+    defaults = (company.settings.get("repairflow", {}).get("warranty_defaults", {})
+               if company is not None else {})
+    return {key: defaults.get(key) for key in WARRANTY_DEFAULT_KEYS}
+
+
+def update_warranty_defaults(db: Session, company_id: uuid.UUID, actor_user_id: uuid.UUID,
+                             fields: dict[str, Any]) -> Company:
+    """Owner-only (route-enforced, `company_router`'s `require_owner`).
+    `fields` comes from the router's `WarrantyDefaultsPatch`
+    (`extra="forbid"`, only `labor_days`/`parts_days` declared) via
+    `model_dump(exclude_unset=True)` — mirrors `update_company_requisites`'s
+    allow-list discipline exactly, filtered to `WARRANTY_DEFAULT_KEYS` before
+    writing. Reassigns every level of the JSONB path (never mutates in
+    place), same reason `update_company_requisites`/`set_business_profile`
+    both do: SQLAlchemy's change tracking only sees a replaced value."""
+    company = get_company(db, company_id)
+    assert company is not None
+
+    updates = {k: v for k, v in fields.items() if k in WARRANTY_DEFAULT_KEYS}
+    if updates:
+        repairflow = {**company.settings.get("repairflow", {})}
+        warranty_defaults = {**repairflow.get("warranty_defaults", {}), **updates}
+        repairflow["warranty_defaults"] = warranty_defaults
+        company.settings = {**company.settings, "repairflow": repairflow}
+        _audit(db, company_id, actor_user_id, "warranty_defaults_updated", updates)
+        db.commit()
+    return company
+
+
 def is_module_active(db: Session, company_id: uuid.UUID, module_key: str) -> bool:
     """Module activation (BOS-06), stored as `active_modules` inside the existing
     `companies.settings` JSONB — no dedicated table (BOS-02's Settings precedent:

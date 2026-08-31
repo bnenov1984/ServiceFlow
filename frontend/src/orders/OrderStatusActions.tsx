@@ -6,6 +6,7 @@
  */
 
 import { useState } from "react";
+import { useAuth } from "../auth/AuthContext";
 import { useToast } from "../components/Toast";
 import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
@@ -28,12 +29,17 @@ interface AccessoryItem {
 export function OrderStatusActions({
   orderId,
   statusCode,
+  warrantyDays,
   onChanged,
 }: {
   orderId: string;
   statusCode: string;
+  // Wave 4 Issue 38: this order's own already-persisted warranty (if any) —
+  // same DeliveryDialog prefill precedence as OrderHeader's own instance.
+  warrantyDays: number | null;
   onChanged: () => void;
 }) {
+  const { me } = useAuth();
   const pushToast = useToast();
   const [pending, setPending] = useState<PendingAction>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -118,11 +124,13 @@ export function OrderStatusActions({
       <DeliveryDialog
         open={pending?.kind === "delivery"}
         onClose={close}
-        onConfirm={(warrantyDays) => void runStatusChange({ to: "delivered", warranty_days: warrantyDays })}
+        onConfirm={(days) => void runStatusChange({ to: "delivered", warranty_days: days })}
         accessories={accessories}
         onToggleReturned={toggleAccessoryReturned}
         submitting={submitting}
         error={error}
+        orderWarrantyDays={warrantyDays}
+        laborWarrantyDefault={me?.warranty_defaults?.labor_days ?? null}
       />
     </>
   );

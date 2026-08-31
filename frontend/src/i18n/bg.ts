@@ -317,6 +317,9 @@ export const bg = {
   "order.part_state_received": "Получена",
   "order.part_state_installed": "Монтирана",
   "order.part_state_removed": "Свалена",
+  "order.part_warranty_days_label": "Гаранция (дни)",
+  "order.part_warranty_none": "без гаранция",
+  "order.part_warranty_days": "{days} дни гаранция",
   "order.labor_lines": "Труд",
   "order.labor_lines_none": "Няма добавен труд.",
   "order.labor_description_placeholder": "Описание на дейността…",
@@ -684,6 +687,12 @@ export const bg = {
   "company.field_vat_number": "ДДС номер",
   "company.save_action": "Запази",
   "company.saved": "Данните за фирмата са запазени.",
+  "company.warranty_title": "Гаранция по подразбиране",
+  "company.warranty_hint": "Прилага се автоматично при предаване на поръчка и добавяне на части — винаги може да се промени за конкретен случай. Оставете празно за без стойност по подразбиране; 0 означава изрично \"без гаранция\".",
+  "company.field_labor_warranty_days": "Гаранция за труд (дни)",
+  "company.field_parts_warranty_days": "Гаранция за части (дни)",
+  "company.warranty_saved": "Гаранцията по подразбиране е запазена.",
+  "company.warranty_save_action": "Запази гаранцията",
 
   "errors.provisioning.company_not_found": "Няма такава компания.",
 } as const;

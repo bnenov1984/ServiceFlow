@@ -116,6 +116,9 @@ class PartLine(Base):
     # assigned/requested for this order the moment it's added, regardless
     # of whether it's physically in stock yet (no inventory tracking).
     state: Mapped[str] = mapped_column(default="ordered", server_default="ordered")
+    # Wave 4 PART WARRANTY: NULL = not specified, 0 = explicitly no warranty,
+    # positive = days. No new warranty entity/table — this is the entire model.
+    warranty_days: Mapped[int | None] = mapped_column(default=None)
 
 
 class LaborLine(Base):

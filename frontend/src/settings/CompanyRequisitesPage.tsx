@@ -24,8 +24,129 @@ interface CompanyRequisites {
   vat_registered: boolean;
 }
 
+interface WarrantyDefaults {
+  labor_days: number | null;
+  parts_days: number | null;
+}
+
 function errorText(error: unknown): string {
   return error instanceof ApiError ? t(error.messageKey, error.params) : t("errors.internal");
+}
+
+// "" (empty input) <-> null (no default configured); any other digit string
+// <-> that integer, including "0" (explicitly "Без гаранция") — same
+// empty-string-means-null convention DeliveryDialog's own warranty-days
+// input already uses.
+function daysToInput(days: number | null | undefined): string {
+  return typeof days === "number" ? String(days) : "";
+}
+
+function inputToDays(value: string): number | null {
+  return value.trim() === "" ? null : Number(value);
+}
+
+/** Wave 4 Issue 38: Owner-editable warranty defaults, reusing the same
+ * Company settings screen (no new nav entry, no new route) — a second,
+ * independently-saved card below Requisites. */
+function WarrantyDefaultsSection() {
+  const queryClient = useQueryClient();
+  const pushToast = useToast();
+
+  const defaults = useQuery({
+    queryKey: queryKeys.companyWarrantyDefaults,
+    queryFn: () => api.get<WarrantyDefaults>("/company/warranty-defaults"),
+  });
+
+  const [laborDays, setLaborDays] = useState("");
+  const [partsDays, setPartsDays] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (defaults.data) {
+      setLaborDays(daysToInput(defaults.data.labor_days));
+      setPartsDays(daysToInput(defaults.data.parts_days));
+    }
+  }, [defaults.data]);
+
+  const onSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await api.patch<WarrantyDefaults>("/company/warranty-defaults", {
+        labor_days: inputToDays(laborDays), parts_days: inputToDays(partsDays),
+      });
+      queryClient.setQueryData(queryKeys.companyWarrantyDefaults, updated);
+      pushToast("success", t("company.warranty_saved"));
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (defaults.isLoading) return <Skeleton className="h-40 w-full max-w-lg" />;
+  if (defaults.isError) {
+    return <ErrorState text={errorText(defaults.error)} onRetry={() => void defaults.refetch()} />;
+  }
+
+  return (
+    <form
+      onSubmit={(e) => void onSubmit(e)}
+      className="flex max-w-lg flex-col gap-4 rounded-lg border border-slate-200 bg-white p-6"
+    >
+      <div>
+        <h2 className="text-lg font-semibold text-slate-900">{t("company.warranty_title")}</h2>
+        <p className="text-sm text-slate-600">{t("company.warranty_hint")}</p>
+      </div>
+
+      <div>
+        <label
+          className="mb-1 block text-sm font-medium text-slate-700"
+          htmlFor="company-labor-warranty-days"
+        >
+          {t("company.field_labor_warranty_days")}
+        </label>
+        <input
+          id="company-labor-warranty-days"
+          type="number"
+          min={0}
+          value={laborDays}
+          onChange={(e) => setLaborDays(e.target.value)}
+          className="w-32 rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
+        />
+      </div>
+
+      <div>
+        <label
+          className="mb-1 block text-sm font-medium text-slate-700"
+          htmlFor="company-parts-warranty-days"
+        >
+          {t("company.field_parts_warranty_days")}
+        </label>
+        <input
+          id="company-parts-warranty-days"
+          type="number"
+          min={0}
+          value={partsDays}
+          onChange={(e) => setPartsDays(e.target.value)}
+          className="w-32 rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
+        />
+      </div>
+
+      {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+
+      <button
+        type="submit"
+        disabled={saving}
+        className="rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-50 min-h-touch"
+      >
+        {saving ? t("common.loading") : t("company.warranty_save_action")}
+      </button>
+    </form>
+  );
 }
 
 export function CompanyRequisitesPage() {
@@ -169,6 +290,10 @@ export function CompanyRequisitesPage() {
           </button>
         </form>
       )}
+
+      <div className="mt-4">
+        <WarrantyDefaultsSection />
+      </div>
     </section>
   );
 }

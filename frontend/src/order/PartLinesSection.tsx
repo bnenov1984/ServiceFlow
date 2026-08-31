@@ -5,7 +5,8 @@
  * regardless of whether it's physically in stock yet. */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useAuth } from "../auth/AuthContext";
 import { useToast } from "../components/Toast";
 import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
@@ -18,6 +19,13 @@ interface PartLineOut {
   unit_cost: number;
   unit_price: number;
   state: string;
+  warranty_days: number | null;
+}
+
+// NULL = not specified (render nothing), 0 = explicitly no warranty, N = days.
+function warrantyLabel(days: number | null): string | null {
+  if (days === null) return null;
+  return days === 0 ? t("order.part_warranty_none") : t("order.part_warranty_days", { days });
 }
 
 // The 2 states the domain model accepts (backend/service_orders/lines.py
@@ -30,14 +38,28 @@ const STATE_LABEL: Record<string, Parameters<typeof t>[0]> = {
 };
 
 export function PartLinesSection({ orderId }: { orderId: string }) {
+  const { me } = useAuth();
+  // Wave 4 Issue 38: prefill new parts from the company default — never
+  // forced, the field stays a plain editable number input either way.
+  const partsDefault = me?.warranty_defaults?.parts_days ?? null;
+  const defaultInput = partsDefault !== null ? String(partsDefault) : "";
+
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
+  const [warrantyDays, setWarrantyDays] = useState(defaultInput);
   // Tracked per line-id so one row's in-flight mutation never disables or
   // otherwise affects any other row's selector.
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
   const pushToast = useToast();
   const key = queryKeys.orderPartLines(orderId);
+
+  // `me` (and its warranty_defaults) may still be loading at first render —
+  // catch up once it arrives, but only while the field is still untouched
+  // ("" and the user hasn't typed anything of their own yet).
+  useEffect(() => {
+    setWarrantyDays((prev) => (prev === "" ? defaultInput : prev));
+  }, [defaultInput]);
 
   const { data: lines } = useQuery({
     queryKey: key,
@@ -54,8 +76,9 @@ export function PartLinesSection({ orderId }: { orderId: string }) {
     if (!name.trim()) return;
     await api.post(`/orders/${orderId}/part-lines`, {
       name: name.trim(), unit_price: price.trim() ? Number(price) : 0,
+      warranty_days: warrantyDays.trim() ? Number(warrantyDays) : null,
     });
-    setName(""); setPrice("");
+    setName(""); setPrice(""); setWarrantyDays(defaultInput);
     await invalidate();
   };
 
@@ -88,6 +111,12 @@ export function PartLinesSection({ orderId }: { orderId: string }) {
               <span className="font-medium text-slate-800">{line.name}</span>
               {" · "}
               <span className="text-slate-500">{line.unit_price.toFixed(2)} €</span>
+              {warrantyLabel(line.warranty_days) !== null && (
+                <>
+                  {" · "}
+                  <span className="text-slate-500">{warrantyLabel(line.warranty_days)}</span>
+                </>
+              )}
             </span>
             <select
               aria-label={`${t("order.part_status_label")} — ${line.name}`}
@@ -113,6 +142,14 @@ export function PartLinesSection({ orderId }: { orderId: string }) {
         <input
           type="number" min={0} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)}
           placeholder="€" className="w-20 rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-h-touch"
+        />
+        <input
+          type="number" min={0} value={warrantyDays}
+          onChange={(e) => setWarrantyDays(e.target.value)}
+          aria-label={t("order.part_warranty_days_label")}
+          title={t("order.part_warranty_days_label")}
+          placeholder={t("order.part_warranty_days_label")}
+          className="w-24 rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-h-touch"
         />
         <button
           type="button" onClick={() => void addLine()}

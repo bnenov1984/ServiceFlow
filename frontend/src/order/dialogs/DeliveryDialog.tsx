@@ -5,7 +5,7 @@
  * Invoice stays Etap 4 (noted, not built).
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog } from "../../components/Dialog";
 import { t } from "../../i18n/bg";
 
@@ -32,6 +32,8 @@ export function DeliveryDialog({
   onToggleReturned,
   submitting,
   error,
+  orderWarrantyDays,
+  laborWarrantyDefault,
 }: {
   open: boolean;
   onClose: () => void;
@@ -40,11 +42,25 @@ export function DeliveryDialog({
   onToggleReturned: (id: string, returned: boolean) => void;
   submitting: boolean;
   error: string | null;
+  // Wave 4 Issue 38: prefill from the company labor-warranty default only
+  // when this order has no explicit warranty of its own yet — an already-
+  // chosen order.warranty_days always wins over the company default.
+  orderWarrantyDays: number | null;
+  laborWarrantyDefault: number | null;
 }) {
   const [warrantyDays, setWarrantyDays] = useState("");
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<DeliveryPaymentInput["method"]>("cash");
   const [paymentNote, setPaymentNote] = useState("");
+
+  // Recomputed every time the dialog opens (native <dialog> keeps this
+  // component mounted between opens — see components/Dialog.tsx — so a
+  // plain useState initializer would only ever run once, at first mount).
+  useEffect(() => {
+    if (!open) return;
+    const prefill = orderWarrantyDays ?? laborWarrantyDefault;
+    setWarrantyDays(prefill !== null ? String(prefill) : "");
+  }, [open, orderWarrantyDays, laborWarrantyDefault]);
 
   return (
     <Dialog open={open} onClose={onClose} title={t("order.delivery_title")}>
@@ -72,10 +88,14 @@ export function DeliveryDialog({
           </div>
         )}
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">
+          <label
+            htmlFor="delivery-warranty-days"
+            className="mb-1 block text-sm font-medium text-slate-700"
+          >
             {t("order.delivery_warranty_days")}
           </label>
           <input
+            id="delivery-warranty-days"
             type="number"
             min={0}
             value={warrantyDays}

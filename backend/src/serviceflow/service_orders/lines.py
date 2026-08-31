@@ -34,9 +34,10 @@ def list_part_lines(db: Session, ctx: TenantContext, order_id: uuid.UUID) -> lis
 
 
 def add_part_line(db: Session, ctx: TenantContext, order: ServiceOrder, *, name: str,
-                  qty: int, unit_cost: Decimal, unit_price: Decimal) -> PartLine:
+                  qty: int, unit_cost: Decimal, unit_price: Decimal,
+                  warranty_days: int | None = None) -> PartLine:
     line = PartLine(company_id=ctx.company_id, order_id=order.id, name=name, qty=qty,
-                    unit_cost=unit_cost, unit_price=unit_price)
+                    unit_cost=unit_cost, unit_price=unit_price, warranty_days=warranty_days)
     db.add(line)
     db.flush()
     _event(db, ctx, order.id, "part_added", {"name": name, "qty": qty})

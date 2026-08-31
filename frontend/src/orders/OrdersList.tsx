@@ -59,7 +59,10 @@ function OrderRow({
           </span>
         )}
       </div>
-      <OrderStatusActions orderId={order.id} statusCode={order.status_code} onChanged={onChanged} />
+      <OrderStatusActions
+        orderId={order.id} statusCode={order.status_code}
+        warrantyDays={order.warranty_days} onChanged={onChanged}
+      />
     </li>
   );
 }

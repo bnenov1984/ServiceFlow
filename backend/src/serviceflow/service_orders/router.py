@@ -153,12 +153,15 @@ class PartLineOut(BaseModel):
     unit_cost: float
     unit_price: float
     state: str
+    # Wave 4 PART WARRANTY: NULL = not specified, 0 = explicitly no
+    # warranty, positive = days.
+    warranty_days: int | None = None
 
     @staticmethod
     def of(p: PartLine) -> "PartLineOut":
         return PartLineOut(id=p.id, name=p.name, qty=p.qty,
                            unit_cost=float(p.unit_cost), unit_price=float(p.unit_price),
-                           state=p.state)
+                           state=p.state, warranty_days=p.warranty_days)
 
 
 class PartLineIn(BaseModel):
@@ -166,11 +169,13 @@ class PartLineIn(BaseModel):
     qty: int = Field(default=1, ge=1)
     unit_cost: Decimal = Field(default=Decimal("0"), ge=0)
     unit_price: Decimal = Field(default=Decimal("0"), ge=0)
+    warranty_days: int | None = Field(default=None, ge=0)
 
 
 class PartLinePatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=300)
     qty: int | None = Field(default=None, ge=1)
+    warranty_days: int | None = Field(default=None, ge=0)
     unit_cost: Decimal | None = Field(default=None, ge=0)
     unit_price: Decimal | None = Field(default=None, ge=0)
     state: str | None = None
@@ -291,6 +296,34 @@ def _get_or_404(db: TenantDbDep, tenant: TenantDep, order_id: uuid.UUID) -> Serv
     return order
 
 
+def _reject_if_terminal(order: ServiceOrder) -> None:
+    """Wave 4: the documented invariant (docs/01 'Terminal orders accept no
+    operational changes except payments settling an outstanding balance, and
+    archiving') was enforced only by `patch_order` below — diagnosis/part-
+    line/labor-line/accessory mutation had no such check. Centralized here so
+    every mutating endpoint on those four resources shares one gate rather
+    than repeating the `status_code in statuses.TERMINAL` condition inline.
+    Payments, archive, and Owner unlock are deliberately NOT routed through
+    this — they are the documented exceptions, unchanged."""
+    if order.status_code in statuses.TERMINAL:
+        raise HTTPException(status_code=409, detail={
+            "code": "terminal", "message_key": "errors.orders.terminal_readonly",
+            "params": {},
+        })
+
+
+def _order_for_line(db: TenantDbDep, tenant: TenantDep, order_id: uuid.UUID) -> ServiceOrder:
+    """Part/labor-line and accessory PATCH endpoints only look up the line/
+    item itself, not its order — this resolves the order (same tenant, FK-
+    guaranteed) purely so `_reject_if_terminal` has something to check."""
+    order = service.get(db, tenant, order_id)
+    assert order is not None, (
+        "a line/item's own order_id must always resolve within its own "
+        "company — the FK guarantees this at the database level"
+    )
+    return order
+
+
 @router.get("/orders")
 def list_orders(db: TenantDbDep, tenant: TenantDep, state: str = "open",
                 status_code: str | None = None, technician_id: uuid.UUID | None = None,
@@ -371,11 +404,7 @@ def get_order(order_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep) -> OrderD
 def patch_order(order_id: uuid.UUID, body: OrderPatch, db: TenantDbDep,
                 tenant: TenantDep) -> OrderOut:
     order = _get_or_404(db, tenant, order_id)
-    if order.status_code in statuses.TERMINAL:
-        raise HTTPException(status_code=409, detail={
-            "code": "terminal", "message_key": "errors.orders.terminal_readonly",
-            "params": {},
-        })
+    _reject_if_terminal(order)
     fields = body.model_dump(exclude_unset=True, exclude={"technician_id",
                                                           "assign_technician"})
     for key, value in fields.items():
@@ -491,6 +520,7 @@ def asset_service_history(asset_id: uuid.UUID, db: TenantDbDep,
 def put_diagnosis(order_id: uuid.UUID, body: DiagnosisIn, db: TenantDbDep,
                   tenant: TenantDep) -> DiagnosisOut:
     order = _get_or_404(db, tenant, order_id)
+    _reject_if_terminal(order)
     diagnosis = service.put_diagnosis(db, tenant, order, body.model_dump())
     return DiagnosisOut.of(diagnosis)
 
@@ -510,8 +540,10 @@ def list_part_lines(order_id: uuid.UUID, db: TenantDbDep,
 def add_part_line(order_id: uuid.UUID, body: PartLineIn, db: TenantDbDep,
                   tenant: TenantDep) -> PartLineOut:
     order = _get_or_404(db, tenant, order_id)
+    _reject_if_terminal(order)
     line = lines.add_part_line(db, tenant, order, name=body.name, qty=body.qty,
-                               unit_cost=body.unit_cost, unit_price=body.unit_price)
+                               unit_cost=body.unit_cost, unit_price=body.unit_price,
+                               warranty_days=body.warranty_days)
     return PartLineOut.of(line)
 
 
@@ -524,6 +556,7 @@ def patch_part_line(line_id: uuid.UUID, body: PartLinePatch, db: TenantDbDep,
         raise HTTPException(status_code=404, detail={
             "code": "not_found", "message_key": "errors.part_lines.not_found", "params": {},
         })
+    _reject_if_terminal(_order_for_line(db, tenant, line.order_id))
     if body.state is not None and body.state not in PART_STATES:
         raise HTTPException(status_code=400, detail={
             "code": "invalid_state", "message_key": "errors.part_lines.invalid_state",
@@ -548,6 +581,7 @@ def list_labor_lines(order_id: uuid.UUID, db: TenantDbDep,
 def add_labor_line(order_id: uuid.UUID, body: LaborLineIn, db: TenantDbDep,
                    tenant: TenantDep) -> LaborLineOut:
     order = _get_or_404(db, tenant, order_id)
+    _reject_if_terminal(order)
     line = lines.add_labor_line(db, tenant, order, description=body.description,
                                 qty=body.qty, unit_price=body.unit_price,
                                 duration_min=body.duration_min,
@@ -564,6 +598,7 @@ def patch_labor_line(line_id: uuid.UUID, body: LaborLinePatch, db: TenantDbDep,
         raise HTTPException(status_code=404, detail={
             "code": "not_found", "message_key": "errors.labor_lines.not_found", "params": {},
         })
+    _reject_if_terminal(_order_for_line(db, tenant, line.order_id))
     line = lines.update_labor_line(db, tenant, line, body.model_dump(exclude_unset=True))
     return LaborLineOut.of(line)
 
@@ -583,6 +618,7 @@ def list_accessories(order_id: uuid.UUID, db: TenantDbDep,
 def add_accessory(order_id: uuid.UUID, body: AccessoryIn, db: TenantDbDep,
                   tenant: TenantDep) -> AccessoryOut:
     order = _get_or_404(db, tenant, order_id)
+    _reject_if_terminal(order)
     item = lines.add_accessory(db, tenant, order, name=body.name, qty=body.qty)
     return AccessoryOut.of(item)
 
@@ -596,6 +632,7 @@ def patch_accessory(item_id: uuid.UUID, body: AccessoryPatch, db: TenantDbDep,
         raise HTTPException(status_code=404, detail={
             "code": "not_found", "message_key": "errors.accessories.not_found", "params": {},
         })
+    _reject_if_terminal(_order_for_line(db, tenant, item.order_id))
     item = lines.mark_accessory_returned(db, tenant, item, body.returned)
     return AccessoryOut.of(item)
 

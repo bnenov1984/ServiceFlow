@@ -32,6 +32,9 @@ interface OrderHeaderProps {
   number: string;
   statusCode: string;
   archived: boolean;
+  // Wave 4 Issue 38: this order's own already-persisted warranty (if any),
+  // used only to decide DeliveryDialog's prefill precedence.
+  warrantyDays: number | null;
 }
 
 const TERMINAL_FAILURE_CODES = new Set(["declined", "unrepairable", "cancelled"]);
@@ -129,7 +132,9 @@ function StatusTransitionMenu({
   );
 }
 
-export function OrderHeader({ orderId, number, statusCode, archived }: OrderHeaderProps) {
+export function OrderHeader({
+  orderId, number, statusCode, archived, warrantyDays,
+}: OrderHeaderProps) {
   const { me } = useAuth();
   const queryClient = useQueryClient();
   const pushToast = useToast();
@@ -349,11 +354,13 @@ export function OrderHeader({ orderId, number, statusCode, archived }: OrderHead
       <DeliveryDialog
         open={pending?.kind === "delivery"}
         onClose={close}
-        onConfirm={(warrantyDays, payment) => void runDelivery(warrantyDays, payment)}
+        onConfirm={(days, payment) => void runDelivery(days, payment)}
         accessories={accessories ?? []}
         onToggleReturned={(id, returned) => void toggleAccessoryReturned(id, returned)}
         submitting={submitting}
         error={error}
+        orderWarrantyDays={warrantyDays}
+        laborWarrantyDefault={me?.warranty_defaults?.labor_days ?? null}
       />
       <ReasonDialog
         open={pending?.kind === "unlock"}

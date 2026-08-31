@@ -37,12 +37,14 @@ function renderHeader({
   statusCode = "received",
   isOwner = true,
   archived = false,
+  warrantyDays = null,
 }: {
   initialEntries?: string[];
   initialIndex?: number;
   statusCode?: string;
   isOwner?: boolean;
   archived?: boolean;
+  warrantyDays?: number | null;
 } = {}) {
   mockUseAuth.mockReturnValue({ me: { is_owner: isOwner } });
   vi.mocked(api.get).mockResolvedValue([]);
@@ -56,7 +58,10 @@ function renderHeader({
             <Route
               path="/orders/:id"
               element={
-                <OrderHeader orderId="order-1" number="2026-00001" statusCode={statusCode} archived={archived} />
+                <OrderHeader
+                  orderId="order-1" number="2026-00001" statusCode={statusCode}
+                  archived={archived} warrantyDays={warrantyDays}
+                />
               }
             />
             <Route path="/orders" element={<div>ORDERS_BOARD</div>} />

@@ -181,3 +181,145 @@ def test_aggregate_members_are_tenant_isolated(client: TestClient) -> None:
     h_b = _login(client, "Сервиз Б", "b@b.bg")
     assert client.patch(f"/api/v1/part-lines/{line_id}", headers=h_b,
                         json={"state": "ordered"}).status_code == 404
+
+
+# --- Wave 4 PART WARRANTY -----------------------------------------------
+
+def test_part_line_warranty_days_persistence_and_validation(client: TestClient) -> None:
+    h = _login(client)
+    oid = _order(client, h)
+
+    r = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
+        "name": "Дисплей", "unit_price": "100.00", "warranty_days": 90,
+    })
+    assert r.status_code == 201, r.text
+    assert r.json()["warranty_days"] == 90
+    line_id = r.json()["id"]
+
+    # Explicit 0 — "Без гаранция", distinct from never having been set.
+    r2 = client.patch(f"/api/v1/part-lines/{line_id}", headers=h, json={"warranty_days": 0})
+    assert r2.status_code == 200
+    assert r2.json()["warranty_days"] == 0
+
+    r3 = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
+        "name": "Батерия", "unit_price": "1", "warranty_days": -1,
+    })
+    assert r3.status_code == 400
+    assert r3.json()["message_key"] == "errors.validation"
+
+
+def test_part_line_warranty_days_defaults_to_none(client: TestClient) -> None:
+    h = _login(client)
+    oid = _order(client, h)
+    r = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
+                    json={"name": "Дисплей", "unit_price": "100.00"})
+    assert r.json()["warranty_days"] is None
+
+
+# --- Wave 4 TERMINAL ORDER IMMUTABILITY ----------------------------------
+
+def _cancel(client: TestClient, h: dict[str, str], oid: str) -> None:
+    r = client.post(f"/api/v1/orders/{oid}/status", headers=h,
+                    json={"to": "cancelled", "reason": "Клиентът се отказа"})
+    assert r.status_code == 200, r.text
+
+
+def test_terminal_order_rejects_diagnosis_mutation(client: TestClient) -> None:
+    h = _login(client)
+    oid = _order(client, h)
+    _cancel(client, h, oid)
+
+    r = client.put(f"/api/v1/orders/{oid}/diagnosis", headers=h,
+                   json={"recommendation": "опит след приключване"})
+    assert r.status_code == 409
+    assert r.json()["detail"]["message_key"] == "errors.orders.terminal_readonly"
+
+
+def test_terminal_order_rejects_part_line_add_and_patch(client: TestClient) -> None:
+    h = _login(client)
+    oid = _order(client, h)
+    line_id = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
+        "name": "Дисплей", "unit_price": "100.00",
+    }).json()["id"]
+    _cancel(client, h, oid)
+
+    r_add = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
+                        json={"name": "Батерия", "unit_price": "1"})
+    assert r_add.status_code == 409
+    assert r_add.json()["detail"]["message_key"] == "errors.orders.terminal_readonly"
+
+    r_patch = client.patch(f"/api/v1/part-lines/{line_id}", headers=h,
+                           json={"state": "installed"})
+    assert r_patch.status_code == 409
+    assert r_patch.json()["detail"]["message_key"] == "errors.orders.terminal_readonly"
+
+
+def test_terminal_order_rejects_labor_line_add_and_patch(client: TestClient) -> None:
+    h = _login(client)
+    oid = _order(client, h)
+    line_id = client.post(f"/api/v1/orders/{oid}/labor-lines", headers=h, json={
+        "description": "Диагностика", "unit_price": "20",
+    }).json()["id"]
+    _cancel(client, h, oid)
+
+    r_add = client.post(f"/api/v1/orders/{oid}/labor-lines", headers=h,
+                        json={"description": "Ремонт", "unit_price": "50"})
+    assert r_add.status_code == 409
+    assert r_add.json()["detail"]["message_key"] == "errors.orders.terminal_readonly"
+
+    r_patch = client.patch(f"/api/v1/labor-lines/{line_id}", headers=h,
+                           json={"unit_price": "99"})
+    assert r_patch.status_code == 409
+    assert r_patch.json()["detail"]["message_key"] == "errors.orders.terminal_readonly"
+
+
+def test_terminal_order_rejects_accessory_add_and_patch(client: TestClient) -> None:
+    h = _login(client)
+    oid = _order(client, h)
+    item_id = client.post(f"/api/v1/orders/{oid}/accessories", headers=h,
+                          json={"name": "Зарядно", "qty": 1}).json()["id"]
+    _cancel(client, h, oid)
+
+    r_add = client.post(f"/api/v1/orders/{oid}/accessories", headers=h,
+                        json={"name": "Кутия", "qty": 1})
+    assert r_add.status_code == 409
+    assert r_add.json()["detail"]["message_key"] == "errors.orders.terminal_readonly"
+
+    r_patch = client.patch(f"/api/v1/accessories/{item_id}", headers=h, json={"returned": True})
+    assert r_patch.status_code == 409
+    assert r_patch.json()["detail"]["message_key"] == "errors.orders.terminal_readonly"
+
+
+def test_terminal_order_read_endpoints_remain_unaffected(client: TestClient) -> None:
+    """Only mutation is blocked — GET must keep working exactly as before,
+    otherwise the order page itself couldn't render a terminal order."""
+    h = _login(client)
+    oid = _order(client, h)
+    client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
+               json={"name": "Дисплей", "unit_price": "100.00"})
+    _cancel(client, h, oid)
+
+    detail = client.get(f"/api/v1/orders/{oid}").json()
+    assert detail["part_lines"][0]["name"] == "Дисплей"
+    assert client.get(f"/api/v1/orders/{oid}/part-lines").status_code == 200
+
+
+def test_documented_terminal_exceptions_are_unaffected_by_the_new_guard(
+    client: TestClient,
+) -> None:
+    """docs/01: terminal orders accept payments settling an outstanding
+    balance, and archiving — those two are deliberately NOT routed through
+    _reject_if_terminal and must keep working exactly as before."""
+    h = _login(client)
+    oid = _order(client, h)
+    client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
+               json={"name": "Дисплей", "unit_price": "100.00"})
+    _cancel(client, h, oid)
+
+    payment = client.post(f"/api/v1/orders/{oid}/payments", headers=h,
+                          json={"amount": "50.00", "method": "cash", "note": ""})
+    assert payment.status_code == 201, payment.text
+
+    archived = client.post(f"/api/v1/orders/{oid}/archive", headers=h)
+    assert archived.status_code == 200, archived.text
+    assert archived.json()["archived"] is True

@@ -176,6 +176,39 @@ def update_company_requisites(
     return _company_requisites_out(company)
 
 
+# --- RepairFlow warranty defaults (Wave 4 Issue 38) -------------------------
+
+class WarrantyDefaultsPatch(BaseModel):
+    # extra="forbid": same allow-list discipline as CompanyRequisitesPatch —
+    # only these two keys can ever reach service.update_warranty_defaults.
+    model_config = ConfigDict(extra="forbid")
+
+    labor_days: int | None = Field(default=None, ge=0)
+    parts_days: int | None = Field(default=None, ge=0)
+
+
+class WarrantyDefaultsOut(BaseModel):
+    labor_days: int | None
+    parts_days: int | None
+
+
+@company_router.get("/warranty-defaults")
+def get_warranty_defaults(db: DbDep, tenant: TenantDep) -> WarrantyDefaultsOut:
+    return WarrantyDefaultsOut(**service.get_warranty_defaults(db, tenant.company_id))
+
+
+@company_router.patch(
+    "/warranty-defaults",
+    dependencies=[Depends(require_csrf), Depends(require_subscription_ok)],
+)
+def update_warranty_defaults(
+    body: WarrantyDefaultsPatch, db: DbDep, tenant: TenantDep,
+) -> WarrantyDefaultsOut:
+    fields = body.model_dump(exclude_unset=True)
+    service.update_warranty_defaults(db, tenant.company_id, tenant.user_id, fields)
+    return WarrantyDefaultsOut(**service.get_warranty_defaults(db, tenant.company_id))
+
+
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=1, max_length=200)
@@ -194,6 +227,12 @@ class MeResponse(BaseModel):
     seat_limit: int | None
     seat_usage: int
     has_pin: bool
+    # Wave 4 Issue 38: exposed to every authenticated user (not owner-gated,
+    # unlike /company/warranty-defaults' PATCH) — any technician opening the
+    # delivery dialog or adding a part needs these to prefill, the same
+    # reason `active_modules` already rides on /me rather than a dedicated
+    # per-page fetch.
+    warranty_defaults: WarrantyDefaultsOut
 
 
 class PinSwitchRequest(BaseModel):
@@ -222,6 +261,9 @@ def _me(db: Session, session: AuthSession, user: User) -> MeResponse:
         seat_limit=company.seat_limit,
         seat_usage=service.count_active_seats(db, session.company_id),
         has_pin=user.pin_hash is not None,
+        warranty_defaults=WarrantyDefaultsOut(
+            **service.get_warranty_defaults(db, session.company_id)
+        ),
     )
 
 
