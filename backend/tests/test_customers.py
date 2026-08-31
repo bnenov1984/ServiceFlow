@@ -78,6 +78,166 @@ def test_anonymize_is_owner_only_and_irreversible(client: TestClient) -> None:
                         json={"name": "Пак Георги"}).status_code == 409
 
 
+def test_anonymize_is_blocked_for_non_owner(client: TestClient) -> None:
+    csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+    owner_h = {"X-CSRF-Token": csrf}
+    cid = client.post("/api/v1/customers", headers=owner_h, json={
+        "name": "Георги Личнев", "phone": "0899111222",
+    }).json()["id"]
+    client.post("/api/v1/users", headers=owner_h,
+               json={"name": "Иво", "email": "ivo@a.bg", "password": "парола-за-иво-123"})
+    client.post("/api/v1/auth/logout", headers=owner_h)
+
+    worker_me = client.post("/api/v1/auth/login",
+                            json={"email": "ivo@a.bg", "password": "парола-за-иво-123"}).json()
+    worker_h = {"X-CSRF-Token": str(worker_me["csrf_token"])}
+    r = client.post(f"/api/v1/customers/{cid}/anonymize", headers=worker_h)
+    assert r.status_code == 403
+
+    # Untouched — the customer must not have been anonymized by the attempt.
+    assert client.get(f"/api/v1/customers/{cid}", headers=worker_h).json()["anonymized"] is False
+
+
+def test_archive_alone_does_not_anonymize(client: TestClient) -> None:
+    csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+    h = {"X-CSRF-Token": csrf}
+    cid = client.post("/api/v1/customers", headers=h, json={
+        "name": "Георги Личнев", "phone": "0899111222",
+    }).json()["id"]
+
+    client.post(f"/api/v1/customers/{cid}/archive", headers=h)
+    body = client.get(f"/api/v1/customers/{cid}", headers=h).json()
+    assert body["archived"] is True
+    assert body["anonymized"] is False
+    assert body["name"] == "Георги Личнев"  # personal data still intact
+
+
+# --- Wave 5 Issue 17: anonymization audit trail + Asset.sensitive_values ---
+
+def test_anonymize_records_an_audit_event_without_leaking_personal_data(
+    client: TestClient,
+) -> None:
+    from business_os.identity.models import AuditLog
+    from business_os.shared_kernel.db import open_session
+
+    csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+    h = {"X-CSRF-Token": csrf}
+    cid = client.post("/api/v1/customers", headers=h, json={
+        "name": "Георги Личнев", "phone": "0899111222", "email": "g@x.bg",
+        "notes": "лична бележка",
+    }).json()["id"]
+
+    client.post(f"/api/v1/customers/{cid}/anonymize", headers=h)
+
+    for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
+        rows = list(db.query(AuditLog).filter(AuditLog.action == "customer_anonymized"))
+        assert len(rows) == 1
+        detail = rows[0].detail
+        assert detail == {"customer_id": cid}
+        # No erased personal data anywhere in the audit payload.
+        flattened = str(detail)
+        for leaked in ("Георги Личнев", "0899111222", "g@x.bg", "лична бележка"):
+            assert leaked not in flattened
+
+
+def _asset_with_sensitive_value(client: TestClient, h: dict[str, str], cid: str) -> str:
+    from business_os.shared_kernel.db import open_session
+    from serviceflow.assets.models import Asset
+
+    aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
+        "asset_type_code": "phone",
+        "field_values": {"brand": "Apple", "model": "13", "imei": "356985061234567"},
+    }).json()["id"]
+    # No API writes sensitive_values yet (docs/08 §assets: "wired later") —
+    # set it directly, simulating a stored encrypted passcode.
+    for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
+        asset = db.get(Asset, aid)
+        assert asset is not None
+        asset.sensitive_values = b"encrypted-passcode-bytes"
+        db.commit()
+    return aid
+
+
+def test_anonymize_clears_sensitive_values_for_currently_owned_assets(
+    client: TestClient,
+) -> None:
+    from business_os.shared_kernel.db import open_session
+    from serviceflow.assets.models import Asset
+
+    csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+    h = {"X-CSRF-Token": csrf}
+    cid = client.post("/api/v1/customers", headers=h, json={
+        "name": "Георги", "phone": "0899111222",
+    }).json()["id"]
+    aid = _asset_with_sensitive_value(client, h, cid)
+
+    client.post(f"/api/v1/customers/{cid}/anonymize", headers=h)
+
+    for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
+        asset = db.get(Asset, aid)
+        assert asset is not None
+        assert asset.sensitive_values is None
+        # Preserved: the asset row, its label, identifiers.
+        assert asset.field_values["imei"] == "356985061234567"
+        assert asset.archived_at is None
+
+
+def test_anonymize_does_not_scrub_an_asset_now_owned_by_another_customer(
+    client: TestClient,
+) -> None:
+    """Wave 3's AssetOwnership means Asset.customer_id is the CURRENT owner
+    only — an asset customer A once owned but transferred away must not be
+    damaged when A is later anonymized."""
+    import uuid as uuid_mod
+
+    from business_os.shared_kernel.db import open_session
+    from serviceflow.assets.models import Asset
+
+    csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+    h = {"X-CSRF-Token": csrf}
+    cid_a = client.post("/api/v1/customers", headers=h, json={
+        "name": "Собственик А", "phone": "0899111222",
+    }).json()["id"]
+    cid_b = client.post("/api/v1/customers", headers=h, json={
+        "name": "Собственик Б", "phone": "0899333444",
+    }).json()["id"]
+    aid = _asset_with_sensitive_value(client, h, cid_a)
+
+    r = client.post(f"/api/v1/assets/{aid}/transfer-owner", headers=h,
+                    json={"customer_id": cid_b})
+    assert r.status_code == 200, r.text
+
+    client.post(f"/api/v1/customers/{cid_a}/anonymize", headers=h)
+
+    for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
+        asset = db.get(Asset, aid)
+        assert asset is not None
+        assert asset.customer_id == uuid_mod.UUID(cid_b)
+        # Still owned by B, whose passcode must survive A's anonymization.
+        assert asset.sensitive_values == b"encrypted-passcode-bytes"
+
+
+def test_anonymize_preserves_service_history(client: TestClient) -> None:
+    csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+    h = {"X-CSRF-Token": csrf}
+    cid = client.post("/api/v1/customers", headers=h, json={
+        "name": "Георги", "phone": "0899111222",
+    }).json()["id"]
+    aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
+        "asset_type_code": "phone", "field_values": {"brand": "Apple"},
+    }).json()["id"]
+    oid = client.post("/api/v1/orders", headers=h, json={
+        "customer_id": cid, "asset_id": aid, "complaint": "Счупен екран",
+    }).json()["id"]
+
+    client.post(f"/api/v1/customers/{cid}/anonymize", headers=h)
+
+    order = client.get(f"/api/v1/orders/{oid}", headers=h)
+    assert order.status_code == 200
+    assert order.json()["complaint"] == "Счупен екран"
+    assert order.json()["customer_id"] == cid
+
+
 def test_customers_are_tenant_isolated_via_api(client: TestClient) -> None:
     csrf_a = _seed_and_login(client, "Сервиз А", "a@a.bg")
     cid = client.post("/api/v1/customers", headers={"X-CSRF-Token": csrf_a}, json={

@@ -7,8 +7,10 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import or_, select
+from sqlalchemy import update as sa_update
 from sqlalchemy.orm import Session
 
+from business_os.identity import contracts as identity_contracts
 from business_os.shared_kernel.db import TenantContext, scoped
 from business_os.shared_kernel.normalize import (
     derive_seller_vat_number,
@@ -16,6 +18,7 @@ from business_os.shared_kernel.normalize import (
     normalize_phone,
     transliterate,
 )
+from serviceflow.assets.models import Asset
 from serviceflow.customers.models import Customer
 
 
@@ -161,7 +164,26 @@ def archive(db: Session, ctx: TenantContext, customer: Customer) -> None:
 
 
 def anonymize(db: Session, ctx: TenantContext, customer: Customer) -> None:
-    """GDPR (docs/11 §6): personal data overwritten, history preserved. Irreversible."""
+    """GDPR (docs/11 §6): personal data overwritten, history preserved.
+    Irreversible.
+
+    Wave 5 Issue 17 additions, closing the two gaps the Wave 5 audit found
+    against this same docs/11 §6 policy:
+    - Audited (the policy always claimed this; `identity.contracts.
+      record_audit_event` — same tenant `audit_log` company-settings/
+      employee-management already write to — actually does it now). The
+      payload carries only this customer's own id, never any of the
+      personal data being erased below.
+    - Encrypted device passcodes erased (docs/11 §5: "anonymization erases
+      them") for assets this customer CURRENTLY owns — `Asset.customer_id`
+      is already the current-owner pointer (Wave 3's AssetOwnership), so an
+      asset this customer once owned but has since transferred away is
+      correctly left untouched (it belongs to someone else now; scrubbing
+      it would damage that other customer's live device). The Asset row
+      itself, every identifier (VIN/IMEI/serial/рег.№), and all service
+      history (orders, issued-invoice snapshots, delivered-order completion
+      snapshots) are all untouched — only `sensitive_values` is cleared.
+    """
     customer.name = "Изтрит клиент"
     customer.phone = ""
     customer.phone2 = None
@@ -173,4 +195,13 @@ def anonymize(db: Session, ctx: TenantContext, customer: Customer) -> None:
     _refresh_shadows(customer)
     customer.anonymized_at = datetime.now(UTC)
     customer.archived_at = customer.archived_at or customer.anonymized_at
+
+    db.execute(
+        sa_update(Asset).where(Asset.customer_id == customer.id)
+        .values(sensitive_values=None)
+    )
+    identity_contracts.record_audit_event(
+        db, ctx.company_id, ctx.user_id, "customer_anonymized",
+        {"customer_id": str(customer.id)},
+    )
     db.commit()

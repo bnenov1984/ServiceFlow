@@ -5,7 +5,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { EmptyState, ErrorState, Skeleton } from "../components/States";
 import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
@@ -53,6 +53,7 @@ function CustomerRow({ customer }: { customer: CustomerListItem }) {
 export function CustomersPage() {
   const [query, setQuery] = useState("");
   const debouncedQuery = useDebounced(query, 300);
+  const navigate = useNavigate();
 
   const {
     data: customers, isLoading, isError, error, refetch,
@@ -63,7 +64,16 @@ export function CustomersPage() {
 
   return (
     <div>
-      <h1 className="mb-4 text-2xl font-bold text-slate-900">{t("nav.customers")}</h1>
+      <div className="mb-4 flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-slate-900">{t("nav.customers")}</h1>
+        <button
+          type="button"
+          onClick={() => navigate("/customers/new")}
+          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 min-h-touch"
+        >
+          {t("customers.add_action")}
+        </button>
+      </div>
       <input
         type="search"
         value={query}

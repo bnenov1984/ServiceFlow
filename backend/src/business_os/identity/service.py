@@ -92,6 +92,16 @@ def _audit(db: Session, company_id: uuid.UUID, user_id: uuid.UUID | None,
     db.add(AuditLog(company_id=company_id, user_id=user_id, action=action, detail=detail or {}))
 
 
+def record_audit_event(db: Session, company_id: uuid.UUID, actor_user_id: uuid.UUID | None,
+                       action: str, detail: dict[str, Any] | None = None) -> None:
+    """Wave 5 Issue 17: the sanctioned way for another module (customer
+    anonymization) to write a row to the same tenant `audit_log` company-
+    settings/employee-management already use — thin pass-through to
+    `_audit`, exposed here so `identity.contracts` can re-export it without
+    reaching into the underscore-prefixed internal directly."""
+    _audit(db, company_id, actor_user_id, action, detail)
+
+
 def _is_company_archived(db: Session, company_id: uuid.UUID) -> bool:
     company = get_company(db, company_id)
     return company is not None and company.archived_at is not None

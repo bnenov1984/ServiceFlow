@@ -7,6 +7,7 @@ import { LoginPage } from "./auth/LoginPage";
 import { useAuth } from "./auth/AuthContext";
 import { CustomerProfilePage } from "./customers/CustomerProfilePage";
 import { CustomersPage } from "./customers/CustomersPage";
+import { NewCustomerPage } from "./customers/NewCustomerPage";
 import { t } from "./i18n/bg";
 import { IntakePage } from "./intake/IntakePage";
 import { InvoiceDetailPage } from "./invoices/InvoiceDetailPage";
@@ -101,6 +102,7 @@ export function App() {
         <Route path="orders/new" element={<IntakePage />} />
         <Route path="orders/:id" element={<OrderPage />} />
         <Route path="customers" element={<CustomersPage />} />
+        <Route path="customers/new" element={<NewCustomerPage />} />
         <Route path="customers/:id" element={<CustomerProfilePage />} />
         <Route path="invoices" element={<InvoicesPage />} />
         <Route path="invoices/:invoiceId" element={<InvoiceDetailPage />} />

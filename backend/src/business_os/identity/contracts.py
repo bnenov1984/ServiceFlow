@@ -48,6 +48,7 @@ __all__ = [
     "get_company_profile",
     "get_user_name",
     "grant_module",
+    "record_audit_event",
     "is_module_active",
     "list_companies_admin_metadata",
     "provision_company",
@@ -103,6 +104,18 @@ def get_user_name(db: Session, company_id: uuid.UUID, user_id: uuid.UUID) -> str
     `None` if the user isn't in this company. Wraps `service.get_user_name`;
     callers must never read `User` directly."""
     return _service.get_user_name(db, company_id, user_id)
+
+
+def record_audit_event(db: Session, company_id: uuid.UUID, actor_user_id: uuid.UUID | None,
+                       action: str, detail: dict[str, Any] | None = None) -> None:
+    """Wave 5 Issue 17: the sanctioned way for another module to write to
+    the tenant `audit_log` (docs/11 §2 "admin actions") — e.g. customer
+    anonymization. Non-committing — composed inside the caller's own
+    transaction, same discipline every other contracts function here
+    follows. `detail` must never carry the personal data being anonymized/
+    erased — only opaque ids/metadata (enforced by convention at each call
+    site, same as every other audit call already in this codebase)."""
+    _service.record_audit_event(db, company_id, actor_user_id, action, detail)
 
 
 @dataclass(frozen=True)

@@ -428,8 +428,11 @@ export const bg = {
 
   // --- customers (docs/15 §6.7) ---
   "customers.search_placeholder": "Търсене по име или телефон…",
-  "customers.empty": "Тук ще виждате всички клиенти. Добавете първия чрез нова поръчка.",
+  "customers.empty": "Тук ще виждате всички клиенти. Добавете първия с бутона по-горе.",
   "customers.active_orders_count": "{count} активни поръчки",
+  "customers.add_action": "+ Добави клиент",
+  "customers.new_title": "Нов клиент",
+  "customers.new_create_action": "Създай клиент",
   "customer.assets": "Активи",
   "customer.assets_none": "Няма регистрирани активи.",
   "customer.new_order_for_asset": "Нова поръчка за този актив",
