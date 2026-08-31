@@ -43,6 +43,10 @@ class OrderIn(BaseModel):
     priority: str = Field(default="normal", pattern="^(normal|high)$")
     promised_on: date | None = None
     technician_id: uuid.UUID | None = None
+    # Wave 3 Issues 21/26/27: captured at intake for automotive orders, but
+    # accepted for any asset type — not required, never enforced by
+    # asset_type here (the frontend decides when to show the field).
+    mileage: int | None = Field(default=None, ge=0)
 
 
 class OrderPatch(BaseModel):
@@ -86,6 +90,7 @@ class OrderOut(BaseModel):
     terminal_reason: str | None
     archived: bool
     row_version: int
+    mileage: int | None = None
     warning: str | None = None
 
     @staticmethod
@@ -98,7 +103,7 @@ class OrderOut(BaseModel):
             promised_on=o.promised_on, warranty_days=o.warranty_days,
             origin_order_id=o.origin_order_id, delivered_at=o.delivered_at,
             terminal_reason=o.terminal_reason, archived=o.archived_at is not None,
-            row_version=o.row_version, warning=warning,
+            row_version=o.row_version, mileage=o.mileage, warning=warning,
         )
 
 
@@ -235,6 +240,31 @@ class OrderDetailOut(OrderOut):
     balance: float
 
 
+class ServiceHistoryEntryOut(BaseModel):
+    """One visit in a vehicle's service history (Wave 3 Issues 21/26/27) —
+    only data already naturally available from the order itself, no new
+    aggregation. `customer_name` is the customer at THAT visit, which may
+    differ from the asset's current owner after a transfer (Issue 20)."""
+
+    order_id: uuid.UUID
+    order_number: str
+    created_at: datetime
+    status_code: str
+    customer_id: uuid.UUID
+    customer_name: str
+    complaint: str
+    mileage: int | None
+
+
+class AssetServiceHistoryOut(BaseModel):
+    asset_id: uuid.UUID
+    asset_label: str
+    # Newest non-null order-level mileage; falls back to the legacy
+    # Asset.field_values["mileage"] only when no order has recorded one yet.
+    current_mileage: int | None
+    visits: list[ServiceHistoryEntryOut]
+
+
 class TimelineEventOut(BaseModel):
     event_type: str
     actor_user_id: uuid.UUID | None
@@ -312,6 +342,7 @@ def create_order(body: OrderIn, db: TenantDbDep, tenant: TenantDep) -> OrderOut:
         db, tenant, customer_id=body.customer_id, asset_id=body.asset_id,
         complaint=body.complaint, priority=body.priority,
         promised_on=body.promised_on, technician_id=body.technician_id,
+        mileage=body.mileage,
     )
     return OrderOut.of(order)
 
@@ -415,6 +446,42 @@ def order_timeline(order_id: uuid.UUID, db: TenantDbDep,
                          data=e.data, created_at=e.created_at)
         for e in timeline_service.for_order(db, tenant, order_id)
     ]
+
+
+@router.get("/assets/{asset_id}/service-history")
+def asset_service_history(asset_id: uuid.UUID, db: TenantDbDep,
+                          tenant: TenantDep) -> AssetServiceHistoryOut:
+    """Wave 3 Issues 21/26/27: every visit against this vehicle, keyed on
+    asset_id — survives an ownership change (Issue 20) since it is never
+    filtered by customer_id. Lives here rather than in `serviceflow.assets`
+    because the data is fundamentally order data; `assets_service` is
+    already a legal import from service_orders (see create_order above),
+    so no new cross-module edge is introduced."""
+    asset = assets_service.get(db, tenant, asset_id)
+    if asset is None:
+        raise HTTPException(status_code=404, detail={
+            "code": "not_found", "message_key": "errors.assets.not_found", "params": {},
+        })
+    orders = service.list_orders_for_asset(db, tenant, asset_id)
+    customers = customers_service.get_many(db, tenant, (o.customer_id for o in orders))
+    visits = [
+        ServiceHistoryEntryOut(
+            order_id=o.id, order_number=o.number, created_at=o.created_at,
+            status_code=o.status_code, customer_id=o.customer_id,
+            customer_name=customers[o.customer_id].name if o.customer_id in customers else "",
+            complaint=o.complaint, mileage=o.mileage,
+        )
+        for o in orders
+    ]
+    latest_order_mileage = next((v.mileage for v in visits if v.mileage is not None), None)
+    legacy_mileage = asset.field_values.get("mileage")
+    current_mileage = latest_order_mileage
+    if current_mileage is None and isinstance(legacy_mileage, int | float):
+        current_mileage = int(legacy_mileage)
+    return AssetServiceHistoryOut(
+        asset_id=asset.id, asset_label=asset.label,
+        current_mileage=current_mileage, visits=visits,
+    )
 
 
 # --- Diagnosis (0..1 per order, edited in place — docs/01 §Diagnosis) ---------

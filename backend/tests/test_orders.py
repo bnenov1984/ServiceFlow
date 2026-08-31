@@ -285,3 +285,116 @@ def test_orders_are_tenant_isolated(client: TestClient) -> None:
     assert client.get(f"/api/v1/orders/{oid}").status_code == 404
     assert client.get(f"/api/v1/orders/{oid}/timeline").status_code == 404
     assert client.get("/api/v1/orders").json() == []
+
+
+# --- Wave 3 Issues 21/26/27: mileage + vehicle service history -------------
+
+def _vehicle_customer_and_asset(client: TestClient, h: dict[str, str],
+                                phone: str = "0888111222", vin: str | None = None,
+                                ) -> tuple[str, str]:
+    cid = client.post("/api/v1/customers", headers=h,
+                      json={"name": "Иван", "phone": phone}).json()["id"]
+    field_values: dict[str, object] = {"brand": "Volkswagen", "model": "Golf"}
+    if vin:
+        field_values["vin"] = vin
+    aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
+        "asset_type_code": "vehicle", "field_values": field_values,
+    }).json()["id"]
+    return cid, aid
+
+
+def test_order_accepts_mileage_for_any_asset_type(client: TestClient) -> None:
+    """Not required/enforced by asset_type at the API layer (the frontend
+    decides when to show the field) — a non-vehicle order may carry it too."""
+    h = _login(client)
+    cid, aid = _customer_and_asset(client, h)  # "phone" asset type
+    order = _order(client, h, cid, aid)
+    assert order["mileage"] is None
+
+    r = client.post("/api/v1/orders", headers=h, json={
+        "customer_id": cid, "asset_id": aid, "complaint": "x", "mileage": 100,
+    })
+    assert r.status_code == 201, r.text
+    assert r.json()["mileage"] == 100
+
+
+def test_order_rejects_negative_mileage(client: TestClient) -> None:
+    h = _login(client)
+    cid, aid = _vehicle_customer_and_asset(client, h)
+    r = client.post("/api/v1/orders", headers=h, json={
+        "customer_id": cid, "asset_id": aid, "complaint": "x", "mileage": -1,
+    })
+    assert r.status_code == 422
+
+
+def test_vehicle_service_history_spans_ownership_change(client: TestClient) -> None:
+    h = _login(client)
+    cid1, aid = _vehicle_customer_and_asset(client, h, "0888111222", "WVWZZZ1JZ3W386752")
+    cid2 = client.post("/api/v1/customers", headers=h,
+                       json={"name": "Петър", "phone": "0888333444"}).json()["id"]
+
+    order1 = client.post("/api/v1/orders", headers=h, json={
+        "customer_id": cid1, "asset_id": aid, "complaint": "Смяна на масло",
+        "mileage": 100000,
+    }).json()
+
+    client.post(f"/api/v1/assets/{aid}/transfer-owner", headers=h, json={"customer_id": cid2})
+
+    order2 = client.post("/api/v1/orders", headers=h, json={
+        "customer_id": cid2, "asset_id": aid, "complaint": "Спирачки", "mileage": 105000,
+    }).json()
+
+    r = client.get(f"/api/v1/assets/{aid}/service-history", headers=h)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["current_mileage"] == 105000
+    visit_ids = {v["order_id"] for v in body["visits"]}
+    assert visit_ids == {order1["id"], order2["id"]}
+    # Newest first.
+    assert body["visits"][0]["order_id"] == order2["id"]
+    assert body["visits"][0]["customer_id"] == cid2
+    assert body["visits"][1]["customer_id"] == cid1
+
+
+def test_vehicle_service_history_falls_back_to_legacy_asset_mileage(client: TestClient) -> None:
+    h = _login(client)
+    cid = client.post("/api/v1/customers", headers=h,
+                      json={"name": "Иван", "phone": "0888111222"}).json()["id"]
+    aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
+        "asset_type_code": "vehicle",
+        "field_values": {"brand": "Volkswagen", "model": "Golf", "mileage": 50000},
+    }).json()["id"]
+    client.post("/api/v1/orders", headers=h, json={
+        "customer_id": cid, "asset_id": aid, "complaint": "Оглед",
+    })
+
+    r = client.get(f"/api/v1/assets/{aid}/service-history", headers=h)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["current_mileage"] == 50000
+    assert body["visits"][0]["mileage"] is None
+
+
+def test_vehicle_service_history_prefers_order_mileage_over_legacy(client: TestClient) -> None:
+    h = _login(client)
+    cid = client.post("/api/v1/customers", headers=h,
+                      json={"name": "Иван", "phone": "0888111222"}).json()["id"]
+    aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
+        "asset_type_code": "vehicle",
+        "field_values": {"brand": "Volkswagen", "model": "Golf", "mileage": 50000},
+    }).json()["id"]
+    client.post("/api/v1/orders", headers=h, json={
+        "customer_id": cid, "asset_id": aid, "complaint": "Смяна на масло", "mileage": 51500,
+    })
+
+    body = client.get(f"/api/v1/assets/{aid}/service-history", headers=h).json()
+    assert body["current_mileage"] == 51500
+
+
+def test_vehicle_service_history_is_tenant_isolated(client: TestClient) -> None:
+    h_a = _login(client, "Сервиз А", "a@a.bg")
+    _, aid = _vehicle_customer_and_asset(client, h_a)
+    client.post("/api/v1/auth/logout", headers=h_a)
+
+    _login(client, "Сервиз Б", "b@b.bg")
+    assert client.get(f"/api/v1/assets/{aid}/service-history").status_code == 404

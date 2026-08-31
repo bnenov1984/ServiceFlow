@@ -30,7 +30,7 @@ interface OrderOut {
 
 const DEFAULT_ORDER_VALUE: OrderStepValue = {
   complaint: "", accessories: [], photos: [], partLines: [],
-  priority: "normal", technicianId: null,
+  priority: "normal", technicianId: null, mileage: "",
 };
 
 function StepSection({
@@ -75,12 +75,14 @@ export function IntakePage() {
     setSubmitting(true);
     setSubmitError(null);
     try {
+      const mileage = orderValue.mileage.trim() ? Number(orderValue.mileage) : null;
       const order = await api.post<OrderOut>("/orders", {
         customer_id: customer.id,
         asset_id: asset.id,
         complaint: orderValue.complaint,
         priority: orderValue.priority,
         technician_id: orderValue.technicianId,
+        mileage: mileage !== null && !Number.isNaN(mileage) ? mileage : null,
       });
 
       let accessoryFailures = 0;
@@ -164,6 +166,7 @@ export function IntakePage() {
         <StepSection number={3} title={t("intake.step_order")} active>
           <OrderStep
             value={orderValue}
+            assetTypeCode={asset.assetTypeCode}
             onChange={setOrderValue}
             onSubmit={() => void handleSubmit()}
             submitting={submitting}

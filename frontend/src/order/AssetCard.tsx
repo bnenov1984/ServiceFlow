@@ -24,16 +24,29 @@ export function AssetCard({
   assetTypeCode,
   label,
   fieldValues,
+  currentMileage,
 }: {
   assetTypeCode: string;
   label: string;
   fieldValues: Record<string, unknown>;
+  // Wave 3 Issues 21/26/27: the newest recorded ServiceOrder.mileage for
+  // this vehicle (falling back to the legacy field only when no order has
+  // one yet) — undefined for non-vehicle assets, where this prop is simply
+  // omitted and the generic field_defs loop below covers everything as
+  // before.
+  currentMileage?: number | null;
 }) {
   const { data: types } = useQuery({
     queryKey: queryKeys.assetTypes,
     queryFn: () => api.get<AssetTypeOut[]>("/asset-types"),
   });
   const type = types?.find((t2) => t2.code === assetTypeCode);
+  // The legacy per-asset "mileage" field_def is superseded by currentMileage
+  // once that's available, so it isn't shown twice under two different
+  // labels/values.
+  const fieldDefs = (type?.field_defs ?? []).filter(
+    (def) => !(currentMileage !== undefined && def.key === "mileage"),
+  );
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
@@ -45,7 +58,13 @@ export function AssetCard({
         <span className="font-medium text-slate-800">{label}</span>
       </div>
       <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
-        {(type?.field_defs ?? [])
+        {currentMileage != null && (
+          <div className="contents">
+            <dt className="text-slate-500">{t("order.current_mileage")}</dt>
+            <dd className="text-slate-800">{currentMileage}</dd>
+          </div>
+        )}
+        {fieldDefs
           .filter((def) => fieldValues[def.key] !== undefined && fieldValues[def.key] !== "")
           .map((def) => (
             <div key={def.key} className="contents">

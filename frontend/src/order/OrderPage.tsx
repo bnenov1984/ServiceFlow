@@ -27,6 +27,7 @@ import { PromisedDateBlock } from "./PromisedDateBlock";
 import { ReadySummary } from "./ReadySummary";
 import { TasksChecklist } from "./TasksChecklist";
 import { TimelineSection } from "./TimelineSection";
+import { VehicleHistorySection } from "./VehicleHistorySection";
 
 interface OrderDetailOut {
   id: string;
@@ -45,6 +46,12 @@ interface OrderDetailOut {
   // InvoiceCard's tax_event_date suggestion (docs/ACCOUNTANT_REVIEW.md D1:
   // a convenience default only, never sent unedited/unseen).
   delivered_at: string | null;
+  // Wave 3 Issues 21/26/27 — mileage recorded on THIS visit, if any.
+  mileage: number | null;
+}
+
+interface AssetServiceHistoryOut {
+  current_mileage: number | null;
 }
 
 interface CustomerOut {
@@ -82,6 +89,13 @@ export function OrderPage() {
     queryKey: ["asset", order?.asset_id ?? ""],
     queryFn: () => api.get<AssetOut>(`/assets/${order!.asset_id}`),
     enabled: !!order,
+  });
+
+  const isVehicle = asset?.asset_type_code === "vehicle";
+  const { data: serviceHistory } = useQuery({
+    queryKey: queryKeys.assetServiceHistory(order?.asset_id ?? ""),
+    queryFn: () => api.get<AssetServiceHistoryOut>(`/assets/${order!.asset_id}/service-history`),
+    enabled: !!order && isVehicle,
   });
 
   if (isLoading) {
@@ -147,7 +161,11 @@ export function OrderPage() {
               assetTypeCode={asset.asset_type_code}
               label={asset.label}
               fieldValues={asset.field_values}
+              currentMileage={isVehicle ? serviceHistory?.current_mileage : undefined}
             />
+          )}
+          {isVehicle && (
+            <VehicleHistorySection assetId={order.asset_id} currentOrderId={order.id} />
           )}
           {isReady ? (
             <ReadySummary

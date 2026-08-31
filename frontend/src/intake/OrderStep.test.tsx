@@ -12,17 +12,20 @@ vi.mock("../lib/api", async (importOriginal) => {
 
 const DEFAULT_VALUE: OrderStepValue = {
   complaint: "", accessories: [], photos: [], partLines: [],
-  priority: "normal", technicianId: null,
+  priority: "normal", technicianId: null, mileage: "",
 };
 
 // A real controlled wrapper (useState, not a mock) so add/remove actions
 // actually re-render OrderStep with the updated draft, the same way
 // IntakePage drives it for real.
-function Harness({ initial = DEFAULT_VALUE }: { initial?: OrderStepValue }) {
+function Harness({
+  initial = DEFAULT_VALUE, assetTypeCode = "phone",
+}: { initial?: OrderStepValue; assetTypeCode?: string }) {
   const [value, setValue] = useState(initial);
   return (
     <OrderStep
       value={value}
+      assetTypeCode={assetTypeCode}
       onChange={setValue}
       onSubmit={vi.fn()}
       submitting={false}
@@ -31,11 +34,11 @@ function Harness({ initial = DEFAULT_VALUE }: { initial?: OrderStepValue }) {
   );
 }
 
-function renderStep(initial?: OrderStepValue) {
+function renderStep(initial?: OrderStepValue, assetTypeCode?: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <Harness initial={initial} />
+      <Harness initial={initial} assetTypeCode={assetTypeCode} />
     </QueryClientProvider>,
   );
   // The "Добави" accessible name is reused by AccessoriesChecklist's own add
@@ -48,6 +51,29 @@ describe("OrderStep — Issue 25 (no promised date at intake)", () => {
   it("does not render a promised-date field any more", () => {
     renderStep();
     expect(screen.queryByText("Обещана дата")).not.toBeInTheDocument();
+  });
+});
+
+describe("OrderStep — Wave 3 Issues 21/26/27 (mileage at intake)", () => {
+  it("shows the mileage field for a vehicle order", () => {
+    renderStep(undefined, "vehicle");
+    expect(screen.getByText("Пробег (км)")).toBeInTheDocument();
+  });
+
+  it("does not show the mileage field for a non-vehicle order", () => {
+    renderStep(undefined, "phone");
+    expect(screen.queryByText("Пробег (км)")).not.toBeInTheDocument();
+  });
+
+  it("typing a mileage value updates the draft", async () => {
+    const user = userEvent.setup();
+    renderStep(undefined, "vehicle");
+
+    const input = screen.getByText("Пробег (км)").parentElement
+      ?.querySelector("input") as HTMLInputElement;
+    await user.type(input, "123000");
+
+    expect(input).toHaveValue(123000);
   });
 });
 

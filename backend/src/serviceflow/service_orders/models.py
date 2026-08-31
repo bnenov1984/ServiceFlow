@@ -57,6 +57,11 @@ class ServiceOrder(Base, TimestampMixin):
     priority: Mapped[str] = mapped_column(default="normal", server_default="normal")
     promised_on: Mapped[date | None] = mapped_column(default=None)
     warranty_days: Mapped[int | None] = mapped_column(default=None)
+    # Wave 3 Issues 21/26/27: mileage belongs to the visit, not just the
+    # asset master record — captured (optionally) at intake for automotive
+    # orders. `created_at` (TimestampMixin) is the visit timestamp; no
+    # separate mileage date column. NULL for every non-vehicle/legacy order.
+    mileage: Mapped[int | None] = mapped_column(default=None)
     origin_order_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("service_orders.id"), default=None
     )

@@ -27,6 +27,11 @@ export interface OrderStepValue {
   partLines: PartLineDraft[];
   priority: "normal" | "high";
   technicianId: string | null;
+  // Wave 3 Issues 21/26/27: only ever populated/shown for vehicle orders —
+  // kept as a string like every other numeric form field here, coerced at
+  // the submit boundary (IntakePage), same convention as AssetStep's number
+  // fields.
+  mileage: string;
 }
 
 interface UserOut {
@@ -38,12 +43,16 @@ interface UserOut {
 
 export function OrderStep({
   value,
+  assetTypeCode,
   onChange,
   onSubmit,
   submitting,
   error,
 }: {
   value: OrderStepValue;
+  // Gates the mileage field (Issue 21: automotive only, never required for
+  // other asset types).
+  assetTypeCode: string;
   // Updater-only (never a raw next-value): every mutation computes its result
   // from `prev` at apply-time, so React can chain multiple same-batch updates
   // correctly regardless of dispatch order (see AccessoriesChecklist for the
@@ -109,6 +118,22 @@ export function OrderStep({
           className="w-full rounded-lg border border-slate-300 px-3 py-2"
         />
       </div>
+
+      {assetTypeCode === "vehicle" && (
+        <div>
+          <label className="mb-1 block text-sm font-medium text-slate-700">
+            {t("intake.mileage")}
+          </label>
+          <input
+            type="number" min={0} value={value.mileage}
+            onChange={(e) => {
+              const mileage = e.target.value;
+              onChange((prev) => ({ ...prev, mileage }));
+            }}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
+          />
+        </div>
+      )}
 
       <div>
         <label className="mb-1 block text-sm font-medium text-slate-700">

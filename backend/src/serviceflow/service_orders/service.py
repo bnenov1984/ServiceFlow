@@ -107,13 +107,14 @@ def _event(db: Session, ctx: TenantContext, order: ServiceOrder, type_: str,
 def create(db: Session, ctx: TenantContext, *, customer_id: uuid.UUID,
            asset_id: uuid.UUID, complaint: str, priority: str = "normal",
            promised_on: Any = None, technician_id: uuid.UUID | None = None,
-           origin_order_id: uuid.UUID | None = None) -> ServiceOrder:
+           origin_order_id: uuid.UUID | None = None,
+           mileage: int | None = None) -> ServiceOrder:
     order = ServiceOrder(
         company_id=ctx.company_id, number=next_order_number(db, ctx),
         customer_id=customer_id, asset_id=asset_id, complaint=complaint,
         status_code="received", priority=priority, promised_on=promised_on,
         technician_id=technician_id, origin_order_id=origin_order_id,
-        status_changed_at=_now(), created_by=ctx.user_id,
+        status_changed_at=_now(), created_by=ctx.user_id, mileage=mileage,
     )
     db.add(order)
     db.flush()
@@ -144,6 +145,20 @@ def get_many(db: Session, ctx: TenantContext,
         scoped(select(ServiceOrder), ServiceOrder, ctx).where(ServiceOrder.id.in_(ids))
     )
     return {o.id: o for o in rows}
+
+
+def list_orders_for_asset(db: Session, ctx: TenantContext, asset_id: uuid.UUID,
+                          limit: int = 200) -> list[ServiceOrder]:
+    """Every order against this asset, newest first — archived included and
+    NOT filtered by customer_id (Wave 3 Issues 21/26/27: a vehicle's service
+    history must survive an ownership change, so it is keyed on asset_id
+    alone, exactly like `ServiceOrder.asset_id` already is). The tenant scope
+    from `scoped()` is the only filter — this is deliberately company-wide,
+    not customer-scoped."""
+    stmt = scoped(select(ServiceOrder), ServiceOrder, ctx).where(
+        ServiceOrder.asset_id == asset_id
+    )
+    return list(db.scalars(stmt.order_by(ServiceOrder.created_at.desc()).limit(limit)))
 
 
 def list_order_ids_for_customer(db: Session, ctx: TenantContext,

@@ -1,9 +1,12 @@
-/** Ready chips + free-add (docs/15 §6.4, PO-approved defaults: Зарядно/СИМ/Кутия/Ключ). */
+/** Ready chips + free-add (docs/15 §6.4, PO-approved defaults: Зарядно/СИМ/Кутия/Ключ,
+ * extended per Wave 3 Issues 28/36 with Документи/Резервна гума — common
+ * automotive intake items, still just presets over the same free-text model,
+ * no new taxonomy). */
 
 import { useState, type KeyboardEvent } from "react";
 import { t } from "../i18n/bg";
 
-const DEFAULT_CHIPS = ["Зарядно", "СИМ", "Кутия", "Ключ"];
+const DEFAULT_CHIPS = ["Зарядно", "СИМ", "Кутия", "Ключ", "Документи", "Резервна гума"];
 
 export function AccessoriesChecklist({
   selected,
