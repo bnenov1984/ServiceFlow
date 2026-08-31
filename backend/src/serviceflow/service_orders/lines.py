@@ -12,7 +12,11 @@ from business_os.shared_kernel.db import TenantContext, scoped
 from business_os.shared_kernel.events import DomainEvent, publish
 from serviceflow.service_orders.models import AccessoryItem, LaborLine, PartLine, ServiceOrder
 
-PART_STATES = ("needed", "ordered", "received", "installed", "removed")
+# Wave 2 Issue 33: simplified V1 model — "ordered" (assigned/requested for
+# this order, regardless of physical stock) and "installed". Migration 0022
+# backfills existing rows (needed/received/removed -> ordered); no inventory/
+# stock tracking is introduced by this simplification.
+PART_STATES = ("ordered", "installed")
 
 
 def _event(db: Session, ctx: TenantContext, order_id: uuid.UUID, type_: str,
@@ -50,9 +54,7 @@ def update_part_line(db: Session, ctx: TenantContext, line: PartLine,
     for key, value in fields.items():
         setattr(line, key, value)
     if "state" in fields and fields["state"] != prev_state:
-        event_type = {
-            "ordered": "part_ordered", "received": "part_received",
-        }.get(fields["state"], "part_state_changed")
+        event_type = {"ordered": "part_ordered"}.get(fields["state"], "part_state_changed")
         _event(db, ctx, line.order_id, event_type,
               {"name": line.name, "from": prev_state, "to": fields["state"]})
     db.commit()

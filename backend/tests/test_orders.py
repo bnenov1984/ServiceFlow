@@ -127,7 +127,7 @@ def test_delivery_flow_with_warranty(client: TestClient) -> None:
     h = _login(client)
     cid, aid = _customer_and_asset(client, h)
     oid = _order(client, h, cid, aid)["id"]
-    for to in ("diagnostics", "repair", "testing"):
+    for to in ("diagnostics", "repair"):
         client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": to})
     client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "ready"})
 
@@ -202,7 +202,7 @@ def test_reopen_via_ui_button_is_a_new_linked_order_not_a_status_change(
     h = _login(client)
     cid, aid = _customer_and_asset(client, h)
     oid = _order(client, h, cid, aid)["id"]
-    for to in ("diagnostics", "repair", "testing", "ready"):
+    for to in ("diagnostics", "repair", "ready"):
         client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": to})
     client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "delivered"})
 

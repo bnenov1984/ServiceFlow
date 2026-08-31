@@ -19,13 +19,18 @@ class Kind(StrEnum):
 
 
 # code -> (kind, default BG name, sort)
+# Issue 5 (Wave 2): "testing" removed — it is now considered part of "repair",
+# not a separate stage. Migration 0021 reassigns any existing testing orders
+# to repair and drops the now-unreferenced order_statuses row; this dict (and
+# the matrix below) reflects only the current, active status set — "testing"
+# events already recorded on a TimelineEvent are untouched (append-only,
+# never rewritten).
 STATUSES: dict[str, tuple[Kind, str, int]] = {
     "received": (Kind.WORKING, "Приета", 1),
     "diagnostics": (Kind.WORKING, "Диагностика", 2),
     "waiting_customer": (Kind.WAITING, "Чака клиент", 3),
     "waiting_parts": (Kind.WAITING, "Чака части", 4),
     "repair": (Kind.WORKING, "Ремонт", 5),
-    "testing": (Kind.WORKING, "Тестване", 6),
     "ready": (Kind.READY, "Готова", 7),
     "delivered": (Kind.TERMINAL_SUCCESS, "Предадена", 8),
     "declined": (Kind.TERMINAL_FAILURE, "Отказана", 9),
@@ -41,28 +46,26 @@ OK = "ok"
 WARN = "warn"  # allowed with a skip warning (docs/02 §2)
 NO = "no"
 
-# The docs/02 §2 matrix, verbatim. Rows = from, columns = to.
+# The docs/02 §2 matrix, amended by Wave 2 Issue 5 (testing folded into
+# repair — no "testing" row/column remains). Rows = from, columns = to.
 _M = {
     "received":         {"diagnostics": OK, "waiting_customer": WARN, "waiting_parts": WARN,
-                         "repair": WARN, "testing": WARN, "ready": WARN, "delivered": NO,
+                         "repair": WARN, "ready": WARN, "delivered": NO,
                          "declined": OK, "unrepairable": OK, "cancelled": OK},
     "diagnostics":      {"received": NO, "waiting_customer": OK, "waiting_parts": OK,
-                         "repair": OK, "testing": WARN, "ready": WARN, "delivered": NO,
+                         "repair": OK, "ready": WARN, "delivered": NO,
                          "declined": OK, "unrepairable": OK, "cancelled": OK},
     "waiting_customer": {"received": NO, "diagnostics": OK, "waiting_parts": OK,
-                         "repair": OK, "testing": WARN, "ready": WARN, "delivered": NO,
+                         "repair": OK, "ready": WARN, "delivered": NO,
                          "declined": OK, "unrepairable": OK, "cancelled": OK},
     "waiting_parts":    {"received": NO, "diagnostics": OK, "waiting_customer": OK,
-                         "repair": OK, "testing": WARN, "ready": WARN, "delivered": NO,
+                         "repair": OK, "ready": WARN, "delivered": NO,
                          "declined": OK, "unrepairable": OK, "cancelled": OK},
     "repair":           {"received": NO, "diagnostics": OK, "waiting_customer": OK,
-                         "waiting_parts": OK, "testing": OK, "ready": OK, "delivered": NO,
-                         "declined": NO, "unrepairable": OK, "cancelled": OK},
-    "testing":          {"received": NO, "diagnostics": OK, "waiting_customer": OK,
-                         "waiting_parts": OK, "repair": OK, "ready": OK, "delivered": NO,
+                         "waiting_parts": OK, "ready": OK, "delivered": NO,
                          "declined": NO, "unrepairable": OK, "cancelled": OK},
     "ready":            {"received": NO, "diagnostics": NO, "waiting_customer": NO,
-                         "waiting_parts": NO, "repair": OK, "testing": OK,
+                         "waiting_parts": NO, "repair": OK,
                          "delivered": OK, "declined": NO, "unrepairable": NO,
                          "cancelled": OK},
 }

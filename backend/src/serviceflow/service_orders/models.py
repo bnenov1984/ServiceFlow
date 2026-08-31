@@ -107,7 +107,10 @@ class PartLine(Base):
     unit_price: Mapped[Decimal] = mapped_column(
         Numeric(10, 2), default=0, server_default=text("0")
     )
-    state: Mapped[str] = mapped_column(default="needed", server_default="needed")
+    # Wave 2 Issue 33: "ordered" is the default active state — a part is
+    # assigned/requested for this order the moment it's added, regardless
+    # of whether it's physically in stock yet (no inventory tracking).
+    state: Mapped[str] = mapped_column(default="ordered", server_default="ordered")
 
 
 class LaborLine(Base):

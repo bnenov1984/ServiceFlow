@@ -1,5 +1,9 @@
 /** OrdersList (docs/15 §6.3): mobile <md or ?view=list fallback — StatusGroup
- * → OrderRow + StatusButtons (buttons are the primary path per docs/10 §2.2). */
+ * → OrderRow + StatusButtons (buttons are the primary path per docs/10 §2.2).
+ *
+ * Issue 4: `waiting_customer` orders group under "Диагностика" (like
+ * KanbanBoard) instead of their own heading, tagged with a badge — same
+ * presentation-only merge, no status/matrix change. */
 
 import { Link } from "react-router-dom";
 import { Avatar } from "../components/Avatar";
@@ -7,6 +11,10 @@ import { t } from "../i18n/bg";
 import { OPEN_STATUSES, statusName } from "../lib/statusMatrix";
 import { OrderStatusActions } from "./OrderStatusActions";
 import type { OrderListItem, UserItem } from "./types";
+
+const WAITING_CUSTOMER_CODE = "waiting_customer";
+const DIAGNOSIS_HOST_COLUMN = "diagnostics";
+const VISIBLE_GROUPS = OPEN_STATUSES.filter((s) => s.code !== WAITING_CUSTOMER_CODE);
 
 function OrderRow({
   order,
@@ -30,6 +38,11 @@ function OrderRow({
         <Avatar name={technicianName ?? t("orders.technician_unassigned")} />
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
+        {order.status_code === WAITING_CUSTOMER_CODE && (
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+            {statusName(WAITING_CUSTOMER_CODE)}
+          </span>
+        )}
         {order.overdue && (
           <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
             {t("orders.badge_overdue")}
@@ -64,8 +77,12 @@ export function OrdersList({
 
   return (
     <div className="flex flex-col gap-4">
-      {OPEN_STATUSES.map((status) => {
-        const group = orders.filter((o) => o.status_code === status.code);
+      {VISIBLE_GROUPS.map((status) => {
+        const group = orders.filter((o) =>
+          status.code === DIAGNOSIS_HOST_COLUMN
+            ? o.status_code === status.code || o.status_code === WAITING_CUSTOMER_CODE
+            : o.status_code === status.code,
+        );
         if (group.length === 0) return null;
         return (
           <div key={status.code} className="rounded-lg border border-slate-200 bg-white">

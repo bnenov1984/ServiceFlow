@@ -27,10 +27,10 @@ interface Line {
 }
 
 const DISPLAY = { name: "Дисплей Samsung A52", unit_price: 85, state: "ordered" };
-const BATTERY = { name: "Батерия", unit_price: 32, state: "received" };
+const BATTERY = { name: "Батерия", unit_price: 32, state: "installed" };
 
 function line(overrides: Partial<Line> & { id: string }): Line {
-  return { name: "Част", qty: 1, unit_cost: 0, unit_price: 0, state: "needed", ...overrides };
+  return { name: "Част", qty: 1, unit_cost: 0, unit_price: 0, state: "ordered", ...overrides };
 }
 
 function renderSection(initialLines: Line[]) {
@@ -55,7 +55,7 @@ describe("PartLinesSection — status selector", () => {
     const displaySelect = await screen.findByRole("combobox", { name: /Дисплей Samsung A52/ });
     const batterySelect = screen.getByRole("combobox", { name: /Батерия/ });
     expect(displaySelect).toHaveValue("ordered");
-    expect(batterySelect).toHaveValue("received");
+    expect(batterySelect).toHaveValue("installed");
   });
 
   it("is a real interactive control with an accessible name identifying the part", async () => {
@@ -66,12 +66,12 @@ describe("PartLinesSection — status selector", () => {
     expect(select.tagName).toBe("SELECT");
   });
 
-  it("exposes the actual domain statuses as selectable options, not an invented subset", async () => {
+  it("exposes only the simplified V1 statuses as selectable options (Issue 33)", async () => {
     renderSection([line({ id: "p1", ...DISPLAY })]);
 
     const select = await screen.findByRole("combobox", { name: /Дисплей Samsung A52/ });
     const options = Array.from(select.querySelectorAll("option")).map((o) => o.textContent);
-    expect(options).toEqual(["Нужна", "Поръчана", "Получена", "Монтирана", "Свалена"]);
+    expect(options).toEqual(["Поръчана", "Монтирана"]);
   });
 
   it("selecting a status invokes the part-line PATCH mutation with the chosen target state", async () => {
@@ -112,7 +112,7 @@ describe("PartLinesSection — status selector", () => {
 
     expect(api.patch).toHaveBeenCalledTimes(1);
     expect(api.patch).toHaveBeenCalledWith("/part-lines/p1", { state: "installed" });
-    expect(batterySelect).toHaveValue("received");
+    expect(batterySelect).toHaveValue("installed");
   });
 
   it("prevents a duplicate submission while a change is still pending for that part", async () => {

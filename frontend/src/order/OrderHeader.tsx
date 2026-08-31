@@ -47,7 +47,7 @@ type PendingAction =
 
 /** Compact "Промени статус" trigger + dropdown, replacing what used to be
  * every allowed transition rendered as its own always-visible button (up to
- * 9 from "received" alone - 1 normal next step, 5 skip-ahead "warn"
+ * 8 from "received" alone - 1 normal next step, 4 skip-ahead "warn"
  * transitions, 3 abandon-the-order terminal-failure ones - all with equal
  * visual weight next to the status pill). Same bespoke open/absolute-list
  * idiom as AppShell's AppSwitcher/AccountMenu - no new dependency, no

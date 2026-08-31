@@ -5,6 +5,7 @@ import { useDraggable } from "@dnd-kit/core";
 import { Link } from "react-router-dom";
 import { Avatar } from "../components/Avatar";
 import { t } from "../i18n/bg";
+import { statusName } from "../lib/statusMatrix";
 import type { OrderListItem } from "./types";
 
 function daysInStatus(statusChangedAt: string | null): number | null {
@@ -51,6 +52,11 @@ export function OrderCard({
       <p className="line-clamp-1 text-sm text-slate-600">{order.complaint}</p>
 
       <div className="mt-1 flex flex-wrap items-center gap-1.5">
+        {order.status_code === "waiting_customer" && (
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+            {statusName("waiting_customer")}
+          </span>
+        )}
         {days !== null && (
           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
             {t("orders.days_in_status", { days })}

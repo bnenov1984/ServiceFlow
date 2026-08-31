@@ -2,6 +2,10 @@
 
 Pure unit tests, no DB. The table below is transcribed verbatim from the frozen
 document so a diff against docs/02 §2 is a diff against this file.
+
+Wave 2 Issue 5 amendment: "testing" is no longer an active status (folded
+into "repair") — the row/column is gone from EXPECTED below, matching
+statuses.py exactly.
 """
 
 from serviceflow.service_orders import statuses
@@ -13,37 +17,32 @@ ALL = list(statuses.STATUSES)
 EXPECTED: dict[str, dict[str, str]] = {
     "received": {
         "diagnostics": "ok", "waiting_customer": "warn", "waiting_parts": "warn",
-        "repair": "warn", "testing": "warn", "ready": "warn", "delivered": "no",
+        "repair": "warn", "ready": "warn", "delivered": "no",
         "declined": "ok", "unrepairable": "ok", "cancelled": "ok",
     },
     "diagnostics": {
         "received": "no", "waiting_customer": "ok", "waiting_parts": "ok",
-        "repair": "ok", "testing": "warn", "ready": "warn", "delivered": "no",
+        "repair": "ok", "ready": "warn", "delivered": "no",
         "declined": "ok", "unrepairable": "ok", "cancelled": "ok",
     },
     "waiting_customer": {
         "received": "no", "diagnostics": "ok", "waiting_parts": "ok",
-        "repair": "ok", "testing": "warn", "ready": "warn", "delivered": "no",
+        "repair": "ok", "ready": "warn", "delivered": "no",
         "declined": "ok", "unrepairable": "ok", "cancelled": "ok",
     },
     "waiting_parts": {
         "received": "no", "diagnostics": "ok", "waiting_customer": "ok",
-        "repair": "ok", "testing": "warn", "ready": "warn", "delivered": "no",
+        "repair": "ok", "ready": "warn", "delivered": "no",
         "declined": "ok", "unrepairable": "ok", "cancelled": "ok",
     },
     "repair": {
         "received": "no", "diagnostics": "ok", "waiting_customer": "ok",
-        "waiting_parts": "ok", "testing": "ok", "ready": "ok", "delivered": "no",
-        "declined": "no", "unrepairable": "ok", "cancelled": "ok",
-    },
-    "testing": {
-        "received": "no", "diagnostics": "ok", "waiting_customer": "ok",
-        "waiting_parts": "ok", "repair": "ok", "ready": "ok", "delivered": "no",
+        "waiting_parts": "ok", "ready": "ok", "delivered": "no",
         "declined": "no", "unrepairable": "ok", "cancelled": "ok",
     },
     "ready": {
         "received": "no", "diagnostics": "no", "waiting_customer": "no",
-        "waiting_parts": "no", "repair": "ok", "testing": "ok", "delivered": "ok",
+        "waiting_parts": "no", "repair": "ok", "delivered": "ok",
         "declined": "no", "unrepairable": "no", "cancelled": "ok",
     },
 }

@@ -1,8 +1,17 @@
 /**
- * KanbanBoard (docs/15 §6.3): dnd-kit DnD across the 7 open-kind columns.
+ * KanbanBoard (docs/15 §6.3): dnd-kit DnD across the open-kind columns.
  * The client matrix (transition-matrix.json) only dims forbidden columns and
  * blocks the drop — the server remains the single source of truth (docs/15 §9).
  * No terminal column exists on the board; terminal transitions are dialog-only.
+ *
+ * Issue 4 (Чака клиент as a Diagnosis sub-state): `waiting_customer` stays a
+ * real backend status — nothing here touches statuses.py, the transition
+ * matrix, or the approval-gate logic — it just never gets its own column.
+ * Its orders render inside the `diagnostics` column instead, tagged with a
+ * badge (OrderCard). Drag data always carries the order's own real
+ * status_code (never "which column it's drawn in"), so dragging one of
+ * these cards still reports `from: "waiting_customer"` exactly as before —
+ * OrdersPage's existing approval-dialog special-case is unaffected.
  */
 
 import {
@@ -18,6 +27,12 @@ import { useState } from "react";
 import { OPEN_STATUSES, allowedTransitions, statusName } from "../lib/statusMatrix";
 import { OrderCard } from "./OrderCard";
 import type { OrderListItem, UserItem } from "./types";
+
+// Issue 4: no dedicated Kanban column for this status — its orders render
+// inside DIAGNOSIS_HOST_COLUMN instead (see module docstring).
+const WAITING_CUSTOMER_CODE = "waiting_customer";
+const DIAGNOSIS_HOST_COLUMN = "diagnostics";
+const VISIBLE_COLUMNS = OPEN_STATUSES.filter((s) => s.code !== WAITING_CUSTOMER_CODE);
 
 function StatusColumn({
   code,
@@ -91,11 +106,15 @@ export function KanbanBoard({
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="flex gap-3 overflow-x-auto pb-4">
-        {OPEN_STATUSES.map((status) => (
+        {VISIBLE_COLUMNS.map((status) => (
           <StatusColumn
             key={status.code}
             code={status.code}
-            orders={orders.filter((o) => o.status_code === status.code)}
+            orders={orders.filter((o) =>
+              status.code === DIAGNOSIS_HOST_COLUMN
+                ? o.status_code === status.code || o.status_code === WAITING_CUSTOMER_CODE
+                : o.status_code === status.code,
+            )}
             technicianNames={technicianNames}
             forbidden={
               draggingFrom !== null &&

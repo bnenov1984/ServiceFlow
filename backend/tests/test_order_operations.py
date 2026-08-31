@@ -119,23 +119,30 @@ def test_part_lines_lifecycle_and_state_validation(client: TestClient) -> None:
     })
     assert r.status_code == 201
     line_id = r.json()["id"]
-    assert r.json()["state"] == "needed"
-
-    r = client.patch(f"/api/v1/part-lines/{line_id}", headers=h, json={"state": "ordered"})
-    assert r.status_code == 200
+    # Wave 2 Issue 33: "ordered" is the default active state for a newly
+    # created part line (assigned/requested regardless of physical stock).
     assert r.json()["state"] == "ordered"
+
+    r = client.patch(f"/api/v1/part-lines/{line_id}", headers=h, json={"state": "installed"})
+    assert r.status_code == 200
+    assert r.json()["state"] == "installed"
 
     r = client.patch(f"/api/v1/part-lines/{line_id}", headers=h,
                      json={"state": "not_a_state"})
     assert r.status_code == 400
 
+    # The old 5-state model's values are no longer accepted either — the
+    # simplified V1 model has exactly two active states.
+    r = client.patch(f"/api/v1/part-lines/{line_id}", headers=h, json={"state": "needed"})
+    assert r.status_code == 400
+
     detail = client.get(f"/api/v1/orders/{oid}").json()
-    assert detail["part_lines"][0]["state"] == "ordered"
+    assert detail["part_lines"][0]["state"] == "installed"
     assert detail["estimated_total"] == 100.0
 
     events = [e["event_type"] for e in client.get(f"/api/v1/orders/{oid}/timeline").json()]
     assert "part_added" in events
-    assert "part_ordered" in events
+    assert "part_state_changed" in events
 
 
 def test_labor_lines_feed_estimated_total(client: TestClient) -> None:

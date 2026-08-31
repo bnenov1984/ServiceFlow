@@ -1,7 +1,8 @@
 /** PartLines (docs/15 §6.5): per-line state selector, direct-select (not
- * cycling) - needed/ordered/received/installed/removed, no server-side
- * transition restriction (docs/02 §7 — no inventory, states drive the
- * Чака части flow). */
+ * cycling) - Wave 2 Issue 33 simplified V1 model: ordered/installed only, no
+ * server-side transition restriction (docs/02 §7 — no inventory, states are
+ * presentation only). "ordered" means assigned/requested for this order,
+ * regardless of whether it's physically in stock yet. */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -19,16 +20,13 @@ interface PartLineOut {
   state: string;
 }
 
-// All 5 states the domain model accepts (backend/service_orders/lines.py
+// The 2 states the domain model accepts (backend/service_orders/lines.py
 // PART_STATES) - the backend has no from->to transition matrix for part
-// lines (unlike order status), so every state is always a valid target.
-const STATES = ["needed", "ordered", "received", "installed", "removed"] as const;
+// lines (unlike order status), so either state is always a valid target.
+const STATES = ["ordered", "installed"] as const;
 const STATE_LABEL: Record<string, Parameters<typeof t>[0]> = {
-  needed: "order.part_state_needed",
   ordered: "order.part_state_ordered",
-  received: "order.part_state_received",
   installed: "order.part_state_installed",
-  removed: "order.part_state_removed",
 };
 
 export function PartLinesSection({ orderId }: { orderId: string }) {

@@ -127,8 +127,9 @@ describe("OrderHeader — status transition menu", () => {
   it("collapses every allowed transition behind a single trigger instead of one button per transition", () => {
     renderHeader({ statusCode: "received" });
 
-    // "received" alone allows 9 transitions (1 ok next-step, 5 warn
-    // skip-ahead, 3 terminal-failure) - previously each rendered as its own
+    // "received" alone allows 8 transitions (1 ok next-step, 4 warn
+    // skip-ahead, 3 terminal-failure — Wave 2 Issue 5 removed "testing" from
+    // the warn skip-ahead set) - previously each rendered as its own
     // always-visible button next to the status pill.
     expect(screen.getByRole("button", { name: /Промени статус/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Диагностика" })).not.toBeInTheDocument();
