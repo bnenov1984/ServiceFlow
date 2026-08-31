@@ -71,6 +71,16 @@ class ServiceOrder(Base, TimestampMixin):
     terminal_at: Mapped[datetime | None] = mapped_column(default=None)
     prev_status_code: Mapped[str | None] = mapped_column(default=None)
     delivered_at: Mapped[datetime | None] = mapped_column(default=None)
+    # Wave 4 Issue 7: independent, frozen-at-delivery JSON — same discipline
+    # as commercial.Invoice.seller/.buyer (never a live reference into
+    # Customer/Company/Asset/line rows, so a later edit to any of them can
+    # never retroactively change what a reprinted delivery protocol shows).
+    # Built once by service.change_status() the moment the order becomes
+    # "delivered"; never rewritten afterward. NULL for every order that has
+    # never been delivered, and for orders delivered before this column
+    # existed — the delivery-protocol endpoint treats both cases identically
+    # (protocol unavailable), never reconstructing from live data.
+    completion_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     archived_at: Mapped[datetime | None] = mapped_column(default=None)
     row_version: Mapped[int] = mapped_column(default=1, server_default=text("1"))

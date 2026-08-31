@@ -1145,6 +1145,24 @@ export interface paths {
         patch: operations["update_company_requisites_api_v1_company_requisites_patch"];
         trace?: never;
     };
+    "/api/v1/company/warranty-defaults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Warranty Defaults */
+        get: operations["get_warranty_defaults_api_v1_company_warranty_defaults_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Warranty Defaults */
+        patch: operations["update_warranty_defaults_api_v1_company_warranty_defaults_patch"];
+        trace?: never;
+    };
     "/api/v1/dashboard": {
         parameters: {
             query?: never;
@@ -2376,6 +2394,7 @@ export interface components {
             seat_usage: number;
             /** Has Pin */
             has_pin: boolean;
+            warranty_defaults: components["schemas"]["WarrantyDefaultsOut"];
         };
         /** NextActionCreate */
         NextActionCreate: {
@@ -2476,6 +2495,11 @@ export interface components {
             row_version: number;
             /** Mileage */
             mileage?: number | null;
+            /**
+             * Has Completion Snapshot
+             * @default false
+             */
+            has_completion_snapshot: boolean;
             /** Warning */
             warning?: string | null;
             diagnosis: components["schemas"]["DiagnosisOut"] | null;
@@ -2581,6 +2605,11 @@ export interface components {
             row_version: number;
             /** Mileage */
             mileage?: number | null;
+            /**
+             * Has Completion Snapshot
+             * @default false
+             */
+            has_completion_snapshot: boolean;
             /** Warning */
             warning?: string | null;
             /** Customer Name */
@@ -2637,6 +2666,11 @@ export interface components {
             row_version: number;
             /** Mileage */
             mileage?: number | null;
+            /**
+             * Has Completion Snapshot
+             * @default false
+             */
+            has_completion_snapshot: boolean;
             /** Warning */
             warning?: string | null;
         };
@@ -2677,6 +2711,8 @@ export interface components {
              * @default 0
              */
             unit_price: number | string;
+            /** Warranty Days */
+            warranty_days?: number | null;
         };
         /** PartLineOut */
         PartLineOut: {
@@ -2695,6 +2731,8 @@ export interface components {
             unit_price: number;
             /** State */
             state: string;
+            /** Warranty Days */
+            warranty_days?: number | null;
         };
         /** PartLinePatch */
         PartLinePatch: {
@@ -2702,6 +2740,8 @@ export interface components {
             name?: string | null;
             /** Qty */
             qty?: number | null;
+            /** Warranty Days */
+            warranty_days?: number | null;
             /** Unit Cost */
             unit_cost?: number | string | null;
             /** Unit Price */
@@ -3122,6 +3162,20 @@ export interface components {
             email: string;
             /** Password */
             password: string;
+        };
+        /** WarrantyDefaultsOut */
+        WarrantyDefaultsOut: {
+            /** Labor Days */
+            labor_days: number | null;
+            /** Parts Days */
+            parts_days: number | null;
+        };
+        /** WarrantyDefaultsPatch */
+        WarrantyDefaultsPatch: {
+            /** Labor Days */
+            labor_days?: number | null;
+            /** Parts Days */
+            parts_days?: number | null;
         };
         /** WarrantyReturnRequest */
         WarrantyReturnRequest: {
@@ -5694,6 +5748,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CompanyRequisitesOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_warranty_defaults_api_v1_company_warranty_defaults_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WarrantyDefaultsOut"];
+                };
+            };
+        };
+    };
+    update_warranty_defaults_api_v1_company_warranty_defaults_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WarrantyDefaultsPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WarrantyDefaultsOut"];
                 };
             };
             /** @description Validation Error */

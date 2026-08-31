@@ -84,12 +84,15 @@ def test_protocol_pdf_handles_no_accessories(client: TestClient) -> None:
     assert "(няма)" in text
 
 
-def test_delivery_variant_not_yet_available(client: TestClient) -> None:
+def test_delivery_protocol_unavailable_before_delivery(client: TestClient) -> None:
+    """docs/business-os Wave 4 audit: never reconstructed from live data —
+    an order that simply hasn't been delivered yet gets the same clear
+    "unavailable" response as a legacy pre-Wave-4 delivered order."""
     h = _login(client)
     oid = _order_with_accessories(client, h)
     r = client.get(f"/api/v1/orders/{oid}/protocol.pdf?type=delivery")
-    assert r.status_code == 501
-    assert r.json()["detail"]["message_key"] == "errors.protocol.delivery_not_available"
+    assert r.status_code == 404
+    assert r.json()["detail"]["message_key"] == "errors.protocol.delivery_unavailable"
 
 
 def test_invalid_type_rejected(client: TestClient) -> None:
@@ -123,6 +126,170 @@ def test_protocol_is_tenant_isolated(client: TestClient) -> None:
 
     _login(client, "Сервиз Б", "b@b.bg")
     assert client.get(f"/api/v1/orders/{oid}/protocol.pdf").status_code == 404
+
+
+# --- Delivery protocol / completion snapshot (Wave 4 Issue 7) --------------
+
+def _deliver(client: TestClient, h: dict[str, str], oid: str,
+            warranty_days: int | None = None) -> None:
+    r1 = client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "ready"})
+    assert r1.status_code == 200, r1.text
+    r2 = client.post(f"/api/v1/orders/{oid}/status", headers=h,
+                     json={"to": "delivered", "warranty_days": warranty_days})
+    assert r2.status_code == 200, r2.text
+
+
+def test_delivery_protocol_renders_after_delivery(client: TestClient) -> None:
+    h = _login(client)
+    oid = _order_with_accessories(client, h)
+    client.put(f"/api/v1/orders/{oid}/diagnosis", headers=h, json={
+        "observed": "Счупен екран", "cause": "Падане",
+        "recommendation": "Смяна на дисплей",
+    })
+    client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
+        "name": "Дисплей Samsung", "unit_price": "120.00", "warranty_days": 90,
+    })
+    client.post(f"/api/v1/orders/{oid}/labor-lines", headers=h, json={
+        "description": "Смяна на дисплей", "unit_price": "30.00",
+    })
+    _deliver(client, h, oid, warranty_days=180)
+
+    r = client.get(f"/api/v1/orders/{oid}/protocol.pdf?type=delivery")
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == "application/pdf"
+    assert "protokol-predavane-" in r.headers["content-disposition"]
+
+    text = _extract_pdf_text(r.content)
+    assert "Иван Петров" in text
+    assert "Протокол за предаване" in text
+    assert "Дисплей Samsung" in text
+    assert "90 дни" in text  # part warranty
+    assert "180 дни" in text  # labor warranty
+    assert "Смяна на дисплей" in text
+    assert "Падане" in text  # diagnosis cause
+    assert "150.00" in text or "150" in text  # 120 part + 30 labor
+
+
+def test_delivery_protocol_survives_later_live_data_changes(client: TestClient) -> None:
+    """The core reproducibility guarantee: once frozen, a reprint must NOT
+    reflect subsequent edits to the customer, company, or asset."""
+    h = _login(client)
+    cid = client.post("/api/v1/customers", headers=h,
+                      json={"name": "Оригинално Име", "phone": "0888111222"}).json()["id"]
+    aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
+        "asset_type_code": "phone", "field_values": {"brand": "Apple", "model": "13"},
+    }).json()["id"]
+    oid = client.post("/api/v1/orders", headers=h, json={
+        "customer_id": cid, "asset_id": aid, "complaint": "Не се включва",
+    }).json()["id"]
+    client.patch("/api/v1/company/requisites", headers=h,
+                json={"address": "Оригинален адрес 1"})
+    _deliver(client, h, oid)
+
+    before = _extract_pdf_text(
+        client.get(f"/api/v1/orders/{oid}/protocol.pdf?type=delivery").content
+    )
+    assert "Оригинално Име" in before
+    assert "Оригинален адрес 1" in before
+
+    # Now change everything the snapshot captured.
+    client.patch(f"/api/v1/customers/{cid}", headers=h, json={"name": "Променено Име"})
+    client.patch("/api/v1/company/requisites", headers=h, json={"address": "Нов адрес 2"})
+
+    after = _extract_pdf_text(
+        client.get(f"/api/v1/orders/{oid}/protocol.pdf?type=delivery").content
+    )
+    assert "Оригинално Име" in after
+    assert "Оригинален адрес 1" in after
+    assert "Променено Име" not in after
+    assert "Нов адрес 2" not in after
+
+
+def test_legacy_delivered_order_without_snapshot_is_unavailable(client: TestClient) -> None:
+    """A delivered order predating this column (completion_snapshot NULL)
+    must never fall back to live-data reconstruction — same "unavailable"
+    response as an order that was never delivered at all."""
+    h = _login(client)
+    oid = _order_with_accessories(client, h)
+    _deliver(client, h, oid)
+    assert client.get(f"/api/v1/orders/{oid}/protocol.pdf?type=delivery").status_code == 200
+
+    from business_os.shared_kernel.db import open_session
+    from serviceflow.service_orders.models import ServiceOrder
+
+    for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
+        order = db.get(ServiceOrder, oid)
+        assert order is not None
+        order.completion_snapshot = None
+        db.commit()
+
+    r = client.get(f"/api/v1/orders/{oid}/protocol.pdf?type=delivery")
+    assert r.status_code == 404
+    assert r.json()["detail"]["message_key"] == "errors.protocol.delivery_unavailable"
+
+
+def test_delivery_protocol_snapshot_is_never_rebuilt_on_redelivery(client: TestClient) -> None:
+    """Wave 4: "do not silently rewrite an existing completion snapshot" —
+    unlock + redeliver (BR-2, the only real way to re-enter "delivered") must
+    NOT overwrite the original delivery's frozen record, even though the
+    order genuinely transitions to "delivered" a second time."""
+    h = _login(client)
+    cid = client.post("/api/v1/customers", headers=h,
+                      json={"name": "Първо Име", "phone": "0888111222"}).json()["id"]
+    aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
+        "asset_type_code": "phone", "field_values": {"brand": "Apple", "model": "13"},
+    }).json()["id"]
+    oid = client.post("/api/v1/orders", headers=h, json={
+        "customer_id": cid, "asset_id": aid, "complaint": "Не се включва",
+    }).json()["id"]
+    _deliver(client, h, oid, warranty_days=30)
+
+    r_unlock = client.post(f"/api/v1/orders/{oid}/unlock", headers=h,
+                           json={"reason": "грешно приключена по погрешка"})
+    assert r_unlock.status_code == 200, r_unlock.text
+
+    client.patch(f"/api/v1/customers/{cid}", headers=h, json={"name": "Второ Име"})
+    # Already back at "ready" (BR-2 unlock's revert target) — redeliver
+    # directly, no second ready-hop needed.
+    r_redeliver = client.post(f"/api/v1/orders/{oid}/status", headers=h,
+                              json={"to": "delivered", "warranty_days": 999})
+    assert r_redeliver.status_code == 200, r_redeliver.text
+
+    text = _extract_pdf_text(
+        client.get(f"/api/v1/orders/{oid}/protocol.pdf?type=delivery").content
+    )
+    assert "Първо Име" in text
+    assert "30 дни" in text
+    assert "Второ Име" not in text
+    assert "999 дни" not in text
+
+
+def test_warranty_rendering_null_zero_and_positive(client: TestClient) -> None:
+    h = _login(client)
+    oid = _order_with_accessories(client, h)
+    client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
+        "name": "Част без гаранция", "unit_price": "5.00", "warranty_days": 0,
+    })
+    client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
+        "name": "Част неопределена", "unit_price": "5.00",
+    })
+    _deliver(client, h, oid, warranty_days=0)
+
+    text = _extract_pdf_text(
+        client.get(f"/api/v1/orders/{oid}/protocol.pdf?type=delivery").content
+    )
+    assert "Без гаранция" in text  # both the 0-day part and labor warranty
+    assert "Не е посочена" in text  # the unspecified part
+
+
+def test_delivery_protocol_is_tenant_isolated(client: TestClient) -> None:
+    h_a = _login(client, "Сервиз А", "a@a.bg")
+    oid = _order_with_accessories(client, h_a)
+    _deliver(client, h_a, oid)
+    client.post("/api/v1/auth/logout", headers=h_a)
+
+    _login(client, "Сервиз Б", "b@b.bg")
+    assert client.get(f"/api/v1/orders/{oid}/protocol.pdf?type=delivery").status_code == 404
 
 
 def _extract_pdf_text(pdf_bytes: bytes) -> str:

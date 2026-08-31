@@ -10,9 +10,13 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
+from business_os.identity import contracts as identity_contracts
 from business_os.shared_kernel.db import TenantContext, scoped
 from business_os.shared_kernel.events import DomainEvent, publish
 from business_os.shared_kernel.ids import new_id
+from serviceflow.assets import service as assets_service
+from serviceflow.customers import service as customers_service
+from serviceflow.service_orders import lines as _lines
 from serviceflow.service_orders import statuses
 from serviceflow.service_orders.models import Diagnosis, DocumentSequence, ServiceOrder
 
@@ -258,6 +262,82 @@ def _persist_diagnosis_approval(db: Session, ctx: TenantContext, order: ServiceO
     }
 
 
+def _build_completion_snapshot(db: Session, ctx: TenantContext,
+                               order: ServiceOrder) -> dict[str, Any]:
+    """Wave 4 Issue 7: independent JSON, frozen at delivery time — same
+    discipline `commercial.service.issue()` uses for `Invoice.seller`/
+    `.buyer` (never a reference into live Customer/Company/Asset/line rows,
+    so a later edit to any of them can never retroactively change what a
+    reprinted delivery protocol shows). Reads `serviceflow.customers`/
+    `serviceflow.assets` directly (the same vertical as service_orders,
+    per docs/business-os/04 rule R6 — service_orders.contracts' own
+    docstring already documents this as sanctioned) and
+    `business_os.identity.contracts` (identity's public surface) — never
+    `serviceflow.commercial`, which stays untouched by this feature."""
+    customer = customers_service.get(db, ctx, order.customer_id)
+    asset = assets_service.get(db, ctx, order.asset_id)
+    asset_type = (assets_service.get_type_by_id(db, ctx, asset.asset_type_id)
+                 if asset is not None else None)
+    company = identity_contracts.get_company_profile(db, ctx.company_id)
+    diagnosis = get_diagnosis(db, ctx, order.id)
+    technician_name = (
+        identity_contracts.get_user_name(db, ctx.company_id, order.technician_id)
+        if order.technician_id is not None else None
+    )
+
+    identifiers: list[list[str]] = []
+    if asset is not None and asset_type is not None:
+        identifiers = [
+            [fd["label_bg"], str(asset.field_values[fd["key"]])]
+            for fd in asset_type.field_defs
+            if fd.get("identifier_kind") and asset.field_values.get(fd["key"])
+        ]
+
+    return {
+        "order": {
+            "number": order.number,
+            "delivered_at": _now().isoformat(),
+            "complaint": order.complaint,
+            "mileage": order.mileage,
+            "warranty_days": order.warranty_days,
+        },
+        "customer": {
+            "name": customer.name if customer is not None else "",
+            "phone": customer.phone if customer is not None else "",
+        },
+        "company": {
+            "name": company.name,
+            "address": str(company.requisites.get("address", "")),
+            "phone": str(company.requisites.get("phone", "")),
+        },
+        "asset": {
+            "type_name": asset_type.name_bg if asset_type is not None else "",
+            "label": asset.label if asset is not None else "",
+            "identifiers": identifiers,
+        },
+        "diagnosis": {
+            "observed": diagnosis.observed, "cause": diagnosis.cause,
+            "recommendation": diagnosis.recommendation,
+        } if diagnosis is not None else None,
+        "labor_lines": [
+            {"description": line.description, "qty": line.qty,
+             "unit_price": str(line.unit_price)}
+            for line in _lines.list_labor_lines(db, ctx, order.id)
+        ],
+        "part_lines": [
+            {"name": p.name, "qty": p.qty, "unit_price": str(p.unit_price),
+             "warranty_days": p.warranty_days}
+            for p in _lines.list_part_lines(db, ctx, order.id)
+        ],
+        "accessories": [
+            {"name": a.name, "qty": a.qty, "returned": a.returned}
+            for a in _lines.list_accessories(db, ctx, order.id)
+        ],
+        "total": str(_lines.order_totals(db, ctx, order.id)),
+        "technician_name": technician_name,
+    }
+
+
 def change_status(db: Session, ctx: TenantContext, order: ServiceOrder, *, to: str,
                   reason: str | None = None, approval: dict[str, Any] | None = None,
                   warranty_days: int | None = None) -> tuple[ServiceOrder, str | None]:
@@ -306,6 +386,13 @@ def change_status(db: Session, ctx: TenantContext, order: ServiceOrder, *, to: s
             order.delivered_at = _now()
             if warranty_days is not None:
                 order.warranty_days = warranty_days
+            # Wave 4 Issue 7: built once, at the moment of delivery, from
+            # whatever is true right now — never rebuilt afterward (an
+            # unlock+redeliver on the same order would otherwise silently
+            # overwrite the original delivery's record, which is exactly
+            # what "reproducible regardless of later changes" rules out).
+            if order.completion_snapshot is None:
+                order.completion_snapshot = _build_completion_snapshot(db, ctx, order)
             _event(db, ctx, order, "order_delivered",
                    {"warranty_days": order.warranty_days})
 

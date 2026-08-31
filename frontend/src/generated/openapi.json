@@ -3784,6 +3784,66 @@
         }
       }
     },
+    "/api/v1/company/warranty-defaults": {
+      "get": {
+        "tags": [
+          "company"
+        ],
+        "summary": "Get Warranty Defaults",
+        "operationId": "get_warranty_defaults_api_v1_company_warranty_defaults_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WarrantyDefaultsOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "company"
+        ],
+        "summary": "Update Warranty Defaults",
+        "operationId": "update_warranty_defaults_api_v1_company_warranty_defaults_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WarrantyDefaultsPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WarrantyDefaultsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/dashboard": {
       "get": {
         "tags": [
@@ -7152,6 +7212,9 @@
           "has_pin": {
             "type": "boolean",
             "title": "Has Pin"
+          },
+          "warranty_defaults": {
+            "$ref": "#/components/schemas/WarrantyDefaultsOut"
           }
         },
         "type": "object",
@@ -7166,7 +7229,8 @@
           "active_modules",
           "seat_limit",
           "seat_usage",
-          "has_pin"
+          "has_pin",
+          "warranty_defaults"
         ],
         "title": "MeResponse"
       },
@@ -7375,6 +7439,11 @@
               }
             ],
             "title": "Mileage"
+          },
+          "has_completion_snapshot": {
+            "type": "boolean",
+            "title": "Has Completion Snapshot",
+            "default": false
           },
           "warning": {
             "anyOf": [
@@ -7684,6 +7753,11 @@
             ],
             "title": "Mileage"
           },
+          "has_completion_snapshot": {
+            "type": "boolean",
+            "title": "Has Completion Snapshot",
+            "default": false
+          },
           "warning": {
             "anyOf": [
               {
@@ -7872,6 +7946,11 @@
             ],
             "title": "Mileage"
           },
+          "has_completion_snapshot": {
+            "type": "boolean",
+            "title": "Has Completion Snapshot",
+            "default": false
+          },
           "warning": {
             "anyOf": [
               {
@@ -8019,6 +8098,18 @@
             ],
             "title": "Unit Price",
             "default": "0"
+          },
+          "warranty_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warranty Days"
           }
         },
         "type": "object",
@@ -8053,6 +8144,17 @@
           "state": {
             "type": "string",
             "title": "State"
+          },
+          "warranty_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warranty Days"
           }
         },
         "type": "object",
@@ -8092,6 +8194,18 @@
               }
             ],
             "title": "Qty"
+          },
+          "warranty_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warranty Days"
           },
           "unit_cost": {
             "anyOf": [
@@ -9110,6 +9224,69 @@
           "password"
         ],
         "title": "VendorLoginRequest"
+      },
+      "WarrantyDefaultsOut": {
+        "properties": {
+          "labor_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Labor Days"
+          },
+          "parts_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parts Days"
+          }
+        },
+        "type": "object",
+        "required": [
+          "labor_days",
+          "parts_days"
+        ],
+        "title": "WarrantyDefaultsOut"
+      },
+      "WarrantyDefaultsPatch": {
+        "properties": {
+          "labor_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Labor Days"
+          },
+          "parts_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parts Days"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "WarrantyDefaultsPatch"
       },
       "WarrantyReturnRequest": {
         "properties": {

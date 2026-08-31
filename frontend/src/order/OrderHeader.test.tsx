@@ -38,6 +38,7 @@ function renderHeader({
   isOwner = true,
   archived = false,
   warrantyDays = null,
+  hasCompletionSnapshot = false,
 }: {
   initialEntries?: string[];
   initialIndex?: number;
@@ -45,6 +46,7 @@ function renderHeader({
   isOwner?: boolean;
   archived?: boolean;
   warrantyDays?: number | null;
+  hasCompletionSnapshot?: boolean;
 } = {}) {
   mockUseAuth.mockReturnValue({ me: { is_owner: isOwner } });
   vi.mocked(api.get).mockResolvedValue([]);
@@ -61,6 +63,7 @@ function renderHeader({
                 <OrderHeader
                   orderId="order-1" number="2026-00001" statusCode={statusCode}
                   archived={archived} warrantyDays={warrantyDays}
+                  hasCompletionSnapshot={hasCompletionSnapshot}
                 />
               }
             />
@@ -113,7 +116,7 @@ describe("OrderHeader — back to orders control", () => {
     renderHeader();
 
     expect(screen.getByRole("heading", { name: "№ 2026-00001" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Печат протокол" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Печат протокол (приемане)" })).toBeInTheDocument();
   });
 
   it("existing header actions still work (print protocol opens the right URL)", async () => {
@@ -121,7 +124,7 @@ describe("OrderHeader — back to orders control", () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
     renderHeader();
 
-    await user.click(screen.getByRole("button", { name: "Печат протокол" }));
+    await user.click(screen.getByRole("button", { name: "Печат протокол (приемане)" }));
 
     expect(openSpy).toHaveBeenCalledWith("/api/v1/orders/order-1/protocol.pdf?type=intake", "_blank");
     openSpy.mockRestore();
@@ -205,5 +208,47 @@ describe("OrderHeader — status transition menu", () => {
     renderHeader({ statusCode: "received", archived: true });
 
     expect(screen.queryByRole("button", { name: /Промени статус/ })).not.toBeInTheDocument();
+  });
+});
+
+describe("OrderHeader — Wave 4 Issue 7 (delivery protocol action)", () => {
+  it("does not render the delivery-protocol button before the order is delivered", () => {
+    renderHeader({ statusCode: "ready" });
+
+    expect(screen.queryByRole("button", { name: "Протокол за предаване" })).not.toBeInTheDocument();
+  });
+
+  it("opens the delivery protocol PDF when a snapshot exists", async () => {
+    const user = userEvent.setup();
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    renderHeader({ statusCode: "delivered", hasCompletionSnapshot: true });
+
+    await user.click(screen.getByRole("button", { name: "Протокол за предаване" }));
+
+    expect(openSpy).toHaveBeenCalledWith(
+      "/api/v1/orders/order-1/protocol.pdf?type=delivery", "_blank",
+    );
+    openSpy.mockRestore();
+  });
+
+  it("shows the unavailable message instead of opening a tab when no snapshot exists", async () => {
+    const user = userEvent.setup();
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    renderHeader({ statusCode: "delivered", hasCompletionSnapshot: false });
+
+    await user.click(screen.getByRole("button", { name: "Протокол за предаване" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Протокол за предаване не е наличен за тази поръчка.",
+    );
+    expect(openSpy).not.toHaveBeenCalled();
+    openSpy.mockRestore();
+  });
+
+  it("still shows the intake protocol action, now distinctly labeled", () => {
+    renderHeader({ statusCode: "delivered", hasCompletionSnapshot: true });
+
+    expect(screen.getByRole("button", { name: "Печат протокол (приемане)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Протокол за предаване" })).toBeInTheDocument();
   });
 });

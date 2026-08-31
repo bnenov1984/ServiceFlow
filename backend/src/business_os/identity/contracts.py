@@ -46,6 +46,7 @@ __all__ = [
     "get_business_profile",
     "get_company_admin_metadata",
     "get_company_profile",
+    "get_user_name",
     "grant_module",
     "is_module_active",
     "list_companies_admin_metadata",
@@ -94,6 +95,14 @@ def is_module_active(db: Session, company_id: uuid.UUID, module_key: str) -> boo
     sanctioned way for another module's routes to gate themselves — never read
     `company.settings` directly; wraps `service.is_module_active`."""
     return _service.is_module_active(db, company_id, module_key)
+
+
+def get_user_name(db: Session, company_id: uuid.UUID, user_id: uuid.UUID) -> str | None:
+    """Wave 4 Issue 7: the sanctioned way for another module (service_orders'
+    delivery-protocol snapshot) to resolve a technician's display name —
+    `None` if the user isn't in this company. Wraps `service.get_user_name`;
+    callers must never read `User` directly."""
+    return _service.get_user_name(db, company_id, user_id)
 
 
 @dataclass(frozen=True)

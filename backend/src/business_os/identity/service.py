@@ -558,6 +558,20 @@ def list_users(db: Session, company_id: uuid.UUID,
     return list(db.scalars(stmt.order_by(User.name)))
 
 
+def get_user_name(db: Session, company_id: uuid.UUID, user_id: uuid.UUID) -> str | None:
+    """Wave 4 Issue 7: the one piece of user data another module needs
+    (a technician's display name for the delivery-protocol snapshot) —
+    company-scoped the same way every other identity lookup here is
+    (users are RLS-exempt, so this IS the isolation). `None` for a user
+    outside this company or a deactivated/deleted one, never a KeyError —
+    a snapshot with a missing technician name degrades gracefully instead
+    of failing delivery outright."""
+    user = db.get(User, user_id)
+    if user is None or user.company_id != company_id:
+        return None
+    return user.name
+
+
 # --- Tenant employee management (docs/13 Étап 3, docs/business-os/18 §9
 # phase 7) -------------------------------------------------------------
 #

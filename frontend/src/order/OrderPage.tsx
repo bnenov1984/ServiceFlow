@@ -50,6 +50,8 @@ interface OrderDetailOut {
   mileage: number | null;
   // Wave 4 Issue 38 — this order's own labor/work warranty, if already chosen.
   warranty_days: number | null;
+  // Wave 4 Issue 7 — whether a frozen delivery snapshot/protocol exists.
+  has_completion_snapshot: boolean;
 }
 
 interface AssetServiceHistoryOut {
@@ -152,6 +154,7 @@ export function OrderPage() {
         statusCode={order.status_code}
         archived={order.archived}
         warrantyDays={order.warranty_days}
+        hasCompletionSnapshot={order.has_completion_snapshot}
       />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

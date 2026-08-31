@@ -91,6 +91,10 @@ class OrderOut(BaseModel):
     archived: bool
     row_version: int
     mileage: int | None = None
+    # Wave 4 Issue 7: lets the client decide whether "Протокол за предаване"
+    # can open the PDF directly or must show the unavailable message
+    # up front, without a doomed round trip to a new tab.
+    has_completion_snapshot: bool = False
     warning: str | None = None
 
     @staticmethod
@@ -103,7 +107,8 @@ class OrderOut(BaseModel):
             promised_on=o.promised_on, warranty_days=o.warranty_days,
             origin_order_id=o.origin_order_id, delivered_at=o.delivered_at,
             terminal_reason=o.terminal_reason, archived=o.archived_at is not None,
-            row_version=o.row_version, mileage=o.mileage, warning=warning,
+            row_version=o.row_version, mileage=o.mileage,
+            has_completion_snapshot=o.completion_snapshot is not None, warning=warning,
         )
 
 
@@ -638,23 +643,42 @@ def patch_accessory(item_id: uuid.UUID, body: AccessoryPatch, db: TenantDbDep,
 
 
 # --- Protocol (приемо-предавателен протокол) --------------------------------
-# Минимален intake variant only (docs/13 Етап-2 scope note); the delivery
-# variant and extended fields (estimate, warranty, terms) are Етап 4.
+# Intake variant (docs/13 Етап-2 scope note) reads live order/customer/asset
+# data — safe, since intake happens once and is never reprinted against
+# changed history. Delivery variant (Wave 4 Issue 7) reads ONLY the frozen
+# `completion_snapshot` built at delivery time — never live data — so a
+# reprint months later still shows exactly what was true at delivery.
 
 @router.get("/orders/{order_id}/protocol.pdf")
 def order_protocol(order_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep,
                    type: str = "intake") -> Response:  # param name matches docs/09 ?type=
-    if type == "delivery":
-        raise HTTPException(status_code=501, detail={
-            "code": "not_implemented", "message_key": "errors.protocol.delivery_not_available",
-            "params": {},
-        })
-    if type != "intake":
+    if type not in ("intake", "delivery"):
         raise HTTPException(status_code=400, detail={
             "code": "invalid_type", "message_key": "errors.protocol.invalid_type", "params": {},
         })
 
     order = _get_or_404(db, tenant, order_id)
+
+    if type == "delivery":
+        if order.completion_snapshot is None:
+            # Covers both "never delivered yet" and "delivered before this
+            # column existed" identically — no live-data reconstruction
+            # either way (Wave 4 audit's explicit decision).
+            raise HTTPException(status_code=404, detail={
+                "code": "not_found", "message_key": "errors.protocol.delivery_unavailable",
+                "params": {},
+            })
+        pdf_bytes = protocol.generate_delivery_protocol(
+            protocol.build_delivery_protocol_data(order.completion_snapshot)
+        )
+        return Response(
+            content=pdf_bytes, media_type="application/pdf",
+            headers={
+                "Content-Disposition":
+                    f'inline; filename="protokol-predavane-{order.number}.pdf"',
+            },
+        )
+
     customer = customers_service.get(db, tenant, order.customer_id)
     asset = assets_service.get(db, tenant, order.asset_id)
     if customer is None or asset is None:

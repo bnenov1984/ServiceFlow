@@ -35,6 +35,10 @@ interface OrderHeaderProps {
   // Wave 4 Issue 38: this order's own already-persisted warranty (if any),
   // used only to decide DeliveryDialog's prefill precedence.
   warrantyDays: number | null;
+  // Wave 4 Issue 7: whether a frozen delivery snapshot exists — lets the
+  // print action short-circuit to a clear message instead of opening a
+  // doomed new tab for a legacy delivered order (or one not delivered yet).
+  hasCompletionSnapshot: boolean;
 }
 
 const TERMINAL_FAILURE_CODES = new Set(["declined", "unrepairable", "cancelled"]);
@@ -133,7 +137,7 @@ function StatusTransitionMenu({
 }
 
 export function OrderHeader({
-  orderId, number, statusCode, archived, warrantyDays,
+  orderId, number, statusCode, archived, warrantyDays, hasCompletionSnapshot,
 }: OrderHeaderProps) {
   const { me } = useAuth();
   const queryClient = useQueryClient();
@@ -297,6 +301,22 @@ export function OrderHeader({
       >
         {t("order.print_protocol")}
       </button>
+
+      {orderIsDelivered && (
+        <button
+          type="button"
+          onClick={() => {
+            if (hasCompletionSnapshot) {
+              window.open(apiUrl(`/api/v1/orders/${orderId}/protocol.pdf?type=delivery`), "_blank");
+            } else {
+              pushToast("error", t("errors.protocol.delivery_unavailable"));
+            }
+          }}
+          className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 min-h-touch"
+        >
+          {t("order.print_delivery_protocol")}
+        </button>
+      )}
 
       {me?.is_owner && (orderIsTerminal || orderIsDelivered) && !archived && (
         <div className="ml-auto flex gap-2">
