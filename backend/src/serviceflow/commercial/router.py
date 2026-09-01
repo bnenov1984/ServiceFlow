@@ -13,9 +13,12 @@ never its internal models), GET lists/reads, PATCH replaces the line set
 part-lines/labor-lines), POST .../issue transitions draft -> issued
 (non-VAT-registered seller only; buyer may be an individual or a domestic
 company, VAT-registered or not — see commercial/service.py's `issue()`),
-GET .../invoice.pdf renders the issued document (same buyer coverage; see
-commercial/pdf.py). No annul/reissue endpoints
-and no `?q=` search yet (see commercial/models.py's module docstring).
+POST .../annul transitions issued -> annulled (Wave 6 Issue 30, case-A
+documentation-error correction only — see commercial/service.py's
+`annul()`; never edits/renumbers/deletes, no reissue-linkage in V1), GET
+.../invoice.pdf renders the issued-or-annulled document (same buyer
+coverage; see commercial/pdf.py). No reissue endpoint and no `?q=` search
+yet (see commercial/models.py's module docstring).
 
 GET /invoices doubles as the central invoice list (frontend's /invoices
 workspace, docs/01 §Invoice): `InvoiceListItemOut` enriches each row with
@@ -37,7 +40,7 @@ from decimal import Decimal
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from business_os.identity.deps import (
     TenantDbDep,
@@ -182,6 +185,11 @@ class InvoiceDetailOut(InvoiceOut):
     net: float | None
     vat: float | None
     gross: float | None
+    # Wave 6 Issue 30 — NULL unless annul() has transitioned this invoice to
+    # "annulled"; never set alongside seller/buyer/net/vat/gross above,
+    # which stay exactly as Issue froze them.
+    annulled_at: datetime | None
+    annul_reason: str | None
 
 
 def _invoice_not_found() -> HTTPException:
@@ -213,6 +221,8 @@ def _invoice_detail(db: TenantDbDep, tenant: TenantDep, invoice: Invoice) -> Inv
         net=float(invoice.net) if invoice.net is not None else None,
         vat=float(invoice.vat) if invoice.vat is not None else None,
         gross=float(invoice.gross) if invoice.gross is not None else None,
+        annulled_at=invoice.annulled_at,
+        annul_reason=invoice.annul_reason,
     )
 
 
@@ -344,6 +354,33 @@ def issue_invoice(invoice_id: uuid.UUID, body: IssueRequest, db: TenantDbDep,
                   tenant: TenantDep) -> InvoiceDetailOut:
     try:
         invoice = service.issue(db, tenant, invoice_id, body.tax_event_date)
+    except service.InvoiceError as e:
+        raise _invoice_error(e) from e
+    return _invoice_detail(db, tenant, invoice)
+
+
+class AnnulRequest(BaseModel):
+    # Required and non-blank (Wave 6 Issue 30) — a mistake-only correction
+    # mechanism (ЗДДС чл. 116, case A), never a silent/reasonless cancel.
+    reason: str = Field(min_length=1, max_length=1000)
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_not_blank(cls, v: str) -> str:
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("blank reason")
+        return stripped
+
+
+@router.post(
+    "/invoices/{invoice_id}/annul",
+    dependencies=[Depends(require_csrf), Depends(require_owner), Depends(require_subscription_ok)],
+)
+def annul_invoice(invoice_id: uuid.UUID, body: AnnulRequest, db: TenantDbDep,
+                  tenant: TenantDep) -> InvoiceDetailOut:
+    try:
+        invoice = service.annul(db, tenant, invoice_id, body.reason)
     except service.InvoiceError as e:
         raise _invoice_error(e) from e
     return _invoice_detail(db, tenant, invoice)

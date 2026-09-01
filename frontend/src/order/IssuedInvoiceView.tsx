@@ -15,35 +15,68 @@
  * true there too, the number/status/PDF would render a second time.
  */
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { useAuth } from "../auth/AuthContext";
 import { Skeleton } from "../components/States";
+import { useToast } from "../components/Toast";
+import { StatusBadge } from "../invoices/InvoicesPage";
 import { t } from "../i18n/bg";
-import { api } from "../lib/api";
+import { ApiError, api } from "../lib/api";
 import { apiUrl } from "../lib/apiUrl";
 import { queryKeys } from "../lib/queryKeys";
+import { AnnulInvoiceDialog } from "./AnnulInvoiceDialog";
 import type { InvoiceDetailOut } from "./invoiceTypes";
 
 export function IssuedInvoiceView({
   invoiceId, embedded = true,
 }: { invoiceId: string; embedded?: boolean }) {
+  const { me } = useAuth();
+  const queryClient = useQueryClient();
+  const pushToast = useToast();
+  const [annulOpen, setAnnulOpen] = useState(false);
+  const [annulling, setAnnulling] = useState(false);
+  const [annulError, setAnnulError] = useState<string | null>(null);
+
   const { data: invoice, isLoading } = useQuery({
     queryKey: queryKeys.invoice(invoiceId),
     queryFn: () => api.get<InvoiceDetailOut>(`/invoices/${invoiceId}`),
   });
+
+  const submitAnnul = async (reason: string) => {
+    if (annulling) return; // guards against a duplicate submit while pending
+    setAnnulling(true);
+    setAnnulError(null);
+    try {
+      const annulled = await api.post<InvoiceDetailOut>(`/invoices/${invoiceId}/annul`, { reason });
+      queryClient.setQueryData(queryKeys.invoice(invoiceId), annulled);
+      if (invoice?.order_id) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: queryKeys.orderInvoices(invoice.order_id) }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.orderTimeline(invoice.order_id) }),
+        ]);
+      }
+      setAnnulOpen(false);
+      pushToast("success", t("order.invoice_annulled_success"));
+    } catch (err) {
+      setAnnulError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
+    } finally {
+      setAnnulling(false);
+    }
+  };
 
   if (isLoading || !invoice) {
     return <Skeleton className="h-32" />;
   }
 
   const number = invoice.number !== null ? String(invoice.number).padStart(10, "0") : "";
+  const isAnnulled = invoice.status === "annulled";
 
   return (
     <div className={`flex flex-col gap-3 ${embedded ? "border-t border-slate-100 pt-3" : ""}`}>
       {embedded && (
         <div className="flex items-center justify-between">
-          <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700">
-            {t("order.invoice_status_issued")}
-          </span>
+          <StatusBadge status={invoice.status} />
           <div className="flex items-center gap-3">
             <span className="text-sm font-semibold tabular-nums text-slate-900">
               {t("order.invoice_issued_number")} {number}
@@ -58,6 +91,37 @@ export function IssuedInvoiceView({
           </div>
         </div>
       )}
+
+      {isAnnulled && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          <p className="font-semibold">{t("order.invoice_annulled_banner")}</p>
+          <p className="mt-1">
+            {t("order.invoice_annulled_at")} {invoice.annulled_at
+              ? new Date(invoice.annulled_at).toLocaleString("bg-BG") : "—"}
+          </p>
+          <p>{t("order.invoice_annul_reason_display_prefix")} {invoice.annul_reason}</p>
+        </div>
+      )}
+
+      {!isAnnulled && me?.is_owner && (
+        <div>
+          <button
+            type="button"
+            onClick={() => setAnnulOpen(true)}
+            className="rounded-lg border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 min-h-touch"
+          >
+            {t("order.invoice_annul_button")}
+          </button>
+        </div>
+      )}
+
+      <AnnulInvoiceDialog
+        open={annulOpen}
+        onClose={() => { setAnnulOpen(false); setAnnulError(null); }}
+        onConfirm={(reason) => void submitAnnul(reason)}
+        submitting={annulling}
+        error={annulError}
+      />
 
       <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
         <div>

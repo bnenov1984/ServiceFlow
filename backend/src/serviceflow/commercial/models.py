@@ -14,8 +14,12 @@ ACCOUNTANT_REVIEW.md 'RepairFlow Invoice V1 Freeze' §5 / §4 B1) atomically
 assigns `number`/`issued_at`/`tax_event_date`/`seller`/
 `buyer`/`net`/`vat`/`gross` and freezes the row (`commercial/service.py`'s
 `issue()`); `commercial/pdf.py` renders that frozen snapshot on demand.
-`annuls_invoice_id`/`annul_reason`/`pdf_storage_key` stay unset — annul/
-reissue is still a later slice, and `pdf_storage_key` is unused because the
+Wave 6 Issue 30 adds `annul()`: an issued invoice may transition to
+`status="annulled"` (case-A documentation-error correction, ЗДДС чл. 116),
+setting `annul_reason`/`annulled_at` — the frozen number/seller/buyer/
+lines/totals are never touched. `annuls_invoice_id` stays unset by this
+flow; it is reserved for a future reissue-linkage feature, not part of V1
+annulment. `pdf_storage_key` stays unset — it is unused because the
 PDF is generated fresh per request rather than persisted to storage (the
 schema already carries the column, docs/08 is frozen, but nothing writes
 it yet). `tax_event_date` (migration 0018) was not part of the original
@@ -70,6 +74,12 @@ class Invoice(Base, TimestampMixin):
         ForeignKey("invoices.id"), default=None
     )
     annul_reason: Mapped[str | None] = mapped_column(default=None)
+    # Wave 6 Issue 30: when this invoice was annulled — distinct from the
+    # generic, auto-bumping `updated_at` (TimestampMixin) so "annulled at"
+    # has its own honest, purpose-built column. NULL for every non-annulled
+    # row; set exactly once, atomically with status/annul_reason, by
+    # commercial/service.py's `annul()`.
+    annulled_at: Mapped[datetime | None] = mapped_column(default=None)
     pdf_storage_key: Mapped[str | None] = mapped_column(default=None)
     row_version: Mapped[int] = mapped_column(default=1, server_default="1")
 

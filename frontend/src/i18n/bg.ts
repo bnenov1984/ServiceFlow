@@ -146,6 +146,8 @@ export const bg = {
   "errors.invoices.buyer_vat_number_invalid": "Въведете валиден ДДС номер за клиента.",
   "errors.invoices.vat_state_invalid": "Тази чернова съдържа ред с ДДС ставка, което текущата версия не поддържа.",
   "errors.invoices.not_issued": "PDF има само издадена фактура.",
+  "errors.invoices.annul_not_issued": "Може да анулирате само вече издадена фактура.",
+  "errors.invoices.already_annulled": "Фактурата вече е анулирана.",
 
   // --- intake (docs/15 §6.4) ---
   "intake.title": "Нова поръчка",
@@ -253,10 +255,17 @@ export const bg = {
   "order.invoice_issue_settings_link": "Настройки → Фирма",
   "order.invoice_issue_customer_link": "Данни за клиента",
   "order.invoice_status_issued": "Издадена",
-  // No annul workflow exists in the UI yet (backend-only enum value) — kept
-  // so the central invoice list (invoices/InvoicesPage.tsx) can still render
-  // a real row sensibly instead of falling back to a raw status string.
   "order.invoice_status_annulled": "Анулирана",
+  "order.invoice_annul_button": "Анулирай фактура",
+  "order.invoice_annul_title": "Анулиране на фактура",
+  "order.invoice_annul_warning": "Анулирането е предназначено за грешно издадена фактура (напр. грешен клиент или сума). Фактурата не се изтрива и не се редактира — номерът, съдържанието и историята ѝ остават запазени.",
+  "order.invoice_annul_irreversible": "Това действие е необратимо.",
+  "order.invoice_annul_reason_label": "Причина за анулиране",
+  "order.invoice_annul_confirm": "Анулирай фактура",
+  "order.invoice_annulled_success": "Фактурата е анулирана.",
+  "order.invoice_annulled_banner": "Тази фактура е анулирана.",
+  "order.invoice_annulled_at": "Анулирана на",
+  "order.invoice_annul_reason_display_prefix": "Причина:",
   "order.invoice_issued_number": "Фактура №",
   "order.invoice_issued_at": "Издадена на",
   "order.invoice_seller": "Продавач",
@@ -413,6 +422,7 @@ export const bg = {
   "invoices.filter_all": "Всички",
   "invoices.filter_draft": "Чернови",
   "invoices.filter_issued": "Издадени",
+  "invoices.filter_annulled": "Анулирани",
   "invoices.empty": "Все още няма фактури.",
   "invoices.empty_hint": "Фактурите се създават от поръчките.",
   "invoices.load_more": "Зареди още",

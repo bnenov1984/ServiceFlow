@@ -47,4 +47,8 @@ export interface InvoiceDetailOut extends InvoiceOut {
   net: number | null;
   vat: number | null;
   gross: number | null;
+  // Wave 6 Issue 30 — both null unless annul() has transitioned this
+  // invoice to "annulled"; the frozen fields above are never touched.
+  annulled_at: string | null;
+  annul_reason: string | null;
 }

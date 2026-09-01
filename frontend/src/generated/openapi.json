@@ -2838,6 +2838,59 @@
         }
       }
     },
+    "/api/v1/invoices/{invoice_id}/annul": {
+      "post": {
+        "tags": [
+          "commercial"
+        ],
+        "summary": "Annul Invoice",
+        "operationId": "annul_invoice_api_v1_invoices__invoice_id__annul_post",
+        "parameters": [
+          {
+            "name": "invoice_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Invoice Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnnulRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceDetailOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/invoices/{invoice_id}/invoice.pdf": {
       "get": {
         "tags": [
@@ -4707,6 +4760,21 @@
           "returned"
         ],
         "title": "AccessoryPatch"
+      },
+      "AnnulRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "AnnulRequest"
       },
       "ArchiveResponse": {
         "properties": {
@@ -6793,6 +6861,29 @@
               }
             ],
             "title": "Gross"
+          },
+          "annulled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annulled At"
+          },
+          "annul_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annul Reason"
           }
         },
         "type": "object",
@@ -6812,7 +6903,9 @@
           "vat_mode",
           "net",
           "vat",
-          "gross"
+          "gross",
+          "annulled_at",
+          "annul_reason"
         ],
         "title": "InvoiceDetailOut"
       },

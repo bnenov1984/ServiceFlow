@@ -899,6 +899,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/invoices/{invoice_id}/annul": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Annul Invoice */
+        post: operations["annul_invoice_api_v1_invoices__invoice_id__annul_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/invoices/{invoice_id}/invoice.pdf": {
         parameters: {
             query?: never;
@@ -1467,6 +1484,11 @@ export interface components {
         AccessoryPatch: {
             /** Returned */
             returned: boolean;
+        };
+        /** AnnulRequest */
+        AnnulRequest: {
+            /** Reason */
+            reason: string;
         };
         /**
          * ArchiveResponse
@@ -2253,6 +2275,10 @@ export interface components {
             vat: number | null;
             /** Gross */
             gross: number | null;
+            /** Annulled At */
+            annulled_at: string | null;
+            /** Annul Reason */
+            annul_reason: string | null;
         };
         /** InvoiceLineIn */
         InvoiceLineIn: {
@@ -5134,6 +5160,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["IssueRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    annul_invoice_api_v1_invoices__invoice_id__annul_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invoice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnulRequest"];
             };
         };
         responses: {

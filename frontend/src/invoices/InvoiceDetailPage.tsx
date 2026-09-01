@@ -107,7 +107,7 @@ export function InvoiceDetailPage() {
           {number ? `${t("order.invoice_issued_number")} ${number}` : t("order.invoice_section_title")}
         </h1>
         <StatusBadge status={invoice.status} />
-        {invoice.status === "issued" && (
+        {(invoice.status === "issued" || invoice.status === "annulled") && (
           <button
             type="button"
             onClick={() => window.open(apiUrl(`/api/v1/invoices/${invoice.id}/invoice.pdf`), "_blank")}

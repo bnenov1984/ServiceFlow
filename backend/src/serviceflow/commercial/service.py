@@ -14,7 +14,10 @@ covers non-VAT-registered companies (`vat_mode="not_registered"`, `vat=0`)
 and VAT-registered companies at the single standard rate (`vat_mode=
 "registered"`, `STANDARD_VAT_RATE` — docs/ACCOUNTANT_REVIEW.md §6, VAT
 rounding recorded there as an implemented product decision pending
-professional confirmation). Annul/reissue, cross-border B2B, mixed VAT
+professional confirmation). `annul()` (Wave 6 Issue 30, case-A
+documentation-error correction only, ЗДДС чл. 116) is the sixth — a pure
+status+metadata transition on an already-issued invoice, never touching its
+frozen content or number. Reissue-linkage, cross-border B2B, mixed VAT
 rates, reverse charge, 0%-rated supplies, and credit/debit notes are still
 later slices (see commercial/models.py docstring and
 docs/ACCOUNTANT_REVIEW.md's 'RepairFlow Invoice V1 Freeze' §5, Phase-A
@@ -129,16 +132,18 @@ def get(db: Session, ctx: TenantContext, invoice_id: uuid.UUID) -> Invoice | Non
 
 
 def get_issued(db: Session, ctx: TenantContext, invoice_id: uuid.UUID) -> Invoice:
-    """The sanctioned way to fetch an invoice for issued-only, read-only use
-    (the PDF endpoint). 404 if missing/wrong-tenant — `get()` already scopes
-    that; 409 if it exists but is still a draft, so no "draft legal
-    invoice" can ever be produced. Raises rather than returning `None` since
-    every caller of this function has nothing useful left to do with a
-    non-issued result."""
+    """The sanctioned way to fetch an invoice for issued-or-annulled,
+    read-only use (the PDF endpoint) — an annulled invoice was validly
+    issued and stays a real, historically-retained document (Wave 6 Issue
+    30), so its PDF must remain retrievable exactly like any other issued
+    invoice's. 404 if missing/wrong-tenant — `get()` already scopes that;
+    409 if it's still a draft, so no "draft legal invoice" can ever be
+    produced. Raises rather than returning `None` since every caller of
+    this function has nothing useful left to do with a draft."""
     invoice = get(db, ctx, invoice_id)
     if invoice is None:
         raise InvoiceError("errors.invoices.not_found", status=404)
-    if invoice.status != "issued":
+    if invoice.status not in ("issued", "annulled"):
         raise InvoiceError("errors.invoices.not_issued", status=409)
     return invoice
 
@@ -388,6 +393,48 @@ def issue(db: Session, ctx: TenantContext, invoice_id: uuid.UUID,
         type="invoice_issued", company_id=ctx.company_id, actor_user_id=ctx.user_id,
         subject_id=invoice.order_id,
         data={"invoice_id": str(invoice.id), "invoice_number": formatted_number},
+    ))
+    db.commit()
+    return invoice
+
+
+# --- Annul (Wave 6 Issue 30; case-A documentation-error correction only,
+# ЗДДС чл. 116 — see docs/ACCOUNTANT_REVIEW.md §7) --------------------------
+
+
+def annul(db: Session, ctx: TenantContext, invoice_id: uuid.UUID, reason: str) -> Invoice:
+    """Marks an already-issued invoice `status="annulled"`. Never edits,
+    deletes, or renumbers it, never releases/reuses its number, never
+    touches the frozen seller/buyer/lines/net/vat/gross, never populates
+    `annuls_invoice_id` (reserved for a future reissue-linkage feature, not
+    this flow), and never touches any Payment — annulment is a pure
+    status+metadata transition, irreversible once committed (no code path
+    anywhere transitions status away from "annulled").
+
+    Locks the row first, same as `issue()`, so a concurrent annul (or a
+    concurrent issue racing an annul of a *different* invoice) serializes
+    on the same row-lock mechanism rather than needing a second scheme."""
+    invoice = db.scalar(
+        scoped(select(Invoice), Invoice, ctx)
+        .where(Invoice.id == invoice_id)
+        .with_for_update()
+    )
+    if invoice is None:
+        raise InvoiceError("errors.invoices.not_found", status=404)
+    if invoice.status == "draft":
+        raise InvoiceError("errors.invoices.annul_not_issued")
+    if invoice.status == "annulled":
+        raise InvoiceError("errors.invoices.already_annulled")
+
+    invoice.annul_reason = reason
+    invoice.annulled_at = _now()
+    invoice.status = "annulled"
+    invoice.row_version += 1
+
+    publish(db, DomainEvent(
+        type="invoice_annulled", company_id=ctx.company_id, actor_user_id=ctx.user_id,
+        subject_id=invoice.order_id,
+        data={"invoice_id": str(invoice.id), "reason": reason},
     ))
     db.commit()
     return invoice

@@ -811,6 +811,132 @@ describe("InvoiceCard", () => {
     expect(api.post).toHaveBeenCalledTimes(2);
   });
 
+  // --- Annulment (Wave 6 Issue 30) --------------------------------------
+
+  const annulledDetail = {
+    ...issuedDetail,
+    status: "annulled",
+    annulled_at: "2026-03-20T09:00:00Z",
+    annul_reason: "Грешно избран клиент",
+  };
+
+  function mockAnnulSuccess(): void {
+    let annulled = false;
+    vi.mocked(api.get).mockImplementation((path: string) => {
+      if (path.startsWith("/invoices?")) {
+        return Promise.resolve([
+          { ...issuedListItem, status: annulled ? "annulled" : "issued" },
+        ]) as never;
+      }
+      return Promise.resolve(annulled ? annulledDetail : issuedDetail) as never;
+    });
+    vi.mocked(api.post).mockImplementation((path: string) => {
+      if (path.endsWith("/annul")) {
+        annulled = true;
+        return Promise.resolve(annulledDetail) as never;
+      }
+      return Promise.resolve(issuedDetail) as never;
+    });
+  }
+
+  it("Owner sees an Анулирай фактура action on an issued invoice", async () => {
+    mockIssueSuccess();
+    vi.mocked(api.get).mockImplementation((path: string) =>
+      Promise.resolve(path.startsWith("/invoices?") ? [issuedListItem] : issuedDetail) as never,
+    );
+    renderCard(null, true);
+
+    expect(await screen.findByRole("button", { name: "Анулирай фактура" })).toBeInTheDocument();
+  });
+
+  it("Worker never sees the Анулирай фактура action", async () => {
+    vi.mocked(api.get).mockImplementation((path: string) =>
+      Promise.resolve(path.startsWith("/invoices?") ? [issuedListItem] : issuedDetail) as never,
+    );
+    renderCard(null, false);
+
+    await screen.findByText("Издадена");
+    expect(screen.queryByRole("button", { name: "Анулирай фактура" })).not.toBeInTheDocument();
+  });
+
+  it("requires a non-blank reason before the confirm button is enabled", async () => {
+    const user = userEvent.setup();
+    mockAnnulSuccess();
+    renderCard(null, true);
+
+    await user.click(await screen.findByRole("button", { name: "Анулирай фактура" }));
+    const dialog = await screen.findByRole("dialog");
+    const confirmButton = within(dialog).getByRole("button", { name: "Анулирай фактура" });
+    expect(confirmButton).toBeDisabled();
+
+    await user.type(within(dialog).getByLabelText("Причина за анулиране"), "   ");
+    expect(confirmButton).toBeDisabled();
+
+    await user.clear(within(dialog).getByLabelText("Причина за анулиране"));
+    await user.type(within(dialog).getByLabelText("Причина за анулиране"), "Грешно избран клиент");
+    expect(confirmButton).not.toBeDisabled();
+  });
+
+  it("cancel closes the annul dialog without calling the API", async () => {
+    const user = userEvent.setup();
+    mockAnnulSuccess();
+    renderCard(null, true);
+
+    await user.click(await screen.findByRole("button", { name: "Анулирай фактура" }));
+    await screen.findByRole("dialog");
+    await user.click(screen.getByRole("button", { name: "Отказ" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it("submits the reason and shows the annulled banner with date and reason", async () => {
+    const user = userEvent.setup();
+    mockAnnulSuccess();
+    renderCard(null, true);
+
+    await user.click(await screen.findByRole("button", { name: "Анулирай фактура" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Причина за анулиране"), "Грешно избран клиент");
+    await user.click(within(dialog).getByRole("button", { name: "Анулирай фактура" }));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+      "/invoices/inv-1/annul", { reason: "Грешно избран клиент" },
+    ));
+    expect(await screen.findByText("Тази фактура е анулирана.")).toBeInTheDocument();
+    expect(screen.getByText("Причина: Грешно избран клиент")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Анулирай фактура" })).not.toBeInTheDocument();
+  });
+
+  it("shows a PDF action for an already-annulled invoice", async () => {
+    vi.mocked(api.get).mockImplementation((path: string) =>
+      Promise.resolve(path.startsWith("/invoices?")
+        ? [{ ...issuedListItem, status: "annulled" }] : annulledDetail) as never,
+    );
+    renderCard(null, true);
+
+    expect(await screen.findByRole("button", { name: "PDF" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Анулирай фактура" })).not.toBeInTheDocument();
+  });
+
+  it("on already_annulled (concurrent annul elsewhere), surfaces the backend error", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockImplementation((path: string) =>
+      Promise.resolve(path.startsWith("/invoices?") ? [issuedListItem] : issuedDetail) as never,
+    );
+    vi.mocked(api.post).mockRejectedValue(
+      new ApiError(409, "invoice_error", "errors.invoices.already_annulled"),
+    );
+    renderCard(null, true);
+
+    await user.click(await screen.findByRole("button", { name: "Анулирай фактура" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Причина за анулиране"), "Причина");
+    await user.click(within(dialog).getByRole("button", { name: "Анулирай фактура" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Фактурата вече е анулирана.");
+  });
+
   it("on not_draft (concurrent Issue elsewhere), refreshes to the real current state", async () => {
     const user = userEvent.setup();
     let issuedElsewhere = false;

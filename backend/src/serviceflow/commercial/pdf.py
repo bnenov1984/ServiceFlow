@@ -5,8 +5,11 @@ VAT-registered at the single standard rate; buyer may be an individual or a
 domestic company, VAT-registered or not (docs/ACCOUNTANT_REVIEW.md
 'RepairFlow Invoice V1 Freeze' §5 / §4 B1 / §6) — the caller
 (commercial/service.py's `get_issued`) is responsible for confirming
-`status == "issued"` before this module is ever reached; nothing here
-re-derives or trusts anything else about invoice state.
+`status in ("issued", "annulled")` before this module is ever reached;
+nothing here re-derives or trusts anything else about invoice state. An
+annulled invoice (Wave 6 Issue 30) renders with a visible "АНУЛИРАНА"
+marker plus its annulment date/reason — everything else about the render
+is unchanged, still sourced only from the same frozen columns.
 
 Generated on demand from the frozen `Invoice`/`InvoiceLine` snapshot on
 every request — no `pdf_storage_key` write, no mutation, no commit. The
@@ -64,7 +67,11 @@ class InvoicePdfData:
     recompute. `number` is already the final zero-padded 10-digit string
     (the one canonical padding convention this codebase uses everywhere
     else, e.g. `next_invoice_number()`/the frontend's own display) — the
-    renderer never parses or re-pads it."""
+    renderer never parses or re-pads it.
+
+    `annulled_at`/`annul_reason` (Wave 6 Issue 30) are both None for an
+    ordinary issued invoice; both set together, never one without the
+    other, for an annulled one — `annul()` always writes them atomically."""
 
     number: str
     issued_at: datetime
@@ -82,17 +89,20 @@ class InvoicePdfData:
     vat: Decimal
     gross: Decimal
     lines: list[InvoicePdfLine]
+    annulled_at: datetime | None
+    annul_reason: str | None
 
 
 def to_pdf_data(invoice: Invoice, lines: list[InvoiceLine]) -> InvoicePdfData:
-    """Maps an already-issued Invoice + its lines to the PDF DTO. Asserts
-    (never silently coerces) that every Issue-owned field is actually
-    populated — every one of them is guaranteed non-NULL once
-    `status == "issued"` (commercial/service.py's `issue()` writes all of
-    them atomically in the same transaction), so a violation here would
-    mean the caller skipped the `get_issued()` status check, not a real
-    data gap."""
-    assert invoice.status == "issued"
+    """Maps an already-issued-or-annulled Invoice + its lines to the PDF
+    DTO. Asserts (never silently coerces) that every Issue-owned field is
+    actually populated — every one of them is guaranteed non-NULL once
+    `status in ("issued", "annulled")` (commercial/service.py's `issue()`
+    writes all of them atomically, and `annul()` never touches them), so a
+    violation here would mean the caller skipped the `get_issued()` status
+    check, not a real data gap. `annulled_at`/`annul_reason` are the only
+    two fields expected to be None for a plain issued invoice."""
+    assert invoice.status in ("issued", "annulled")
     assert invoice.number is not None
     assert invoice.issued_at is not None
     assert invoice.tax_event_date is not None
@@ -101,6 +111,9 @@ def to_pdf_data(invoice: Invoice, lines: list[InvoiceLine]) -> InvoicePdfData:
     assert invoice.net is not None
     assert invoice.vat is not None
     assert invoice.gross is not None
+    if invoice.status == "annulled":
+        assert invoice.annulled_at is not None
+        assert invoice.annul_reason is not None
 
     return InvoicePdfData(
         number=f"{invoice.number:010d}",
@@ -122,6 +135,8 @@ def to_pdf_data(invoice: Invoice, lines: list[InvoiceLine]) -> InvoicePdfData:
             InvoicePdfLine(description=line.description, qty=line.qty, unit_price=line.unit_price)
             for line in lines
         ],
+        annulled_at=invoice.annulled_at,
+        annul_reason=invoice.annul_reason,
     )
 
 
@@ -152,6 +167,22 @@ def generate_invoice_pdf(data: InvoicePdfData) -> bytes:
     pdf.cell(0, 6, f"Дата на данъчно събитие: {data.tax_event_date.strftime('%d.%m.%Y')}",
              new_x="LMARGIN", new_y="NEXT")
     pdf.ln(4)
+
+    if data.annulled_at is not None:
+        # Wave 6 Issue 30: a clearly visible Bulgarian marker — an annulled
+        # invoice is a real, historically-retained document, not a hidden
+        # or deleted one, so the PDF must make its status obvious rather
+        # than looking like an ordinary valid invoice.
+        assert data.annul_reason is not None
+        pdf.set_text_color(200, 0, 0)
+        pdf.set_font("DejaVu", "B", 16)
+        pdf.cell(0, 9, "АНУЛИРАНА", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("DejaVu", "", 10)
+        pdf.cell(0, 6, f"Дата на анулиране: {data.annulled_at.strftime('%d.%m.%Y %H:%M')}",
+                 new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(0, 6, f"Причина: {data.annul_reason}", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(4)
 
     def _section(title: str) -> None:
         pdf.set_font("DejaVu", "B", 12)

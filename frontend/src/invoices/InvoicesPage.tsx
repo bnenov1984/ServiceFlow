@@ -23,7 +23,7 @@ import { ApiError, api } from "../lib/api";
 import { apiUrl } from "../lib/apiUrl";
 import { queryKeys } from "../lib/queryKeys";
 
-type StatusFilter = "all" | "draft" | "issued";
+type StatusFilter = "all" | "draft" | "issued" | "annulled";
 
 interface CustomerHit {
   id: string;
@@ -54,11 +54,9 @@ const STATUS_BADGE_CLASS: Record<string, string> = {
   annulled: "bg-red-100 text-red-700",
 };
 
-// Reuses the exact status labels the per-order InvoiceCard already renders
-// (order.invoice_status_draft/issued) — one badge vocabulary, not a second
-// one invented for this screen. "annulled" is a real backend status
-// (INVOICE_STATUSES) with no UI workflow yet to ever create one, but a row
-// must still render sensibly rather than crash if one ever exists.
+// Reuses the exact status labels the per-order InvoiceCard/IssuedInvoiceView
+// already render (order.invoice_status_draft/issued/annulled) — one badge
+// vocabulary, not a second one invented for this screen.
 const STATUS_LABEL_KEY: Record<string, Parameters<typeof t>[0]> = {
   draft: "order.invoice_status_draft",
   issued: "order.invoice_status_issued",
@@ -106,7 +104,7 @@ function InvoiceRow({ invoice }: { invoice: InvoiceListItem }) {
           <Link to={`/invoices/${invoice.id}`} className="text-sm text-blue-700 hover:underline">
             {t("order.invoice_open")}
           </Link>
-          {invoice.status === "issued" && (
+          {(invoice.status === "issued" || invoice.status === "annulled") && (
             <button
               type="button"
               onClick={() => window.open(apiUrl(`/api/v1/invoices/${invoice.id}/invoice.pdf`), "_blank")}
@@ -125,6 +123,7 @@ const STATUS_FILTERS: { value: StatusFilter; labelKey: Parameters<typeof t>[0] }
   { value: "all", labelKey: "invoices.filter_all" },
   { value: "draft", labelKey: "invoices.filter_draft" },
   { value: "issued", labelKey: "invoices.filter_issued" },
+  { value: "annulled", labelKey: "invoices.filter_annulled" },
 ];
 
 function useDebounced(value: string, ms: number): string {
