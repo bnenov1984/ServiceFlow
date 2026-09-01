@@ -52,12 +52,11 @@ describe("InvoicesPage: loading / empty / error", () => {
     expect(document.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
   });
 
-  it("shows the empty state with no global 'Нова фактура' button", async () => {
+  it("shows the empty state alongside the global 'Нова фактура' action (Wave 6 Issue 30)", async () => {
     vi.mocked(api.get).mockResolvedValue([]);
     renderPage();
     expect(await screen.findByText(/Все още няма фактури/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Нова фактура/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /Нова фактура/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "+ Нова фактура" })).toBeInTheDocument();
   });
 
   it("shows an error state on API failure with a working retry", async () => {

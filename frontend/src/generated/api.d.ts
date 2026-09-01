@@ -857,7 +857,16 @@ export interface paths {
         /** List Invoices */
         get: operations["list_invoices_api_v1_invoices_get"];
         put?: never;
-        post?: never;
+        /**
+         * Create Manual Invoice Draft
+         * @description Wave 6 Issue 30: the manual counterpart to `POST /orders/{id}/invoices`
+         *     — same permission posture (Worker may create drafts; only Issue/Annul are
+         *     Owner-only), same draft/replace-lines/issue/PDF/annul machinery
+         *     downstream, only the buyer-identity source and the empty starting line
+         *     set differ. Kept as its own top-level route (not a sub-resource of
+         *     anything) since a manual invoice has no parent resource to nest under.
+         */
+        post: operations["create_manual_invoice_draft_api_v1_invoices_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2238,11 +2247,10 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /**
-             * Order Id
-             * Format: uuid
-             */
-            order_id: string;
+            /** Order Id */
+            order_id: string | null;
+            /** Customer Id */
+            customer_id: string | null;
             /** Status */
             status: string;
             /** Number */
@@ -2324,13 +2332,10 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /**
-             * Order Id
-             * Format: uuid
-             */
-            order_id: string;
+            /** Order Id */
+            order_id: string | null;
             /** Order Number */
-            order_number: string;
+            order_number: string | null;
             /** Status */
             status: string;
             /** Number */
@@ -2423,6 +2428,14 @@ export interface components {
              * @default
              */
             device_label: string;
+        };
+        /** ManualInvoiceIn */
+        ManualInvoiceIn: {
+            /**
+             * Customer Id
+             * Format: uuid
+             */
+            customer_id: string;
         };
         /** MeResponse */
         MeResponse: {
@@ -5069,6 +5082,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InvoiceListItemOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_manual_invoice_draft_api_v1_invoices_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualInvoiceIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceDetailOut"];
                 };
             };
             /** @description Validation Error */

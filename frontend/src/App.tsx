@@ -12,6 +12,7 @@ import { t } from "./i18n/bg";
 import { IntakePage } from "./intake/IntakePage";
 import { InvoiceDetailPage } from "./invoices/InvoiceDetailPage";
 import { InvoicesPage } from "./invoices/InvoicesPage";
+import { NewInvoicePage } from "./invoices/NewInvoicePage";
 import { OrderPage } from "./order/OrderPage";
 import { OrdersPage } from "./orders/OrdersPage";
 import { PsPage } from "./ps/PsPage";
@@ -105,6 +106,7 @@ export function App() {
         <Route path="customers/new" element={<NewCustomerPage />} />
         <Route path="customers/:id" element={<CustomerProfilePage />} />
         <Route path="invoices" element={<InvoicesPage />} />
+        <Route path="invoices/new" element={<NewInvoicePage />} />
         <Route path="invoices/:invoiceId" element={<InvoiceDetailPage />} />
         <Route path="ps" element={<PsPage />} />
         <Route path="ps/workflow-templates" element={<WorkflowTemplatesPage />} />

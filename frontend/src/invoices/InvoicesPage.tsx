@@ -4,19 +4,21 @@
  * (backend/src/serviceflow/commercial/router.py) for the exact batch-
  * enrichment contract (order_number/customer_name/total) this consumes.
  *
- * Read + navigate only, never a new creation entry point: invoices are still
- * created exclusively from a Service Order's own Invoice section
- * (order/InvoiceCard.tsx). Navigation semantics (frozen — do not blur these
- * two destinations back together): "Отвори" opens the Invoice itself
+ * Invoices are created either from a Service Order's own Invoice section
+ * (order/InvoiceCard.tsx) or, since Wave 6 Issue 30, directly from this
+ * workspace's own "+ Нова фактура" action (invoices/NewInvoicePage.tsx) —
+ * no ServiceOrder required. Navigation semantics (frozen — do not blur
+ * these two destinations back together): "Отвори" opens the Invoice itself
  * (/invoices/{id}, invoices/InvoiceDetailPage.tsx, reusing the same
  * IssuedInvoiceView/InvoiceDraftEditor InvoiceCard already renders); the
  * separate Order-number link opens the originating Service Order
- * (/orders/{order_id}).
+ * (/orders/{order_id}) — a manual invoice has none, so that column reads
+ * "—" for one instead.
  */
 
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { EmptyState, ErrorState, Skeleton } from "../components/States";
 import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
@@ -34,8 +36,9 @@ interface CustomerHit {
 
 interface InvoiceListItem {
   id: string;
-  order_id: string;
-  order_number: string;
+  // Wave 6 Issue 30 — both null for a manual invoice (no ServiceOrder).
+  order_id: string | null;
+  order_number: string | null;
   status: string;
   number: number | null;
   currency: string;
@@ -88,9 +91,13 @@ function InvoiceRow({ invoice }: { invoice: InvoiceListItem }) {
       <td className="whitespace-nowrap px-3 py-3 tabular-nums text-slate-900">{number}</td>
       <td className="px-3 py-3 text-slate-700">{invoice.customer_name || "—"}</td>
       <td className="whitespace-nowrap px-3 py-3">
-        <Link to={`/orders/${invoice.order_id}`} className="text-blue-700 hover:underline">
-          {invoice.order_number}
-        </Link>
+        {invoice.order_id !== null ? (
+          <Link to={`/orders/${invoice.order_id}`} className="text-blue-700 hover:underline">
+            {invoice.order_number}
+          </Link>
+        ) : (
+          <span className="text-slate-400">—</span>
+        )}
       </td>
       <td className="whitespace-nowrap px-3 py-3 text-slate-500">{date}</td>
       <td className="whitespace-nowrap px-3 py-3">
@@ -138,7 +145,11 @@ function useDebounced(value: string, ms: number): string {
 // Composed into the same server-side query as status/pagination (Issue 39)
 // — never a client-side post-filter, which would silently break Load More's
 // paging math.
-function CustomerFilter({
+//
+// Exported (Wave 6 Issue 30) so invoices/NewInvoicePage.tsx can reuse the
+// exact same search-by-name/phone customer picker rather than building a
+// second one.
+export function CustomerFilter({
   selected,
   onSelect,
   onClear,
@@ -201,6 +212,7 @@ function CustomerFilter({
 }
 
 export function InvoicesPage() {
+  const navigate = useNavigate();
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [customer, setCustomer] = useState<{ id: string; name: string } | null>(null);
   const [rows, setRows] = useState<InvoiceListItem[]>([]);
@@ -278,7 +290,16 @@ export function InvoicesPage() {
 
   return (
     <div>
-      <h1 className="mb-4 text-2xl font-bold text-slate-900">{t("nav.invoices")}</h1>
+      <div className="mb-4 flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-slate-900">{t("nav.invoices")}</h1>
+        <button
+          type="button"
+          onClick={() => navigate("/invoices/new")}
+          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 min-h-touch"
+        >
+          {t("invoices.new_action")}
+        </button>
+      </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="flex gap-1 rounded-lg border border-slate-300 p-1" style={{ width: "fit-content" }}>

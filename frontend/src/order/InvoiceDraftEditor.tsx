@@ -12,6 +12,12 @@
  * row. `InvoiceDetailPage` passes `embedded={false}` — it renders its own
  * page-level header above this component with nothing else inside the same
  * card, so that divider would otherwise be a seam with nothing above it.
+ *
+ * `orderId` (Wave 6 Issue 30) is optional: a manual invoice created via
+ * `invoices/NewInvoicePage` has no ServiceOrder, so `InvoiceDetailPage`
+ * passes it undefined for one — every order-scoped cache invalidation
+ * below is skipped in that case, but line-editing/save/Issue are otherwise
+ * identical, still this one component, not a second manual-only editor.
  */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -69,7 +75,12 @@ function defaultTaxEventDate(deliveredAt: string | null): string {
 export function InvoiceDraftEditor({
   invoiceId, orderId, deliveredAt, customerId, onClose, embedded = true,
 }: {
-  invoiceId: string; orderId: string; deliveredAt: string | null; customerId?: string;
+  invoiceId: string;
+  // Wave 6 Issue 30 — undefined for a manual (order-less) invoice; every
+  // order-scoped cache invalidation below is skipped in that case, since
+  // there is no order to invalidate against.
+  orderId?: string;
+  deliveredAt: string | null; customerId?: string;
   onClose?: () => void; embedded?: boolean;
 }) {
   const { me } = useAuth();
@@ -140,7 +151,7 @@ export function InvoiceDraftEditor({
       });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.invoice(invoiceId) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.orderInvoices(orderId) }),
+        ...(orderId ? [queryClient.invalidateQueries({ queryKey: queryKeys.orderInvoices(orderId) })] : []),
       ]);
       pushToast("success", t("order.invoice_saved"));
     } catch (err) {
@@ -163,16 +174,20 @@ export function InvoiceDraftEditor({
       // InvoiceDetailPage) picks this up immediately, so a page currently
       // showing this draft flips to the issued view without a redirect.
       queryClient.setQueryData(queryKeys.invoice(invoiceId), issued);
-      queryClient.setQueryData<InvoiceOut[]>(queryKeys.orderInvoices(orderId), (prev) =>
-        prev
-          ? prev.map((inv) =>
-              inv.id === invoiceId ? { ...inv, status: issued.status, number: issued.number } : inv,
-            )
-          : prev,
-      );
-      // Genuinely affected but not locally derivable — Issue publishes a new
-      // invoice_issued event server-side; never fabricate it client-side.
-      await queryClient.invalidateQueries({ queryKey: queryKeys.orderTimeline(orderId) });
+      if (orderId) {
+        queryClient.setQueryData<InvoiceOut[]>(queryKeys.orderInvoices(orderId), (prev) =>
+          prev
+            ? prev.map((inv) =>
+                inv.id === invoiceId ? { ...inv, status: issued.status, number: issued.number } : inv,
+              )
+            : prev,
+        );
+        // Genuinely affected but not locally derivable — Issue publishes a
+        // new invoice_issued event server-side; never fabricate it
+        // client-side. A manual (order-less) invoice has no order timeline
+        // to invalidate (Wave 6 Issue 30 — accepted V1 limitation).
+        await queryClient.invalidateQueries({ queryKey: queryKeys.orderTimeline(orderId) });
+      }
       setIssueOpen(false);
       pushToast("success", t("order.invoice_issued_success"));
     } catch (err) {
@@ -181,7 +196,9 @@ export function InvoiceDraftEditor({
           // Someone else issued it concurrently — reflect the real state
           // (which the list-cache patch above did not anticipate) rather
           // than argue with a stale local draft.
-          await queryClient.invalidateQueries({ queryKey: queryKeys.orderInvoices(orderId) });
+          if (orderId) {
+            await queryClient.invalidateQueries({ queryKey: queryKeys.orderInvoices(orderId) });
+          }
           await queryClient.invalidateQueries({ queryKey: queryKeys.invoice(invoiceId) });
           setIssueOpen(false);
           return;

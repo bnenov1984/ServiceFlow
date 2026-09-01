@@ -58,10 +58,13 @@ export function InvoiceDetailPage() {
     retry: (count, err) => !(err instanceof ApiError && err.status === 404) && count < 2,
   });
 
+  // Wave 6 Issue 30 — a manual invoice has no order_id at all; this query
+  // stays disabled for one, and every order-derived value below falls back
+  // to the invoice's own customer_id/null instead.
   const { data: order } = useQuery({
     queryKey: queryKeys.order(invoice?.order_id ?? ""),
     queryFn: () => api.get<OrderSummary>(`/orders/${invoice!.order_id}`),
-    enabled: !!invoice,
+    enabled: !!invoice?.order_id,
   });
 
   if (isLoading) {
@@ -118,31 +121,33 @@ export function InvoiceDetailPage() {
         )}
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
-        <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
-          {t("invoice.order_label")}
-        </span>
-        <div className="mt-1">
-          {order ? (
-            <Link
-              to={`/orders/${invoice.order_id}`}
-              className="font-medium text-blue-700 hover:underline"
-            >
-              {order.number}
-            </Link>
-          ) : (
-            <Skeleton className="h-4 w-20" />
-          )}
+      {invoice.order_id !== null && (
+        <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
+          <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            {t("invoice.order_label")}
+          </span>
+          <div className="mt-1">
+            {order ? (
+              <Link
+                to={`/orders/${invoice.order_id}`}
+                className="font-medium text-blue-700 hover:underline"
+              >
+                {order.number}
+              </Link>
+            ) : (
+              <Skeleton className="h-4 w-20" />
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="rounded-lg border border-slate-200 bg-white p-4">
         {invoice.status === "draft" ? (
           <InvoiceDraftEditor
             invoiceId={invoice.id}
-            orderId={invoice.order_id}
+            orderId={invoice.order_id ?? undefined}
             deliveredAt={order?.delivered_at ?? null}
-            customerId={order?.customer_id}
+            customerId={order?.customer_id ?? invoice.customer_id ?? undefined}
             embedded={false}
           />
         ) : (

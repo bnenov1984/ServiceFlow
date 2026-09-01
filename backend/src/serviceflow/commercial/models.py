@@ -45,14 +45,31 @@ INVOICE_LINE_SOURCES = ("labor", "part", "manual", "adjustment")
 
 
 class Invoice(Base, TimestampMixin):
-    """docs/01 §Invoice: Draft -> Issued -> (Annulled). This slice only ever
-    creates Draft rows — issue/annul/reissue are a later slice."""
+    """docs/01 §Invoice: Draft -> Issued -> (Annulled).
+
+    Buyer-identity invariant (Wave 6 Issue 30, migration 0029): every row
+    carries *exactly one* of `order_id` (an order-generated invoice — buyer
+    resolved via the order's own customer, unchanged from before) XOR
+    `customer_id` (a manual invoice, created straight from the central
+    /invoices workspace with no ServiceOrder at all — buyer resolved
+    directly). `commercial/service.py`'s `create_draft()`/
+    `create_manual_draft()` are the only two ways to construct a row, and
+    each sets exactly one; `issue()`'s buyer resolution forks on which one
+    is present."""
 
     __tablename__ = "invoices"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=new_id)
     company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("companies.id"))
-    order_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("service_orders.id"), index=True)
+    order_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("service_orders.id"), index=True, default=None
+    )
+    # Wave 6 Issue 30 — set only for a manual (order-less) invoice; NULL for
+    # every order-generated invoice, whose buyer is resolved through
+    # order_id instead. See the class docstring's XOR invariant.
+    customer_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("customers.id"), default=None
+    )
     status: Mapped[str] = mapped_column(default="draft", server_default="draft")
     number: Mapped[int | None] = mapped_column(default=None)
     issued_at: Mapped[datetime | None] = mapped_column(default=None)

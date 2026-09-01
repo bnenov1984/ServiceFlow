@@ -4,7 +4,11 @@
 
 export interface InvoiceOut {
   id: string;
-  order_id: string;
+  // Wave 6 Issue 30 — exactly one of order_id/customer_id is ever set (a
+  // manual invoice has no ServiceOrder; an order-generated one resolves its
+  // buyer through the order instead of customer_id).
+  order_id: string | null;
+  customer_id: string | null;
   status: string;
   number: number | null;
   currency: string;

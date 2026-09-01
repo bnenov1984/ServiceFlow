@@ -6,9 +6,13 @@ OrderDetailOut carries only the derived paid_amount/balance summary, not a raw
 payments list, matching how Task/Attachment/ContactRecord are exposed via
 their own endpoints rather than embedded.
 
-Invoice is a Draft-then-Issue-then-PDF slice here: POST creates a draft
-prefilled from the order's lines (via service_orders' public contract —
-never its internal models), GET lists/reads, PATCH replaces the line set
+Invoice is a Draft-then-Issue-then-PDF slice here: POST /orders/{id}/invoices
+creates an order-generated draft prefilled from the order's lines (via
+service_orders' public contract — never its internal models); POST /invoices
+(Wave 6 Issue 30) creates a manual, order-less draft from a directly-supplied
+`customer_id` instead — same Invoice row shape, same draft/issue/PDF/annul
+machinery downstream, see commercial/service.py's `create_manual_draft()`.
+GET lists/reads, PATCH replaces the line set
 (drafts only, docs/09 lists no separate invoice_lines sub-resource, unlike
 part-lines/labor-lines), POST .../issue transitions draft -> issued
 (non-VAT-registered seller only; buyer may be an individual or a domestic
@@ -29,7 +33,8 @@ customers.contracts.get_customer_summaries, commercial.service.draft_totals)
 issued row's buyer identity is the invoice's own frozen `buyer` snapshot
 (never live Customer data, even if malformed — docs/ACCOUNTANT_REVIEW.md);
 a draft row has no snapshot yet, so it falls back to the live Customer name
-via its order. `total` is the frozen `gross` once an invoice carries one
+via its order (or, for a manual invoice, its own `customer_id` directly —
+Wave 6 Issue 30). `total` is the frozen `gross` once an invoice carries one
 (issued, and any future annulled row), otherwise the live sum of its current
 lines (draft) — one field, not two, but never a Draft total presented as a
 legal one."""
@@ -147,7 +152,11 @@ class InvoicePatchIn(BaseModel):
 
 class InvoiceOut(BaseModel):
     id: uuid.UUID
-    order_id: uuid.UUID
+    # Wave 6 Issue 30 — NULL for a manual invoice (no ServiceOrder). Exactly
+    # one of order_id/customer_id is ever set; see the Invoice model's XOR
+    # invariant docstring.
+    order_id: uuid.UUID | None
+    customer_id: uuid.UUID | None
     status: str
     number: int | None
     currency: str
@@ -156,8 +165,8 @@ class InvoiceOut(BaseModel):
     @staticmethod
     def of(invoice: Invoice) -> "InvoiceOut":
         return InvoiceOut(
-            id=invoice.id, order_id=invoice.order_id, status=invoice.status,
-            number=invoice.number, currency=invoice.currency,
+            id=invoice.id, order_id=invoice.order_id, customer_id=invoice.customer_id,
+            status=invoice.status, number=invoice.number, currency=invoice.currency,
             row_version=invoice.row_version,
         )
 
@@ -242,12 +251,38 @@ def create_invoice_draft(order_id: uuid.UUID, db: TenantDbDep,
     return _invoice_detail(db, tenant, invoice)
 
 
+class ManualInvoiceIn(BaseModel):
+    customer_id: uuid.UUID
+
+
+@router.post(
+    "/invoices",
+    dependencies=[Depends(require_csrf), Depends(require_subscription_ok)],
+    status_code=201,
+)
+def create_manual_invoice_draft(body: ManualInvoiceIn, db: TenantDbDep,
+                                tenant: TenantDep) -> InvoiceDetailOut:
+    """Wave 6 Issue 30: the manual counterpart to `POST /orders/{id}/invoices`
+    — same permission posture (Worker may create drafts; only Issue/Annul are
+    Owner-only), same draft/replace-lines/issue/PDF/annul machinery
+    downstream, only the buyer-identity source and the empty starting line
+    set differ. Kept as its own top-level route (not a sub-resource of
+    anything) since a manual invoice has no parent resource to nest under."""
+    try:
+        invoice = service.create_manual_draft(db, tenant, body.customer_id)
+    except service.InvoiceError as e:
+        raise _invoice_error(e) from e
+    return _invoice_detail(db, tenant, invoice)
+
+
 class InvoiceListItemOut(BaseModel):
     id: uuid.UUID
-    order_id: uuid.UUID
+    # Wave 6 Issue 30 — both NULL for a manual invoice (no ServiceOrder);
+    # the frontend renders "—" in the order column for those rows.
+    order_id: uuid.UUID | None
     # Human order number (e.g. "2026-00001"), not this endpoint's own concern
     # to compute — sourced via service_orders.contracts.get_order_summaries.
-    order_number: str
+    order_number: str | None
     status: str
     number: int | None
     currency: str
@@ -275,8 +310,13 @@ def _customer_name_for(
         # the same "missing enrichment data" convention list_orders already
         # uses, rather than reaching for live Customer to paper over it).
         return str(invoice.buyer.get("name") or "")
-    order = orders.get(invoice.order_id)
-    customer = customers.get(order.customer_id) if order else None
+    if invoice.order_id is not None:
+        order = orders.get(invoice.order_id)
+        customer = customers.get(order.customer_id) if order else None
+        return customer.name if customer else ""
+    # Manual draft (Wave 6 Issue 30) — no order to resolve through; its own
+    # customer_id is the direct source.
+    customer = customers.get(invoice.customer_id) if invoice.customer_id else None
     return customer.name if customer else ""
 
 
@@ -292,19 +332,29 @@ def list_invoices(
         db, tenant, status=status, order_id=order_id, customer_id=customer_id,
         limit=limit, offset=offset,
     )
-    orders = orders_contracts.get_order_summaries(db, tenant, (i.order_id for i in invoices))
+    orders = orders_contracts.get_order_summaries(
+        db, tenant, (i.order_id for i in invoices if i.order_id is not None),
+    )
     # Only Draft rows ever need a live customer lookup — issued rows resolve
     # customer_name entirely from their own frozen buyer snapshot, above.
+    # Covers both an order-generated draft's order.customer_id and a manual
+    # draft's own customer_id (Wave 6 Issue 30) — one batch fetch, not two.
     draft_customer_ids = {
         orders[i.order_id].customer_id for i in invoices
-        if i.buyer is None and i.order_id in orders
+        if i.buyer is None and i.order_id is not None and i.order_id in orders
+    } | {
+        i.customer_id for i in invoices
+        if i.buyer is None and i.order_id is None and i.customer_id is not None
     }
     customers = customers_contracts.get_customer_summaries(db, tenant, draft_customer_ids)
     totals = service.draft_totals(db, tenant, (i.id for i in invoices if i.gross is None))
     return [
         InvoiceListItemOut(
             id=i.id, order_id=i.order_id,
-            order_number=orders[i.order_id].number if i.order_id in orders else "",
+            order_number=(
+                orders[i.order_id].number if i.order_id is not None and i.order_id in orders
+                else None
+            ),
             status=i.status, number=i.number, currency=i.currency,
             customer_name=_customer_name_for(i, orders, customers),
             issued_at=i.issued_at, tax_event_date=i.tax_event_date,

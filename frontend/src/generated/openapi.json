@@ -2582,6 +2582,46 @@
       }
     },
     "/api/v1/invoices": {
+      "post": {
+        "tags": [
+          "commercial"
+        ],
+        "summary": "Create Manual Invoice Draft",
+        "description": "Wave 6 Issue 30: the manual counterpart to `POST /orders/{id}/invoices`\n— same permission posture (Worker may create drafts; only Issue/Annul are\nOwner-only), same draft/replace-lines/issue/PDF/annul machinery\ndownstream, only the buyer-identity source and the empty starting line\nset differ. Kept as its own top-level route (not a sub-resource of\nanything) since a manual invoice has no parent resource to nest under.",
+        "operationId": "create_manual_invoice_draft_api_v1_invoices_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualInvoiceIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceDetailOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "get": {
         "tags": [
           "commercial"
@@ -6732,9 +6772,28 @@
             "title": "Id"
           },
           "order_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Order Id"
+          },
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Id"
           },
           "status": {
             "type": "string",
@@ -6890,6 +6949,7 @@
         "required": [
           "id",
           "order_id",
+          "customer_id",
           "status",
           "number",
           "currency",
@@ -7020,12 +7080,26 @@
             "title": "Id"
           },
           "order_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Order Id"
           },
           "order_number": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Order Number"
           },
           "status": {
@@ -7328,6 +7402,20 @@
           "password"
         ],
         "title": "LoginRequest"
+      },
+      "ManualInvoiceIn": {
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Customer Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "customer_id"
+        ],
+        "title": "ManualInvoiceIn"
       },
       "MeResponse": {
         "properties": {

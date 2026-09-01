@@ -379,3 +379,41 @@ describe("InvoiceDetailPage: cache reuse", () => {
     expect(client.getQueryData(queryKeys.invoice(invoiceId))).toMatchObject({ status: "issued", number: 1 });
   });
 });
+
+describe("InvoiceDetailPage: manual invoice (Wave 6 Issue 30, no ServiceOrder)", () => {
+  const manualDraftDetail = {
+    ...draftDetail, order_id: null, customer_id: "cust-9", lines: [], draft_total: 0,
+  };
+
+  it("renders no order link block and never fetches an order", async () => {
+    vi.mocked(api.get).mockResolvedValue(manualDraftDetail);
+    renderDetailPage();
+
+    await screen.findByText("Няма редове.");
+    expect(screen.queryByText("Поръчка")).not.toBeInTheDocument();
+    expect(api.get).not.toHaveBeenCalledWith(expect.stringContaining("/orders/"));
+  });
+
+  it("the draft editor still works for a manual invoice (orderId omitted)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockResolvedValue(manualDraftDetail);
+    vi.mocked(api.patch).mockResolvedValue({
+      ...manualDraftDetail,
+      lines: [{ id: "l1", description: "Диагностика", qty: 1, unit_price: 30, vat_rate: null, source: "manual" }],
+      draft_total: 30,
+    });
+    renderDetailPage();
+
+    await screen.findByText("Няма редове.");
+    const descriptionInput = screen.getByPlaceholderText("Описание…");
+    await user.type(descriptionInput, "Диагностика");
+    const priceInputs = screen.getAllByLabelText("Цена (€)");
+    await user.type(priceInputs[priceInputs.length - 1], "30");
+    await user.click(screen.getByRole("button", { name: "Добави" }));
+    await user.click(screen.getByRole("button", { name: "Запази" }));
+
+    await waitFor(() => expect(api.patch).toHaveBeenCalledWith("/invoices/inv-1", {
+      lines: [{ description: "Диагностика", qty: 1, unit_price: 30, source: "manual" }],
+    }));
+  });
+});

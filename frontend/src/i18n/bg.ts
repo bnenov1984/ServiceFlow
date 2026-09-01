@@ -148,6 +148,7 @@ export const bg = {
   "errors.invoices.not_issued": "PDF има само издадена фактура.",
   "errors.invoices.annul_not_issued": "Може да анулирате само вече издадена фактура.",
   "errors.invoices.already_annulled": "Фактурата вече е анулирана.",
+  "errors.invoices.customer_not_found": "Няма такъв клиент.",
 
   // --- intake (docs/15 §6.4) ---
   "intake.title": "Нова поръчка",
@@ -424,7 +425,13 @@ export const bg = {
   "invoices.filter_issued": "Издадени",
   "invoices.filter_annulled": "Анулирани",
   "invoices.empty": "Все още няма фактури.",
-  "invoices.empty_hint": "Фактурите се създават от поръчките.",
+  "invoices.empty_hint": "Създайте фактура от поръчка или с бутона по-горе.",
+  "invoices.new_action": "+ Нова фактура",
+  "invoices.new_title": "Нова фактура",
+  "invoices.new_customer_label": "Клиент",
+  "invoices.new_customer_create_action": "+ Нов клиент",
+  "invoices.new_customer_back_to_search": "← Търсене на клиент",
+  "invoices.new_continue": "Продължи",
   "invoices.load_more": "Зареди още",
   "invoices.filter_customer_placeholder": "Търсене по клиент…",
   "invoices.filter_customer_clear": "Изчисти",

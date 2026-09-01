@@ -17,11 +17,14 @@ rounding recorded there as an implemented product decision pending
 professional confirmation). `annul()` (Wave 6 Issue 30, case-A
 documentation-error correction only, ЗДДС чл. 116) is the sixth — a pure
 status+metadata transition on an already-issued invoice, never touching its
-frozen content or number. Reissue-linkage, cross-border B2B, mixed VAT
-rates, reverse charge, 0%-rated supplies, and credit/debit notes are still
-later slices (see commercial/models.py docstring and
-docs/ACCOUNTANT_REVIEW.md's 'RepairFlow Invoice V1 Freeze' §5, Phase-A
-scope)."""
+frozen content or number. `create_manual_draft()` (Wave 6 Issue 30, second
+half) is the seventh — an order-less draft whose buyer identity is a direct
+`customer_id` instead of an order's; `issue()` forks its buyer resolution
+on which one a given row carries, but is otherwise the exact same one
+engine for both. Reissue-linkage, cross-border B2B, mixed VAT rates,
+reverse charge, 0%-rated supplies, and credit/debit notes are still later
+slices (see commercial/models.py docstring and docs/ACCOUNTANT_REVIEW.md's
+'RepairFlow Invoice V1 Freeze' §5, Phase-A scope)."""
 
 import uuid
 from collections.abc import Iterable
@@ -29,7 +32,7 @@ from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
 from business_os.identity import contracts as identity_contracts
@@ -127,6 +130,26 @@ def create_draft(db: Session, ctx: TenantContext, order_id: uuid.UUID) -> Invoic
     return invoice
 
 
+def create_manual_draft(db: Session, ctx: TenantContext, customer_id: uuid.UUID) -> Invoice:
+    """Wave 6 Issue 30 — the manual counterpart to `create_draft()`: no
+    ServiceOrder involved at all, so nothing to prefill from (an empty
+    draft; lines are added afterward through the exact same
+    `replace_lines()` every order-generated draft already uses — no second
+    editor, no second engine). `customer_id` becomes this row's buyer-
+    identity source (see the Invoice model's XOR invariant); `issue()`
+    resolves the buyer through it instead of through an order. The customer
+    must exist in this tenant — same tenant-scoped existence check
+    `create_invoice_draft`'s order lookup already gets for `order_id`."""
+    if customers_contracts.get_customer_summary(db, ctx, customer_id) is None:
+        raise InvoiceError("errors.invoices.customer_not_found", status=404)
+    invoice = Invoice(
+        company_id=ctx.company_id, order_id=None, customer_id=customer_id, status="draft",
+    )
+    db.add(invoice)
+    db.commit()
+    return invoice
+
+
 def get(db: Session, ctx: TenantContext, invoice_id: uuid.UUID) -> Invoice | None:
     return db.scalar(scoped(select(Invoice), Invoice, ctx).where(Invoice.id == invoice_id))
 
@@ -158,14 +181,13 @@ def list_invoices(db: Session, ctx: TenantContext, *, status: str | None = None,
     across requests when two rows share the same `created_at` (UUIDv7 ids are
     themselves time-ordered, so this never contradicts the primary key).
 
-    `customer_id` (Issue 39): an Invoice has no customer_id column of its
-    own, only order_id — so filtering by customer resolves that customer's
-    order ids first (one query, via the sanctioned service_orders contract,
-    never service_orders.models directly) and filters on the IN-list here,
-    same as the existing `order_id` filter. Composes with `status` and
-    pagination exactly like every other filter on this query — one WHERE
-    clause added before LIMIT/OFFSET, not a second query or a Python-side
-    filter."""
+    `customer_id` (Issue 39; extended Wave 6 Issue 30 for manual invoices):
+    matches BOTH an order-generated invoice whose order belongs to this
+    customer (resolved via the sanctioned service_orders contract, never
+    service_orders.models directly, then filtered on the IN-list) AND a
+    manual invoice whose own `Invoice.customer_id` matches directly — one
+    OR'd WHERE clause, still a single query, never N+1. Composes with
+    `status` and pagination exactly like every other filter on this query."""
     stmt = scoped(select(Invoice), Invoice, ctx)
     if status:
         stmt = stmt.where(Invoice.status == status)
@@ -173,7 +195,9 @@ def list_invoices(db: Session, ctx: TenantContext, *, status: str | None = None,
         stmt = stmt.where(Invoice.order_id == order_id)
     if customer_id:
         order_ids = orders_contracts.get_order_ids_for_customer(db, ctx, customer_id)
-        stmt = stmt.where(Invoice.order_id.in_(order_ids))
+        stmt = stmt.where(
+            or_(Invoice.order_id.in_(order_ids), Invoice.customer_id == customer_id)
+        )
     stmt = stmt.order_by(Invoice.created_at.desc(), Invoice.id.desc()).limit(limit).offset(offset)
     return list(db.scalars(stmt))
 
@@ -323,10 +347,21 @@ def issue(db: Session, ctx: TenantContext, invoice_id: uuid.UUID,
         raise InvoiceError("errors.invoices.seller_incomplete")
     seller_vat_registered = company.vat_registered
 
-    order = orders_contracts.get_order_summary(db, ctx, invoice.order_id)
-    assert order is not None  # invoice.order_id is a real FK; scoped() already proved same-tenant
-    customer = customers_contracts.get_customer_summary(db, ctx, order.customer_id)
-    assert customer is not None  # same: a real FK, same-tenant by construction
+    # Buyer-identity source forks on the Invoice model's XOR invariant
+    # (Wave 6 Issue 30): order-generated invoices resolve through the
+    # order's own customer, exactly as before; manual invoices resolve
+    # directly through their own customer_id. Everything from here on
+    # (VAT logic, totals, number allocation, freezing) is identical for
+    # both — one issue() engine, not two.
+    if invoice.order_id is not None:
+        order = orders_contracts.get_order_summary(db, ctx, invoice.order_id)
+        assert order is not None  # a real FK; scoped() already proved same-tenant
+        customer = customers_contracts.get_customer_summary(db, ctx, order.customer_id)
+        assert customer is not None  # same: a real FK, same-tenant by construction
+    else:
+        assert invoice.customer_id is not None  # XOR invariant: exactly one source is set
+        customer = customers_contracts.get_customer_summary(db, ctx, invoice.customer_id)
+        assert customer is not None  # same: a real FK, same-tenant by construction
     buyer_snapshot = _buyer_snapshot(customer)
 
     assert invoice.currency == "EUR"  # the only value any write path has ever set (server_default)
