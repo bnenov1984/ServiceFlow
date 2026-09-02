@@ -84,6 +84,25 @@ class AuthSession(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(default=None)
 
 
+class PasswordResetToken(Base):
+    """Tenant Forgot Password V1. Same RLS-exempt identity-bootstrap posture
+    as `AuthSession`/`AuditLog` (module docstring above). `token_hash` is
+    `sha256(raw_token)` (`shared_kernel.passwords.hash_token`) — the raw
+    opaque token (`new_session_token()`) is never persisted, mirroring
+    `AuthSession.token_hash` exactly. `used_at` follows `AuthSession.
+    revoked_at`'s own convention: `NULL` = still live/unused, a timestamp =
+    consumed — single-use, enforced by `identity.service.reset_password()`."""
+
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=new_id)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    token_hash: Mapped[str] = mapped_column(unique=True)
+    expires_at: Mapped[datetime]
+    used_at: Mapped[datetime | None] = mapped_column(default=None)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
 class AuditLog(Base):
     """Technical audit (11 §2): logins, PIN switches, admin actions.
     Business history lives in the timeline, never here."""

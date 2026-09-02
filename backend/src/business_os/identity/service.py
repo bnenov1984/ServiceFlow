@@ -11,10 +11,11 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy import update as sa_update
 from sqlalchemy.orm import Session
 
 from business_os.identity import security
-from business_os.identity.models import AuditLog, AuthSession, Company, User
+from business_os.identity.models import AuditLog, AuthSession, Company, PasswordResetToken, User
 from business_os.shared_kernel.events import DomainEvent, publish
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,17 @@ SESSION_TTL = timedelta(hours=12)
 MAX_LOGIN_FAILURES = 5
 LOCKOUT = timedelta(minutes=15)
 MAX_PIN_FAILURES = 5
+
+# Tenant Forgot Password V1.
+RESET_TOKEN_TTL = timedelta(minutes=30)
+# Independent, conservative limits — reset-request abuse (bombing one
+# inbox with reset emails, or one IP fishing across many addresses) is a
+# different threat shape than login brute force, so its own keys/counts,
+# not a reuse of MAX_LOGIN_FAILURES. Both share the existing LOCKOUT
+# window (15 min) via `_check_rate_limit`.
+MAX_RESET_REQUESTS_PER_EMAIL = 3
+MAX_RESET_REQUESTS_PER_IP = 10
+MAX_RESET_SUBMIT_ATTEMPTS_PER_IP = 10
 
 # ADR-BOS-011 §Decision 2: identity only needs the fallback value for a
 # company that predates the profile field (every seed_company-created
@@ -204,6 +216,116 @@ def set_own_pin(db: Session, user: User, pin: str) -> None:
     here verifies through the existing `pin_switch` check unchanged."""
     user.pin_hash = security.hash_secret(pin)
     _audit(db, user.company_id, user.id, "pin_set")
+    db.commit()
+
+
+# --- Tenant Forgot Password V1 ----------------------------------------------
+# Vendor/PlatformAdmin reset is explicitly out of scope — platform_admin has
+# its own, permanently separate principal/session model (ADR-BOS-009) and is
+# not touched by any of this.
+
+
+def request_password_reset(db: Session, email: str, client_key: str) -> str | None:
+    """Public, pre-auth (mirrors login()'s own shape — see identity/router.py's
+    POST /auth/login: no CSRF, no subscription gate; the whole /auth/* surface
+    is exempt from require_subscription_ok, enforced for every route under
+    this prefix by test_identity_auth_mechanics_are_never_gated_by_
+    subscription_state).
+
+    Returns the raw reset token ONLY when a usable one was actually created
+    — the caller (the router's delivery step) must never leak this back to
+    the HTTP response. The public response is identical (generic success)
+    whether or not this returns a token: unknown email, inactive user, and
+    an archived company's user all fold into `None` here, the same
+    anti-enumeration posture login() already established with its own
+    single generic error.
+
+    Rate-limited by TWO independent keys (IP and email), not one composite
+    — a composite key alone would still let a single IP probe unlimited
+    addresses (only the IP+specific-email pair would ever hit its own cap)
+    or let unlimited IPs pile onto one address (the same gap the other way
+    round). Both are checked, and this attempt recorded against both,
+    before any DB work — never after."""
+    ip_key = f"reset_request_ip:{client_key}"
+    email_key = f"reset_request_email:{email.lower()}"
+    _check_rate_limit(ip_key, MAX_RESET_REQUESTS_PER_IP)
+    _check_rate_limit(email_key, MAX_RESET_REQUESTS_PER_EMAIL)
+    _record_failure(ip_key)
+    _record_failure(email_key)
+
+    user = db.scalar(select(User).where(User.email.ilike(email)))
+    if user is None or not user.is_active or _is_company_archived(db, user.company_id):
+        return None
+
+    # A fresh request invalidates every previous unused token for this user
+    # — never more than one live token outstanding at a time.
+    db.execute(
+        sa_update(PasswordResetToken)
+        .where(PasswordResetToken.user_id == user.id, PasswordResetToken.used_at.is_(None))
+        .values(used_at=_now())
+    )
+
+    raw, token_hash = security.new_session_token()
+    db.add(PasswordResetToken(
+        user_id=user.id, token_hash=token_hash, expires_at=_now() + RESET_TOKEN_TTL,
+    ))
+    # Never the raw token in the audit detail — the same discipline every
+    # other sensitive-value audit call site in this codebase already follows.
+    _audit(db, user.company_id, user.id, "password_reset_requested")
+    db.commit()
+    return raw
+
+
+def reset_password(db: Session, raw_token: str, new_password: str, client_key: str) -> None:
+    """Raises AuthError("errors.auth.reset_token_invalid") for every
+    invalid/unknown/expired/already-used token, and for a token whose user
+    is no longer active or whose company is now archived — deliberately one
+    generic error in every case, never distinguishing why (same
+    anti-enumeration reasoning request_password_reset's single `None`
+    return already uses).
+
+    Single-use, race-safe: locks the specific token row (`with_for_update`,
+    the same pattern commercial.service.issue()/annul() already use for
+    their own atomic single-transaction state transitions) before
+    validating anything, so a second concurrent submission of the same raw
+    token blocks until this one commits or rolls back, then sees it already
+    consumed rather than racing it."""
+    ip_key = f"reset_submit_ip:{client_key}"
+    _check_rate_limit(ip_key, MAX_RESET_SUBMIT_ATTEMPTS_PER_IP)
+    _record_failure(ip_key)
+
+    token_hash = security.hash_token(raw_token)
+    token = db.scalar(
+        select(PasswordResetToken)
+        .where(PasswordResetToken.token_hash == token_hash)
+        .with_for_update()
+    )
+    now = _now()
+    expires_at = token.expires_at if token is not None else None
+    if expires_at is not None and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    if token is None or token.used_at is not None or expires_at is None or expires_at < now:
+        raise AuthError("errors.auth.reset_token_invalid", status=400)
+
+    user = db.get(User, token.user_id)
+    if user is None or not user.is_active or _is_company_archived(db, user.company_id):
+        raise AuthError("errors.auth.reset_token_invalid", status=400)
+
+    user.password_hash = security.hash_secret(new_password)
+    # Consumes this token AND invalidates any other still-live one for the
+    # same user in one statement — the current token already matches this
+    # WHERE clause, since its own used_at is still NULL at this point.
+    db.execute(
+        sa_update(PasswordResetToken)
+        .where(PasswordResetToken.user_id == user.id, PasswordResetToken.used_at.is_(None))
+        .values(used_at=now)
+    )
+    db.execute(
+        sa_update(AuthSession)
+        .where(AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None))
+        .values(revoked_at=now)
+    )
+    _audit(db, user.company_id, user.id, "password_reset_completed")
     db.commit()
 
 

@@ -242,6 +242,17 @@ class MeResponse(BaseModel):
     business_profile: str
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=500)
+    # Same bound as EmployeeIn.password above — one password-policy
+    # vocabulary, not two.
+    password: str = Field(min_length=12, max_length=200)
+
+
 class PinSwitchRequest(BaseModel):
     user_id: uuid.UUID
     pin: str = Field(min_length=1, max_length=20)
@@ -293,6 +304,50 @@ def login(body: LoginRequest, request: Request, response: Response, db: DbDep) -
     user = db.get(User, session.user_id)
     assert user is not None
     return _me(db, session, user)
+
+
+@router.post("/forgot-password")
+def forgot_password(body: ForgotPasswordRequest, request: Request, db: DbDep) -> dict[str, bool]:
+    """Tenant Forgot Password V1. Public, pre-auth — no CSRF (mirrors
+    `/auth/login`, which has none either: there is no session yet to bind
+    one to), no subscription gate (the whole `/auth/*` surface is exempt,
+    `test_identity_auth_mechanics_are_never_gated_by_subscription_state`
+    enforces this for every route under this prefix — a suspended company's
+    user must still be able to get back in).
+
+    Always returns the same generic-success shape regardless of whether the
+    email exists, belongs to an active user, or belongs to an archived
+    company — see `identity.service.request_password_reset()`'s own
+    docstring for the anti-enumeration reasoning. Delivery of the actual
+    reset link is a separate concern (added in the next batch); this
+    endpoint only ever creates the token server-side, never returns it."""
+    try:
+        service.request_password_reset(db, body.email, _client_key(request))
+    except service.AuthError as e:
+        raise HTTPException(status_code=e.status, detail={
+            "code": "auth_failed", "message_key": e.message_key, "params": {},
+        }) from e
+    return {"ok": True}
+
+
+@router.post("/reset-password")
+def reset_password_endpoint(
+    body: ResetPasswordRequest, request: Request, db: DbDep,
+) -> dict[str, bool]:
+    """Same public, pre-auth posture as `forgot_password` above. Deliberately
+    does not log the caller in / set a session cookie afterward: every
+    existing session for this user was just revoked
+    (`identity.service.reset_password()`), so auto-login here would
+    immediately create a brand new one while the caller has only proven
+    possession of the reset link, not re-entered their (new) password at a
+    real login prompt."""
+    try:
+        service.reset_password(db, body.token, body.password, _client_key(request))
+    except service.AuthError as e:
+        raise HTTPException(status_code=e.status, detail={
+            "code": "auth_failed", "message_key": e.message_key, "params": {},
+        }) from e
+    return {"ok": True}
 
 
 @router.get("/me")

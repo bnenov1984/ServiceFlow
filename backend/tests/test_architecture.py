@@ -47,6 +47,7 @@ TABLE_OWNERS = {
     "users": "business_os.identity",
     "sessions": "business_os.identity",
     "audit_log": "business_os.identity",
+    "password_reset_tokens": "business_os.identity",
     # Vendor Control Plane (ADR-BOS-009) — Core, but a different plane from
     # identity: no company_id, never read or written by tenant code.
     "platform_admins": "business_os.platform_admin",
