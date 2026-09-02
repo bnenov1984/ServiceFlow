@@ -10,6 +10,16 @@ vi.mock("../lib/api", async (importOriginal) => {
   return { ...actual, api: { ...actual.api, get: vi.fn().mockResolvedValue([]) } };
 });
 
+// Cleanup batch Issue 26: OrderStep now reads me?.business_profile to decide
+// whether mileage is required — same mock-module pattern InvoiceCard.test.tsx
+// already uses for useAuth. Defaults to no profile at all (the pre-existing
+// "mileage always optional" behavior every test below except the dedicated
+// Issue 26 describe block relies on).
+const mockUseAuth = vi.fn();
+vi.mock("../auth/AuthContext", () => ({
+  useAuth: () => mockUseAuth(),
+}));
+
 const DEFAULT_VALUE: OrderStepValue = {
   complaint: "", accessories: [], photos: [], partLines: [],
   priority: "normal", technicianId: null, mileage: "",
@@ -40,7 +50,9 @@ function Harness({
 
 function renderStep(
   initial?: OrderStepValue, assetTypeCode?: string, defaultDeliveryAddress?: string | null,
+  businessProfile?: string,
 ) {
+  mockUseAuth.mockReturnValue({ me: { business_profile: businessProfile } });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
@@ -83,6 +95,78 @@ describe("OrderStep — Wave 3 Issues 21/26/27 (mileage at intake)", () => {
     await user.type(input, "123000");
 
     expect(input).toHaveValue(123000);
+  });
+});
+
+describe("OrderStep — cleanup batch Issue 26 (automotive mileage required)", () => {
+  function complaintInput(): HTMLTextAreaElement {
+    return screen.getByText("Оплакване").parentElement
+      ?.querySelector("textarea") as HTMLTextAreaElement;
+  }
+
+  function mileageInput(): HTMLInputElement {
+    // The label reads "Пробег (км) *" once mileage is required — match by
+    // substring so this helper works whether or not the marker is present.
+    return screen.getByText(/Пробег \(км\)/).parentElement
+      ?.querySelector("input") as HTMLInputElement;
+  }
+
+  function submitButton(): HTMLElement {
+    return screen.getByRole("button", { name: "Създай поръчка" });
+  }
+
+  it("marks mileage required and blocks submit when it's missing, for a vehicle order at an automotive_repair company", async () => {
+    const user = userEvent.setup();
+    renderStep(undefined, "vehicle", null, "automotive_repair");
+
+    expect(screen.getByText(/Пробег \(км\)/)).toHaveTextContent("*");
+    await user.type(complaintInput(), "Странен шум");
+
+    expect(submitButton()).toBeDisabled();
+  });
+
+  it("enables submit once a valid mileage is entered, for automotive_repair", async () => {
+    const user = userEvent.setup();
+    renderStep(undefined, "vehicle", null, "automotive_repair");
+
+    await user.type(complaintInput(), "Странен шум");
+    await user.type(mileageInput(), "125000");
+
+    expect(submitButton()).not.toBeDisabled();
+  });
+
+  it("accepts mileage 0 as valid for automotive_repair", async () => {
+    const user = userEvent.setup();
+    renderStep(undefined, "vehicle", null, "automotive_repair");
+
+    await user.type(complaintInput(), "Странен шум");
+    await user.type(mileageInput(), "0");
+
+    expect(submitButton()).not.toBeDisabled();
+  });
+
+  it("does not require mileage for a vehicle order at a non-automotive company", async () => {
+    const user = userEvent.setup();
+    renderStep(undefined, "vehicle", null, "generic_repair");
+
+    expect(screen.getByText("Пробег (км)")).not.toHaveTextContent("*");
+    await user.type(complaintInput(), "Странен шум");
+
+    expect(submitButton()).not.toBeDisabled();
+  });
+
+  it("does not require mileage when no business_profile is known at all", async () => {
+    const user = userEvent.setup();
+    renderStep(undefined, "vehicle");
+
+    await user.type(complaintInput(), "Странен шум");
+
+    expect(submitButton()).not.toBeDisabled();
+  });
+
+  it("has no mileage field at all for a non-vehicle order, even at an automotive_repair company", () => {
+    renderStep(undefined, "phone", null, "automotive_repair");
+    expect(screen.queryByText("Пробег (км)")).not.toBeInTheDocument();
   });
 });
 

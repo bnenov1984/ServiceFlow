@@ -53,8 +53,10 @@ class OrderIn(BaseModel):
     promised_on: date | None = None
     technician_id: uuid.UUID | None = None
     # Wave 3 Issues 21/26/27: captured at intake for automotive orders, but
-    # accepted for any asset type — not required, never enforced by
-    # asset_type here (the frontend decides when to show the field).
+    # accepted for any asset type — cleanup batch Issue 26: `service.create()`
+    # requires this to be present (`None` rejected) when the company's own
+    # business_profile is "automotive_repair"; every other profile keeps it
+    # fully optional.
     mileage: int | None = Field(default=None, ge=0)
     # Wave 5 Issue 12: smallest order-level logistics model. No DB CHECK
     # (same precedent as `priority` above) — validated here only.
@@ -406,13 +408,16 @@ def create_order(body: OrderIn, db: TenantDbDep, tenant: TenantDep) -> OrderOut:
     if body.delivery_method == "courier" and delivery_address is None and customer.delivery_address:
         delivery_address = dict(customer.delivery_address)
 
-    order = service.create(
-        db, tenant, customer_id=body.customer_id, asset_id=body.asset_id,
-        complaint=body.complaint, priority=body.priority,
-        promised_on=body.promised_on, technician_id=body.technician_id,
-        mileage=body.mileage,
-        delivery_method=body.delivery_method, delivery_address=delivery_address,
-    )
+    try:
+        order = service.create(
+            db, tenant, customer_id=body.customer_id, asset_id=body.asset_id,
+            complaint=body.complaint, priority=body.priority,
+            promised_on=body.promised_on, technician_id=body.technician_id,
+            mileage=body.mileage,
+            delivery_method=body.delivery_method, delivery_address=delivery_address,
+        )
+    except service.OrderError as e:
+        raise _err(e) from e
     return OrderOut.of(order)
 
 

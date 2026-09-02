@@ -1,9 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, api } from "../lib/api";
-import { AssetStep, coerceFieldValue } from "./AssetStep";
+import {
+  AssetStep, DEFAULT_ASSET_STEP_DRAFT, coerceFieldValue, type AssetStepDraft, type ResolvedAsset,
+} from "./AssetStep";
 
 vi.mock("../lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/api")>();
@@ -34,13 +37,64 @@ beforeEach(() => {
   });
 });
 
+// Cleanup batch Issue 22: a small harness that owns the lifted draft state,
+// the same shape IntakePage really uses (draft/onDraftChange), rather than
+// AssetStep managing it internally — this is exactly what makes the
+// draft-survives-unmount test below possible.
+function Harness({
+  onResolved, draft, onDraftChange,
+}: {
+  onResolved: (a: ResolvedAsset) => void;
+  draft: AssetStepDraft;
+  onDraftChange: (next: AssetStepDraft) => void;
+}) {
+  return (
+    <AssetStep customerId={customerId} resolved={null} onResolved={onResolved}
+              onChangeRequested={vi.fn()} draft={draft} onDraftChange={onDraftChange} />
+  );
+}
+
 function renderStep() {
   const onResolved = vi.fn();
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  function Root() {
+    const [draft, setDraft] = useState<AssetStepDraft>(DEFAULT_ASSET_STEP_DRAFT);
+    return <Harness onResolved={onResolved} draft={draft} onDraftChange={setDraft} />;
+  }
+
   render(
     <QueryClientProvider client={client}>
-      <AssetStep customerId={customerId} resolved={null} onResolved={onResolved}
-                onChangeRequested={vi.fn()} />
+      <Root />
+    </QueryClientProvider>,
+  );
+  return { onResolved };
+}
+
+// A harness that can unmount/remount AssetStep while keeping the SAME
+// lifted draft alive in the parent — models "Customer step → Asset step →
+// Back to Customer → Asset step again" (Issue 22) without needing the real
+// IntakePage/CustomerStep wiring.
+function renderToggleableStep() {
+  const onResolved = vi.fn();
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  function Root() {
+    const [draft, setDraft] = useState<AssetStepDraft>(DEFAULT_ASSET_STEP_DRAFT);
+    const [showAssetStep, setShowAssetStep] = useState(true);
+    return (
+      <div>
+        <button type="button" onClick={() => setShowAssetStep((v) => !v)}>
+          toggle-asset-step
+        </button>
+        {showAssetStep && <Harness onResolved={onResolved} draft={draft} onDraftChange={setDraft} />}
+      </div>
+    );
+  }
+
+  render(
+    <QueryClientProvider client={client}>
+      <Root />
     </QueryClientProvider>,
   );
   return { onResolved };
@@ -49,6 +103,13 @@ function renderStep() {
 async function selectVehicleType(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByText("+ Нов актив"));
   await user.click(await screen.findByText("Автомобил"));
+}
+
+// Issue 20's explicit escape hatch for a vehicle type that DOES carry a VIN
+// field def — skips the VIN-first sub-form and lands on the full field form,
+// with VIN left blank.
+async function skipVin(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole("button", { name: "Продължи без VIN" }));
 }
 
 // FieldInput renders <label> and <input> as siblings inside a shared <div>,
@@ -72,6 +133,7 @@ describe("AssetStep numeric field coercion (form/schema boundary)", () => {
     renderStep();
 
     await selectVehicleType(user);
+    await skipVin(user);
     await user.type(inputForLabel("Година"), "2015");
     await user.type(inputForLabel("Пробег (км)"), "100000");
     await user.click(screen.getByRole("button", { name: "Продължи" }));
@@ -94,6 +156,7 @@ describe("AssetStep numeric field coercion (form/schema boundary)", () => {
     renderStep();
 
     await selectVehicleType(user);
+    await skipVin(user);
     await user.type(inputForLabel("Марка"), "Toyota");
     // Година/Пробег (км) left empty.
     await user.click(screen.getByRole("button", { name: "Продължи" }));
@@ -112,6 +175,7 @@ describe("AssetStep numeric field coercion (form/schema boundary)", () => {
     renderStep();
 
     await selectVehicleType(user);
+    await skipVin(user);
     await user.type(inputForLabel("Марка"), "Toyota");
     await user.click(screen.getByRole("button", { name: "Продължи" }));
 
@@ -144,6 +208,9 @@ describe("AssetStep choice-type field (Issue 23: automotive make dropdown)", () 
     });
     renderStep();
 
+    // No "vin" field_def on this type — the VIN-first sub-step is skipped
+    // automatically, straight to the full field form (see AssetStep's
+    // `showVinFirst && vinDef` render gate).
     await selectVehicleType(user);
     const brandSelect = inputForLabel("Марка");
     expect(brandSelect.tagName).toBe("SELECT");
@@ -173,7 +240,7 @@ describe("AssetStep back navigation", () => {
   });
 });
 
-describe("AssetStep VIN-first lookup (Wave 3 Issue 20)", () => {
+describe("AssetStep VIN-first lookup (Issue 20: VIN before the full form)", () => {
   const customerId2 = "cust-2";
 
   function mockByVin(impl: (vin: string) => unknown) {
@@ -192,7 +259,21 @@ describe("AssetStep VIN-first lookup (Wave 3 Issue 20)", () => {
     });
   }
 
-  it("proceeds to a normal create when the VIN has no match", async () => {
+  it("selecting the vehicle type shows a VIN-only sub-form first, not the full field form", async () => {
+    const user = userEvent.setup();
+    mockByVin(() => null);
+    renderStep();
+
+    await selectVehicleType(user);
+
+    expect(inputForLabel("VIN")).toBeInTheDocument();
+    expect(screen.queryByText("Марка")).not.toBeInTheDocument();
+    expect(screen.queryByText("Модел")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Провери VIN" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Продължи без VIN" })).toBeInTheDocument();
+  });
+
+  it("checking a VIN with no match proceeds to the full form with the VIN retained", async () => {
     const user = userEvent.setup();
     mockByVin(() => null);
     vi.mocked(api.post).mockResolvedValue({
@@ -203,12 +284,31 @@ describe("AssetStep VIN-first lookup (Wave 3 Issue 20)", () => {
 
     await selectVehicleType(user);
     await user.type(inputForLabel("VIN"), "WVWZZZ1JZ3W386752");
+    await user.click(screen.getByRole("button", { name: "Провери VIN" }));
+
+    expect(api.get).toHaveBeenCalledWith("/assets/by-vin?vin=WVWZZZ1JZ3W386752");
+    // Now on the full form — Марка/Модел are visible, and VIN kept its value.
+    expect(await screen.findByText("Марка")).toBeInTheDocument();
+    expect(inputForLabel("VIN")).toHaveValue("WVWZZZ1JZ3W386752");
+
     await user.click(screen.getByRole("button", { name: "Продължи" }));
 
-    expect(api.get).toHaveBeenCalledWith(
-      "/assets/by-vin?vin=WVWZZZ1JZ3W386752",
-    );
-    expect(api.post).toHaveBeenCalledWith(`/customers/${customerId}/assets`, expect.anything());
+    expect(api.post).toHaveBeenCalledWith(`/customers/${customerId}/assets`, {
+      asset_type_code: "vehicle",
+      field_values: expect.objectContaining({ vin: "WVWZZZ1JZ3W386752" }),
+    });
+  });
+
+  it('"Продължи без VIN" skips the lookup entirely and proceeds to the full form', async () => {
+    const user = userEvent.setup();
+    mockByVin(() => null);
+    renderStep();
+
+    await selectVehicleType(user);
+    await skipVin(user);
+
+    expect(await screen.findByText("Марка")).toBeInTheDocument();
+    expect(api.get).not.toHaveBeenCalledWith(expect.stringContaining("/assets/by-vin"));
   });
 
   it("reuses the vehicle outright when the VIN already belongs to this customer, without posting a create", async () => {
@@ -221,7 +321,7 @@ describe("AssetStep VIN-first lookup (Wave 3 Issue 20)", () => {
 
     await selectVehicleType(user);
     await user.type(inputForLabel("VIN"), "WVWZZZ1JZ3W386752");
-    await user.click(screen.getByRole("button", { name: "Продължи" }));
+    await user.click(screen.getByRole("button", { name: "Провери VIN" }));
 
     expect(onResolved).toHaveBeenCalledWith({
       id: "existing-1", label: "Volkswagen Golf", assetTypeCode: "vehicle",
@@ -239,7 +339,7 @@ describe("AssetStep VIN-first lookup (Wave 3 Issue 20)", () => {
 
     await selectVehicleType(user);
     await user.type(inputForLabel("VIN"), "WVWZZZ1JZ3W386752");
-    await user.click(screen.getByRole("button", { name: "Продължи" }));
+    await user.click(screen.getByRole("button", { name: "Провери VIN" }));
 
     expect(await screen.findByText(
       "Автомобилът вече съществува и е свързан с Петър Петров.",
@@ -257,7 +357,7 @@ describe("AssetStep VIN-first lookup (Wave 3 Issue 20)", () => {
 
     await selectVehicleType(user);
     await user.type(inputForLabel("VIN"), "WVWZZZ1JZ3W386752");
-    await user.click(screen.getByRole("button", { name: "Продължи" }));
+    await user.click(screen.getByRole("button", { name: "Провери VIN" }));
     await user.click(await screen.findByRole("button", { name: "Използвай автомобила" }));
 
     expect(onResolved).toHaveBeenCalledWith({
@@ -281,7 +381,7 @@ describe("AssetStep VIN-first lookup (Wave 3 Issue 20)", () => {
 
     await selectVehicleType(user);
     await user.type(inputForLabel("VIN"), "WVWZZZ1JZ3W386752");
-    await user.click(screen.getByRole("button", { name: "Продължи" }));
+    await user.click(screen.getByRole("button", { name: "Провери VIN" }));
     await user.click(await screen.findByRole("button", { name: "Смени собственик" }));
 
     expect(api.post).toHaveBeenCalledWith("/assets/existing-2/transfer-owner", {
@@ -291,6 +391,57 @@ describe("AssetStep VIN-first lookup (Wave 3 Issue 20)", () => {
       id: "existing-2", label: "Volkswagen Golf", assetTypeCode: "vehicle",
     });
   });
+});
+
+describe("AssetStep draft survives navigation (cleanup batch Issue 22)", () => {
+  it("keeps unsaved full-form field values after the step unmounts and remounts with the same lifted draft", async () => {
+    const user = userEvent.setup();
+    mockByVinNoMatch();
+    renderToggleableStep();
+
+    await selectVehicleType(user);
+    await skipVin(user);
+    await user.type(inputForLabel("Марка"), "Toyota");
+    await user.type(inputForLabel("Модел"), "Corolla");
+
+    // Simulate "Back to Customer step" (AssetStep unmounts) then "forward to
+    // Asset step again" (remounts) — the parent's lifted draft is untouched
+    // by either toggle, exactly like IntakePage's own customer/asset
+    // conditional rendering.
+    await user.click(screen.getByRole("button", { name: "toggle-asset-step" }));
+    await user.click(screen.getByRole("button", { name: "toggle-asset-step" }));
+
+    expect(await screen.findByText("Марка")).toBeInTheDocument();
+    expect(inputForLabel("Марка")).toHaveValue("Toyota");
+    expect(inputForLabel("Модел")).toHaveValue("Corolla");
+  });
+
+  it("keeps the VIN-first phase (not yet checked) after unmount/remount", async () => {
+    const user = userEvent.setup();
+    mockByVinNoMatch();
+    renderToggleableStep();
+
+    await selectVehicleType(user);
+    await user.type(inputForLabel("VIN"), "WVWZZZ1JZ3W386752");
+
+    await user.click(screen.getByRole("button", { name: "toggle-asset-step" }));
+    await user.click(screen.getByRole("button", { name: "toggle-asset-step" }));
+
+    // Still on the VIN-first sub-form (never checked), with the typed VIN retained.
+    expect(await screen.findByRole("button", { name: "Провери VIN" })).toBeInTheDocument();
+    expect(inputForLabel("VIN")).toHaveValue("WVWZZZ1JZ3W386752");
+  });
+
+  function mockByVinNoMatch() {
+    vi.mocked(api.get).mockImplementation((path: string) => {
+      if (path === "/asset-types") return Promise.resolve([vehicleType]) as never;
+      if (path.endsWith("/assets")) return Promise.resolve([]) as never;
+      if (path.startsWith("/assets/by-vin")) {
+        return Promise.reject(new ApiError(404, "not_found", "errors.assets.vin_not_found")) as never;
+      }
+      return Promise.reject(new Error(`unexpected GET ${path}`));
+    });
+  }
 });
 
 describe("coerceFieldValue", () => {

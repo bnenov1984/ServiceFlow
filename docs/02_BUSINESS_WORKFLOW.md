@@ -8,8 +8,14 @@ Business document: how the shop works and how the software supports it. No techn
 
 ## 1. Status Model (approved simplified model)
 
-Seven working statuses + four terminal outcomes + archive flag. Internal semantic
-kinds are fixed; Bulgarian display names are what users see.
+*(Cleanup batch amendment, per Wave 2 Issue 5:)* Тестване was removed as a
+separate status — verifying a repair is now simply part of Ремонт, never a
+distinct stage a company can toggle. The table below reflects the current
+**six working/waiting/ready statuses + four terminal outcomes** + archive
+flag; the row it removed is struck out rather than deleted, so the change is
+visible rather than silently rewriting history.
+
+Internal semantic kinds are fixed; Bulgarian display names are what users see.
 
 | # | Status (BG) | Kind | Purpose — the question it answers |
 |---|-------------|------|-----------------------------------|
@@ -17,13 +23,13 @@ kinds are fixed; Bulgarian display names are what users see.
 | 2 | Диагностика | working | A technician is evaluating it |
 | 3 | Чака клиент | waiting | Estimate given; customer must decide |
 | 4 | Чака части | waiting | Approved; blocked on parts |
-| 5 | Ремонт | working | Actively being repaired |
-| 6 | Тестване | working, **toggleable per company** | Verifying the repair |
-| 7 | Готова | ready | Done; waiting for pickup |
-| 8 | Предадена | terminal-success | Customer took it; engagement complete |
-| 9 | Отказана | terminal-failure | Customer declined the estimate |
-| 10 | Неремонтируема | terminal-failure | Cannot / not worth repairing |
-| 11 | Анулирана | terminal-failure | Created by mistake / duplicate |
+| 5 | Ремонт | working | Actively being repaired (now includes verifying the repair — see amendment above) |
+| ~~6~~ | ~~Тестване~~ | ~~removed~~ | ~~Verifying the repair~~ — folded into Ремонт |
+| 6 | Готова | ready | Done; waiting for pickup |
+| 7 | Предадена | terminal-success | Customer took it; engagement complete |
+| 8 | Отказана | terminal-failure | Customer declined the estimate |
+| 9 | Неремонтируема | terminal-failure | Cannot / not worth repairing |
+| 10 | Анулирана | terminal-failure | Created by mistake / duplicate |
 
 **Архивирана is a flag, not a status** — applies to any terminal order; hides it from
 operational views; reversible by Owner.
@@ -34,16 +40,19 @@ Rows = from, columns = to. ✔ allowed · W = allowed with warning (skip) · —
 All transitions require an authenticated user; backend always validates (Kanban is
 just one way to trigger them).
 
-| From \ To | Диагн. | Чака кл. | Чака части | Ремонт | Тестване | Готова | Предадена | Отказана | Неремонт. | Анулирана |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Приета | ✔ | W | W | W | W | W | — | ✔ | ✔ | ✔ |
-| Диагностика | — | ✔ | ✔ | ✔ | W | W | — | ✔ | ✔ | ✔ |
-| Чака клиент | ✔ | — | ✔ | ✔ | W | W | — | ✔ | ✔ | ✔ |
-| Чака части | ✔ | ✔ | — | ✔ | W | W | — | ✔ | ✔ | ✔ |
-| Ремонт | ✔ | ✔ | ✔ | — | ✔ | ✔ | — | — | ✔ | ✔ |
-| Тестване | ✔ | ✔ | ✔ | ✔ | — | ✔ | — | — | ✔ | ✔ |
-| Готова | — | — | — | ✔ | ✔ | — | ✔ | — | — | ✔ |
-| terminal | — | — | — | — | — | — | — | — | — | — |
+*(Cleanup batch amendment: Тестване row/column removed — see §1's amendment.
+No other cell changes: Ремонт → Готова was already a direct ✔, since
+verifying the repair was never the only path there.)*
+
+| From \ To | Диагн. | Чака кл. | Чака части | Ремонт | Готова | Предадена | Отказана | Неремонт. | Анулирана |
+|---|---|---|---|---|---|---|---|---|---|
+| Приета | ✔ | W | W | W | W | — | ✔ | ✔ | ✔ |
+| Диагностика | — | ✔ | ✔ | ✔ | W | — | ✔ | ✔ | ✔ |
+| Чака клиент | ✔ | — | ✔ | ✔ | W | — | ✔ | ✔ | ✔ |
+| Чака части | ✔ | ✔ | — | ✔ | W | — | ✔ | ✔ | ✔ |
+| Ремонт | ✔ | ✔ | ✔ | — | ✔ | — | — | ✔ | ✔ |
+| Готова | — | — | — | ✔ | — | ✔ | — | — | ✔ |
+| terminal | — | — | — | — | — | — | — | — | — |
 
 Rules encoded above:
 - **Предадена only from Готова** (you can't hand over what isn't ready). Delivery
@@ -83,7 +92,7 @@ Permissions: any active user may perform allowed transitions except Анулир
    ├─ одобрение нужно → Чака клиент → обаждане → запис на одобрение/отказ
    └─ не → продължава
 → Части нужни? → редове „части“ (needed→ordered→received) → Чака части при блокаж
-→ Ремонт → (Тестване, ако е включено) → Готова
+→ Ремонт (incl. verifying the repair — no separate Тестване stage) → Готова
 → Клиентът идва: аксесоари върнати ✓ · плащане(ия) · [фактура по желание]
    · гаранционен срок · ПЕЧАТ: протокол за предаване → Предадена
 → (по-късно) Архивирана
@@ -213,7 +222,7 @@ call tasks). No charts, no vanity metrics.
 
 ## 16. Kanban
 
-Columns = working + ready statuses (Тестване hidden if disabled); terminal orders
+Columns = working + ready statuses; terminal orders
 leave the board (reachable via search/lists). Card: order № · customer · asset ·
 one-line complaint · technician initials · days-in-status · badges (просрочена,
 приоритет, гаранционна). Filters: technician, priority, overdue. Colors communicate
@@ -240,7 +249,7 @@ conflict toast + board refresh on focus.
 Kanban → първата в Диагностика: оглед, диагноза (дисплей + батерия), оценка 180 €,
 маркира „изисква одобрение" → Чака клиент, задача „обади се". 10:30 звъни, клиентът
 одобрява → записва одобрението → Чака части. 11:00 друга поръчка: смяна на дисплей,
-ред труд 60 €, снимки „процес", Тестване → Готова. 16:00 нов клиент на гишето: Иво
+ред труд 60 €, снимки „процес" → Готова. 16:00 нов клиент на гишето: Иво
 приема устройство (интейк + протокол — 3 мин, нов клиент). 17:45 отбелязва задачите,
 PIN-out.
 
@@ -265,8 +274,10 @@ PIN-out.
 - OQ-W2 „Готови от N дни" threshold default (proposal: 5 работни дни) — confirm?
 - OQ-W3 Should intake photos be *required* (not just recommended) when the company
   enables a "strict intake" setting? (Proposal: setting exists, default off.)
-- OQ-W4 Тестване: enabled by default for phone/electronics template, disabled for
-  automotive — confirm?
+- ~~OQ-W4 Тестване: enabled by default for phone/electronics template, disabled for
+  automotive — confirm?~~ **Resolved (Wave 2 Issue 5):** removed entirely rather
+  than made toggleable — verifying the repair is now just part of Ремонт for
+  every company/template. See §1's cleanup-batch amendment.
 - Plus OQ-1…OQ-5 from 01_DOMAIN_MODEL §7.
 
 **Stop.** Awaiting review of 01 + 02. Next stage after approval: Part 6 —

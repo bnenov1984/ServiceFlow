@@ -10,10 +10,22 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { useAuth } from "../auth/AuthContext";
 import { t } from "../i18n/bg";
 import { api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
 import { AccessoriesChecklist } from "./AccessoriesChecklist";
+
+// Cleanup batch Issue 26: integer, >= 0 — mirrors the backend's
+// `mileage: int | None = Field(default=None, ge=0)` (OrderIn), used here
+// only to decide whether Submit should be disabled for an automotive
+// order; the backend (service_orders.service.create()) is still the real
+// authority.
+function isValidMileage(v: string): boolean {
+  if (v.trim() === "") return false;
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 0;
+}
 
 const DELIVERY_METHODS = ["pickup", "courier"] as const;
 export type DeliveryMethod = (typeof DELIVERY_METHODS)[number];
@@ -75,10 +87,17 @@ export function OrderStep({
   submitting: boolean;
   error: string | null;
 }) {
+  const { me } = useAuth();
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [partName, setPartName] = useState("");
   const [partPrice, setPartPrice] = useState("");
+
+  // Cleanup batch Issue 26: required only for a vehicle asset at a company
+  // whose own business_profile is "automotive_repair" — every other
+  // profile/asset type keeps mileage fully optional, unchanged.
+  const mileageRequired = assetTypeCode === "vehicle" && me?.business_profile === "automotive_repair";
+  const mileageMissing = mileageRequired && !isValidMileage(value.mileage);
 
   useEffect(() => {
     if (value.deliveryMethod !== "courier") return;
@@ -142,16 +161,21 @@ export function OrderStep({
       {assetTypeCode === "vehicle" && (
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">
-            {t("intake.mileage")}
+            {t("intake.mileage")}{mileageRequired && " *"}
           </label>
           <input
-            type="number" min={0} value={value.mileage}
+            type="number" min={0} required={mileageRequired} value={value.mileage}
             onChange={(e) => {
               const mileage = e.target.value;
               onChange((prev) => ({ ...prev, mileage }));
             }}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
+            className={`w-full rounded-lg border px-3 py-2 min-h-touch ${
+              mileageMissing ? "border-red-600" : "border-slate-300"
+            }`}
           />
+          {mileageMissing && (
+            <p className="mt-0.5 text-xs text-red-700">{t("errors.orders.mileage_required")}</p>
+          )}
         </div>
       )}
 
@@ -330,7 +354,7 @@ export function OrderStep({
       <button
         type="button"
         onClick={onSubmit}
-        disabled={submitting || value.complaint.trim().length === 0}
+        disabled={submitting || value.complaint.trim().length === 0 || mileageMissing}
         className="rounded-lg bg-blue-600 px-6 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-50 min-h-touch"
       >
         {submitting ? t("common.loading") : t("intake.create_order")}

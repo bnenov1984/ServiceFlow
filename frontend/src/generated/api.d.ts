@@ -2468,6 +2468,8 @@ export interface components {
             /** Has Pin */
             has_pin: boolean;
             warranty_defaults: components["schemas"]["WarrantyDefaultsOut"];
+            /** Business Profile */
+            business_profile: string;
         };
         /** NextActionCreate */
         NextActionCreate: {

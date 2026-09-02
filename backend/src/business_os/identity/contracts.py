@@ -47,6 +47,7 @@ __all__ = [
     "get_company_admin_metadata",
     "get_company_profile",
     "get_user_name",
+    "get_warranty_defaults",
     "grant_module",
     "record_audit_event",
     "is_module_active",
@@ -104,6 +105,17 @@ def get_user_name(db: Session, company_id: uuid.UUID, user_id: uuid.UUID) -> str
     `None` if the user isn't in this company. Wraps `service.get_user_name`;
     callers must never read `User` directly."""
     return _service.get_user_name(db, company_id, user_id)
+
+
+def get_warranty_defaults(db: Session, company_id: uuid.UUID) -> dict[str, int | None]:
+    """Cleanup batch (Issue 7): the sanctioned way for `service_orders` to
+    read the company's configured labor/parts warranty defaults so the
+    server — not just the frontend prefill — can apply them when a client
+    omits `warranty_days` at delivery/part-creation time. `{"labor_days":
+    ..., "parts_days": ...}`, each `None` if never configured. Wraps
+    `service.get_warranty_defaults`; callers must never read
+    `Company.settings` directly."""
+    return _service.get_warranty_defaults(db, company_id)
 
 
 def record_audit_event(db: Session, company_id: uuid.UUID, actor_user_id: uuid.UUID | None,

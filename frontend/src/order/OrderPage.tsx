@@ -198,11 +198,6 @@ export function OrderPage() {
             <>
               <PartLinesSection orderId={order.id} />
               <LaborLinesSection orderId={order.id} />
-              <MoneyCard
-                estimatedTotal={order.estimated_total}
-                paidAmount={order.paid_amount}
-                balance={order.balance}
-              />
             </>
           )}
           <AccessoriesListSection orderId={order.id} />
@@ -210,6 +205,18 @@ export function OrderPage() {
           {/* Issue 34: history lives in the timeline below now — this stays
               only as the add-a-contact form, no duplicate list. */}
           <ContactsSection orderId={order.id} showHistory={false} />
+          {/* Cleanup batch Issue 31: the financial total belongs at the
+              actual bottom of this column's operational content — after
+              every line-item/accessory/photo/contact section, not sandwiched
+              between Parts/Labor and them. Ready orders skip this entirely
+              (ReadySummary above already shows the same three figures). */}
+          {!isReady && (
+            <MoneyCard
+              estimatedTotal={order.estimated_total}
+              paidAmount={order.paid_amount}
+              balance={order.balance}
+            />
+          )}
         </div>
       </div>
 

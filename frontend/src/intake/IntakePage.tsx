@@ -13,7 +13,7 @@ import { apiUrl } from "../lib/apiUrl";
 import { t } from "../i18n/bg";
 import { useToast } from "../components/Toast";
 import { queryKeys } from "../lib/queryKeys";
-import { AssetStep, type ResolvedAsset } from "./AssetStep";
+import { AssetStep, DEFAULT_ASSET_STEP_DRAFT, type AssetStepDraft, type ResolvedAsset } from "./AssetStep";
 import { CustomerStep, type ResolvedCustomer } from "./CustomerStep";
 import { OrderStep, type OrderStepValue } from "./OrderStep";
 
@@ -71,6 +71,11 @@ export function IntakePage() {
     preselected.preselectedCustomer ?? null,
   );
   const [asset, setAsset] = useState<ResolvedAsset | null>(preselected.preselectedAsset ?? null);
+  // Cleanup batch Issue 22: lifted here (not local to AssetStep) so a round
+  // trip back to the Customer step and forward again doesn't lose whatever
+  // the user had already typed into the Asset step — same lifted-state
+  // shape orderValue below already uses for OrderStep.
+  const [assetStepDraft, setAssetStepDraft] = useState<AssetStepDraft>(DEFAULT_ASSET_STEP_DRAFT);
   const [orderValue, setOrderValue] = useState<OrderStepValue>(DEFAULT_ORDER_VALUE);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -177,6 +182,8 @@ export function IntakePage() {
             resolved={asset}
             onResolved={setAsset}
             onChangeRequested={() => setAsset(null)}
+            draft={assetStepDraft}
+            onDraftChange={setAssetStepDraft}
           />
         </StepSection>
       )}

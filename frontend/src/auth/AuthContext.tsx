@@ -32,6 +32,11 @@ export interface Me {
   // hand don't all need updating for a field they don't exercise; real
   // consumers (DeliveryDialog, part-warranty prefill) read it defensively.
   warranty_defaults?: WarrantyDefaults;
+  // Cleanup batch Issue 26: same "always on the wire, optional on the TS
+  // shape" convention as warranty_defaults above — OrderStep reads this to
+  // mark automotive mileage required client-side (the backend,
+  // service_orders.service.create(), is the actual authority).
+  business_profile?: string;
 }
 
 interface AuthState {

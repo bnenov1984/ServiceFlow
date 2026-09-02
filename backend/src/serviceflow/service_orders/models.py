@@ -58,9 +58,12 @@ class ServiceOrder(Base, TimestampMixin):
     promised_on: Mapped[date | None] = mapped_column(default=None)
     warranty_days: Mapped[int | None] = mapped_column(default=None)
     # Wave 3 Issues 21/26/27: mileage belongs to the visit, not just the
-    # asset master record — captured (optionally) at intake for automotive
-    # orders. `created_at` (TimestampMixin) is the visit timestamp; no
-    # separate mileage date column. NULL for every non-vehicle/legacy order.
+    # asset master record — captured at intake. `created_at` (TimestampMixin)
+    # is the visit timestamp; no separate mileage date column. Cleanup batch
+    # Issue 26: `service.create()` requires this for a new order when the
+    # company's own business_profile is "automotive_repair"; still fully
+    # optional for every other profile. Stays nullable at the column level
+    # regardless (legacy rows, and every non-automotive order, are NULL).
     mileage: Mapped[int | None] = mapped_column(default=None)
     # Wave 5 Issue 12: the smallest order-level logistics model. "pickup" or
     # "courier" (validated at the Pydantic layer, same no-DB-CHECK precedent

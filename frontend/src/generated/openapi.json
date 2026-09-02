@@ -7477,6 +7477,10 @@
           },
           "warranty_defaults": {
             "$ref": "#/components/schemas/WarrantyDefaultsOut"
+          },
+          "business_profile": {
+            "type": "string",
+            "title": "Business Profile"
           }
         },
         "type": "object",
@@ -7492,7 +7496,8 @@
           "seat_limit",
           "seat_usage",
           "has_pin",
-          "warranty_defaults"
+          "warranty_defaults",
+          "business_profile"
         ],
         "title": "MeResponse"
       },

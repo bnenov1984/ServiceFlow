@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from business_os.identity import contracts as identity_contracts
 from business_os.shared_kernel.db import TenantContext, scoped
 from business_os.shared_kernel.events import DomainEvent, publish
 from serviceflow.service_orders.models import AccessoryItem, LaborLine, PartLine, ServiceOrder
@@ -36,6 +37,14 @@ def list_part_lines(db: Session, ctx: TenantContext, order_id: uuid.UUID) -> lis
 def add_part_line(db: Session, ctx: TenantContext, order: ServiceOrder, *, name: str,
                   qty: int, unit_cost: Decimal, unit_price: Decimal,
                   warranty_days: int | None = None) -> PartLine:
+    # Cleanup batch Issue 7: explicit (including 0, "Без гаранция") always
+    # wins; omitted falls back to the company's configured parts default,
+    # if one exists, applied once at creation only — never retroactively
+    # for existing PartLines, and never re-derived later.
+    if warranty_days is None:
+        warranty_days = identity_contracts.get_warranty_defaults(
+            db, ctx.company_id,
+        )["parts_days"]
     line = PartLine(company_id=ctx.company_id, order_id=order.id, name=name, qty=qty,
                     unit_cost=unit_cost, unit_price=unit_price, warranty_days=warranty_days)
     db.add(line)

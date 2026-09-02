@@ -114,6 +114,17 @@ def create(db: Session, ctx: TenantContext, *, customer_id: uuid.UUID,
            origin_order_id: uuid.UUID | None = None,
            mileage: int | None = None, delivery_method: str | None = None,
            delivery_address: dict[str, Any] | None = None) -> ServiceOrder:
+    # Cleanup batch Issue 26: mileage is required at intake only for a
+    # company whose own business_profile is "automotive_repair" — every
+    # other profile (phone_repair, electronics_repair, generic_repair, ...)
+    # keeps mileage fully optional, unchanged. Checked before number
+    # allocation, same discipline commercial.service.issue() uses for its
+    # own pre-allocation validation, so a rejected request never consumes
+    # an order number.
+    if mileage is None and identity_contracts.get_business_profile(
+        db, ctx.company_id,
+    ) == "automotive_repair":
+        raise OrderError("errors.orders.mileage_required", status=400)
     order = ServiceOrder(
         company_id=ctx.company_id, number=next_order_number(db, ctx),
         customer_id=customer_id, asset_id=asset_id, complaint=complaint,
@@ -387,7 +398,22 @@ def change_status(db: Session, ctx: TenantContext, order: ServiceOrder, *, to: s
         if to == "delivered":
             order.delivered_at = _now()
             if warranty_days is not None:
+                # Explicit — including 0 ("Без гаранция") — always wins,
+                # even on a later redeliver after unlock.
                 order.warranty_days = warranty_days
+            elif order.warranty_days is None:
+                # Cleanup batch Issue 7: omitted/unspecified and nothing
+                # already stored — the server, not just the frontend
+                # prefill, applies the company's configured labor/work
+                # default when one exists. Gated on "nothing already
+                # stored" so a later change to the company default can
+                # never retroactively mutate a value this order already
+                # received at an earlier delivery.
+                default = identity_contracts.get_warranty_defaults(
+                    db, ctx.company_id,
+                )["labor_days"]
+                if default is not None:
+                    order.warranty_days = default
             # Wave 4 Issue 7: built once, at the moment of delivery, from
             # whatever is true right now — never rebuilt afterward (an
             # unlock+redeliver on the same order would otherwise silently

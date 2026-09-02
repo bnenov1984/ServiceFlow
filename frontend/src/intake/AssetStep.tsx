@@ -2,10 +2,28 @@
  * Стъпка 2 АКТИВ (docs/15 §6.4): pick an existing asset of the customer, or
  * create one via a type picker → typed fields rendered from GET /asset-types'
  * field_defs. Created eagerly, same rationale as CustomerStep.
+ *
+ * Cleanup batch Issue 20 (VIN-first): for a vehicle, VIN is looked up
+ * *before* the full field form is shown — `draft.vinCheckDone` gates
+ * between the VIN-only sub-form and the full form. Reuses the exact same
+ * `GET /assets/by-vin` lookup and reuse/transfer-owner actions the
+ * submit-time check already used (see `lookupVinConflict`/
+ * `useExistingVehicle`/`transferOwner` below) — no second VIN identity
+ * implementation, no weakened uniqueness: the submit-time check inside
+ * `createAsset` still runs too, as a safety net if the VIN field is edited
+ * again after the upfront check passes.
+ *
+ * Cleanup batch Issue 22: all in-progress, unsaved draft state (mode,
+ * selected type, typed field values, the VIN-first phase, an open owner
+ * conflict) is lifted to the parent (`draft`/`onDraftChange`, the same
+ * controlled-component shape `OrderStep` already uses for its own value) so
+ * it survives this component unmounting/remounting when the user goes back
+ * to the Customer step and forward again — no global state, just the
+ * existing lifted-state pattern applied one level further up.
  */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { type FormEvent, useState } from "react";
 import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
@@ -54,6 +72,27 @@ interface AssetByVinOut {
   customer_id: string;
   customer_name: string;
 }
+
+// The full in-progress Asset-step draft, lifted to IntakePage (Issue 22) so
+// it survives a Customer-step round trip. `values` covers every field of
+// whichever type is selected, including the vehicle "vin" key — the same
+// record backs both the VIN-first sub-form and the full field form, so a
+// VIN typed in the first is already present (retained) in the second.
+export interface AssetStepDraft {
+  mode: "pick" | "create";
+  selectedTypeCode: string | null;
+  values: Record<string, string>;
+  // Issue 20: only meaningful when selectedTypeCode === "vehicle" — false
+  // means "show the VIN-only sub-form first", true means "VIN has been
+  // checked (or explicitly skipped) — show the full field form."  Ignored
+  // for every non-vehicle type (they never show the VIN-first sub-form).
+  vinCheckDone: boolean;
+  ownerConflict: AssetByVinOut | null;
+}
+
+export const DEFAULT_ASSET_STEP_DRAFT: AssetStepDraft = {
+  mode: "pick", selectedTypeCode: null, values: {}, vinCheckDone: false, ownerConflict: null,
+};
 
 // Format hints for identifier fields (docs/15 §6.4) — presentation only, the
 // backend is the actual validator.
@@ -138,23 +177,32 @@ export function AssetStep({
   resolved,
   onResolved,
   onChangeRequested,
+  draft,
+  onDraftChange,
 }: {
   customerId: string;
   resolved: ResolvedAsset | null;
   onResolved: (asset: ResolvedAsset) => void;
   onChangeRequested: () => void;
+  draft: AssetStepDraft;
+  onDraftChange: (next: AssetStepDraft) => void;
 }) {
-  const [mode, setMode] = useState<"pick" | "create">("pick");
-  const [selectedType, setSelectedType] = useState<AssetTypeOut | null>(null);
-  const [values, setValues] = useState<Record<string, string>>({});
+  const { mode, selectedTypeCode, values, vinCheckDone, ownerConflict } = draft;
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
-  // Issue 20: set when a VIN typed into the create form already matches a
-  // vehicle owned by a different customer — blocks the normal create submit
-  // until the user explicitly picks reuse-as-is or transfer.
-  const [ownerConflict, setOwnerConflict] = useState<AssetByVinOut | null>(null);
   const queryClient = useQueryClient();
+
+  const patchDraft = (patch: Partial<AssetStepDraft>) => onDraftChange({ ...draft, ...patch });
+
+  // The draft resets to its defaults once an asset is actually
+  // resolved (picked, reused, transferred, or freshly created) — the
+  // in-progress-data-survives-navigation guarantee is about *unsaved* work,
+  // not about carrying a finished attempt's leftovers into the next one.
+  const resolve = (asset: ResolvedAsset) => {
+    onDraftChange(DEFAULT_ASSET_STEP_DRAFT);
+    onResolved(asset);
+  };
 
   const { data: types } = useQuery({
     queryKey: queryKeys.assetTypes,
@@ -165,6 +213,11 @@ export function AssetStep({
     queryFn: () => api.get<AssetHit[]>(`/customers/${customerId}/assets`),
     enabled: mode === "pick",
   });
+
+  const selectedType = types?.find((t2) => t2.code === selectedTypeCode) ?? null;
+  const isVehicle = selectedType?.code === "vehicle";
+  const vinDef = selectedType?.field_defs.find((d) => d.identifier_kind === "vin");
+  const showVinFirst = isVehicle && !vinCheckDone && !ownerConflict;
 
   if (resolved) {
     return (
@@ -190,11 +243,11 @@ export function AssetStep({
 
   // Issue 20: VIN must be looked up tenant-wide *before* a vehicle is
   // created, never after. Returns null when there's nothing to check (not a
-  // vehicle, or no VIN field def) or no match was found (404) — either way
-  // the caller should just proceed with the normal create.
+  // vehicle, or no VIN field def, or a blank VIN) or no match was found
+  // (404) — either way the caller should just proceed with the normal
+  // create.
   const lookupVinConflict = async (): Promise<AssetByVinOut | null> => {
     if (selectedType?.code !== "vehicle") return null;
-    const vinDef = selectedType.field_defs.find((d) => d.identifier_kind === "vin");
     const vin = vinDef ? values[vinDef.key]?.trim() : "";
     if (!vin) return null;
     try {
@@ -205,11 +258,9 @@ export function AssetStep({
     }
   };
 
-  const createAsset = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!selectedType) return;
+  // Issue 20's upfront check: "Провери VIN" on the VIN-first sub-form.
+  const checkVin = async () => {
     setError(null);
-    setFieldErrors({});
     setSubmitting(true);
     try {
       const match = await lookupVinConflict();
@@ -217,9 +268,43 @@ export function AssetStep({
         if (match.customer_id === customerId) {
           // Already this customer's own vehicle — reuse it outright, same
           // as picking it from the "pick existing" list would have done.
-          onResolved({ id: match.id, label: match.label, assetTypeCode: match.asset_type_code });
+          resolve({ id: match.id, label: match.label, assetTypeCode: match.asset_type_code });
         } else {
-          setOwnerConflict(match);
+          patchDraft({ ownerConflict: match });
+        }
+      } else {
+        patchDraft({ vinCheckDone: true });
+      }
+    } catch (err) {
+      setError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Issue 20's explicit escape hatch: a vehicle asset doesn't strictly
+  // require a VIN (the domain treats it as just another optional field), so
+  // a blank VIN must have its own path forward rather than silently forcing
+  // the user through a lookup that has nothing to check.
+  const continueWithoutVin = () => patchDraft({ vinCheckDone: true });
+
+  const createAsset = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!selectedType) return;
+    setError(null);
+    setFieldErrors({});
+    setSubmitting(true);
+    try {
+      // Safety net (Wave 3 original behavior, unchanged): the VIN field can
+      // still be edited inside the full form after the Issue 20 upfront
+      // check passed, so this re-checks at submit time too — never weakens
+      // the existing company-scoped normalized VIN uniqueness.
+      const match = await lookupVinConflict();
+      if (match) {
+        if (match.customer_id === customerId) {
+          resolve({ id: match.id, label: match.label, assetTypeCode: match.asset_type_code });
+        } else {
+          patchDraft({ ownerConflict: match });
         }
         return;
       }
@@ -234,7 +319,7 @@ export function AssetStep({
         ),
       });
       await queryClient.invalidateQueries({ queryKey: queryKeys.customerAssets(customerId) });
-      onResolved({
+      resolve({
         id: created.id, label: created.label, assetTypeCode: created.asset_type_code,
         duplicateWarning: created.duplicate_asset_ids.length > 0
           ? t("intake.duplicate_asset_hint") : undefined,
@@ -257,11 +342,10 @@ export function AssetStep({
   // the existing vehicle's asset_id (docs/business-os Wave 3, Issue 20).
   const useExistingVehicle = () => {
     if (!ownerConflict) return;
-    onResolved({
+    resolve({
       id: ownerConflict.id, label: ownerConflict.label,
       assetTypeCode: ownerConflict.asset_type_code,
     });
-    setOwnerConflict(null);
   };
 
   // "Смени собственик" — the only explicit action that reassigns ownership.
@@ -273,8 +357,7 @@ export function AssetStep({
       const asset = await api.post<AssetOut>(`/assets/${ownerConflict.id}/transfer-owner`, {
         customer_id: customerId,
       });
-      onResolved({ id: asset.id, label: asset.label, assetTypeCode: asset.asset_type_code });
-      setOwnerConflict(null);
+      resolve({ id: asset.id, label: asset.label, assetTypeCode: asset.asset_type_code });
     } catch (err) {
       setError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
     } finally {
@@ -292,7 +375,7 @@ export function AssetStep({
                 <button
                   key={a.id}
                   type="button"
-                  onClick={() => onResolved({ id: a.id, label: a.label, assetTypeCode: a.asset_type_code })}
+                  onClick={() => resolve({ id: a.id, label: a.label, assetTypeCode: a.asset_type_code })}
                   className="flex items-center gap-3 rounded-lg border border-slate-200 px-4 py-2 text-left hover:bg-slate-50 min-h-touch"
                 >
                   <AssetTypeIcon code={a.asset_type_code} className="h-5 w-5 text-slate-400" />
@@ -303,7 +386,7 @@ export function AssetStep({
           )}
           <button
             type="button"
-            onClick={() => setMode("create")}
+            onClick={() => patchDraft({ mode: "create" })}
             className="text-sm font-medium text-blue-700 hover:underline"
           >
             {t("intake.new_asset")}
@@ -316,7 +399,12 @@ export function AssetStep({
               <button
                 key={type.code}
                 type="button"
-                onClick={() => { setSelectedType(type); setValues({}); setFieldErrors({}); }}
+                onClick={() => {
+                  patchDraft({
+                    selectedTypeCode: type.code, values: {}, vinCheckDone: false, ownerConflict: null,
+                  });
+                  setFieldErrors({});
+                }}
                 className="flex flex-col items-center gap-2 rounded-lg border border-slate-200 p-4 hover:border-blue-400 hover:bg-blue-50 min-h-touch"
               >
                 <AssetTypeIcon code={type.code} className="h-7 w-7 text-slate-500" />
@@ -326,7 +414,7 @@ export function AssetStep({
           </div>
           <button
             type="button"
-            onClick={() => setMode("pick")}
+            onClick={() => patchDraft({ mode: "pick" })}
             className="mt-3 rounded-lg border border-slate-300 px-4 py-2 hover:bg-slate-50 min-h-touch"
           >
             {t("common.cancel")}
@@ -357,6 +445,45 @@ export function AssetStep({
             </button>
           </div>
         </div>
+      ) : showVinFirst && vinDef ? (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2 text-sm text-slate-500">
+            <AssetTypeIcon code={selectedType.code} className="h-5 w-5" />
+            {selectedType.name_bg}
+            <button
+              type="button"
+              onClick={() => patchDraft({ selectedTypeCode: null, vinCheckDone: false, ownerConflict: null })}
+              className="ml-auto text-blue-700 hover:underline"
+            >
+              {t("intake.change")}
+            </button>
+          </div>
+          <p className="text-sm text-slate-500">{t("intake.vin_first_hint")}</p>
+          <FieldInput
+            def={vinDef}
+            value={values[vinDef.key] ?? ""}
+            onChange={(v) => patchDraft({ values: { ...values, [vinDef.key]: v } })}
+          />
+          {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => void checkVin()}
+              disabled={submitting}
+              className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-50 min-h-touch"
+            >
+              {submitting ? t("common.loading") : t("intake.vin_check")}
+            </button>
+            <button
+              type="button"
+              onClick={continueWithoutVin}
+              disabled={submitting}
+              className="rounded-lg border border-slate-300 px-4 py-2 hover:bg-slate-50 disabled:opacity-50 min-h-touch"
+            >
+              {t("intake.vin_continue_without")}
+            </button>
+          </div>
+        </div>
       ) : (
         <form onSubmit={createAsset} className="flex flex-col gap-3">
           <div className="flex items-center gap-2 text-sm text-slate-500">
@@ -364,7 +491,7 @@ export function AssetStep({
             {selectedType.name_bg}
             <button
               type="button"
-              onClick={() => setSelectedType(null)}
+              onClick={() => patchDraft({ selectedTypeCode: null, vinCheckDone: false, ownerConflict: null })}
               className="ml-auto text-blue-700 hover:underline"
             >
               {t("intake.change")}
@@ -376,7 +503,7 @@ export function AssetStep({
               def={def}
               value={values[def.key] ?? ""}
               error={fieldErrors[def.key]}
-              onChange={(v) => setValues((prev) => ({ ...prev, [def.key]: v }))}
+              onChange={(v) => patchDraft({ values: { ...values, [def.key]: v } })}
             />
           ))}
           {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
@@ -390,7 +517,7 @@ export function AssetStep({
             </button>
             <button
               type="button"
-              onClick={() => setMode("pick")}
+              onClick={() => patchDraft({ mode: "pick" })}
               className="rounded-lg border border-slate-300 px-4 py-2 hover:bg-slate-50 min-h-touch"
             >
               {t("common.cancel")}

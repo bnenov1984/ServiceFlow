@@ -233,6 +233,13 @@ class MeResponse(BaseModel):
     # reason `active_modules` already rides on /me rather than a dedicated
     # per-page fetch.
     warranty_defaults: WarrantyDefaultsOut
+    # Cleanup batch Issue 26: any authenticated user creating an order needs
+    # this to know whether intake must require mileage (the backend is
+    # still the actual enforcement — see service_orders.service.create() —
+    # this only lets the frontend mark the field required/show the right
+    # copy before submitting, same "prefill/UX hint, not the authority"
+    # role warranty_defaults already plays above).
+    business_profile: str
 
 
 class PinSwitchRequest(BaseModel):
@@ -264,6 +271,7 @@ def _me(db: Session, session: AuthSession, user: User) -> MeResponse:
         warranty_defaults=WarrantyDefaultsOut(
             **service.get_warranty_defaults(db, session.company_id)
         ),
+        business_profile=service.get_business_profile(db, session.company_id),
     )
 
 

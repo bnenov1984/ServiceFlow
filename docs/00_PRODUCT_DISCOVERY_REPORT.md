@@ -131,7 +131,10 @@ Delivered, Closed, Cancelled, Not Repairable, Archived — as Kanban columns thi
 the "understand Kanban immediately" success metric.
 **Recommendation:** 7 working statuses + terminal outcomes + an archive *flag*:
 - Working: Приета → Диагностика → Чака клиент → Чака части → Ремонт → Тестване
-  (optional, toggleable) → Готова
+  (optional, toggleable) → Готова *(superseded — Wave 2 Issue 5: Тестване was
+  removed entirely rather than made toggleable; verifying the repair is now
+  just part of Ремонт. Current status set: Приета → Диагностика → Чака клиент
+  → Чака части → Ремонт → Готова. See docs/02 §1's amendment.)*
 - Terminal: Предадена (success) · Отказана (estimate rejected) · Неремонтируема ·
   Анулирана (mistake/duplicate)
 - **Closed merges into Предадена** (delivery closes the order; a separate Closed state
