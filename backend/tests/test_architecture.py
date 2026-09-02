@@ -57,6 +57,7 @@ TABLE_OWNERS = {
     "asset_types": "serviceflow.assets",
     "assets": "serviceflow.assets",
     "asset_identifiers": "serviceflow.assets",
+    "asset_ownership": "serviceflow.assets",
     "order_statuses": "serviceflow.service_orders",
     "document_sequences": "serviceflow.service_orders",  # ownership Open — BOS-05 §1
     "service_orders": "serviceflow.service_orders",
