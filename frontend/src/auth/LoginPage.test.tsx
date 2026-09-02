@@ -21,6 +21,7 @@ function renderLoginAt(path: string, queryClient = new QueryClient({ defaultOpti
           <Route path="/login" element={<LoginPage />} />
           <Route path="/" element={<div>DASHBOARD_PAGE</div>} />
           <Route path="/ps" element={<div>PROPERTYFLOW_PAGE</div>} />
+          <Route path="/forgot-password" element={<div>FORGOT_PASSWORD_PAGE</div>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -155,5 +156,17 @@ describe("LoginPage", () => {
     await user.click(screen.getByRole("button", { name: "Влез" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Грешен имейл или парола.");
+  });
+
+  it("has a Забравена парола? link that navigates to /forgot-password (cleanup: Tenant Forgot Password V1)", async () => {
+    const callsBefore = mockPost.mock.calls.length;
+    renderLoginAt("/login");
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("link", { name: "Забравена парола?" }));
+
+    expect(await screen.findByText("FORGOT_PASSWORD_PAGE")).toBeInTheDocument();
+    // Navigating via the link alone must never itself trigger a login POST.
+    expect(mockPost.mock.calls.length).toBe(callsBefore);
   });
 });

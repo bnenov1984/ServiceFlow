@@ -3,7 +3,9 @@
 
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import type { ReactNode } from "react";
+import { ForgotPasswordPage } from "./auth/ForgotPasswordPage";
 import { LoginPage } from "./auth/LoginPage";
+import { ResetPasswordPage } from "./auth/ResetPasswordPage";
 import { useAuth } from "./auth/AuthContext";
 import { CustomerProfilePage } from "./customers/CustomerProfilePage";
 import { CustomersPage } from "./customers/CustomersPage";
@@ -87,6 +89,8 @@ export function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       {/* Standalone, outside AppShell - neither state has a single "current
           app" to build per-app nav/toolbar chrome around. */}
       <Route path="/choose-app" element={<RequireAuth><AppChooserPage /></RequireAuth>} />

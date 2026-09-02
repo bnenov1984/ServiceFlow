@@ -260,6 +260,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/forgot-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Forgot Password
+         * @description Tenant Forgot Password V1. Public, pre-auth — no CSRF (mirrors
+         *     `/auth/login`, which has none either: there is no session yet to bind
+         *     one to), no subscription gate (the whole `/auth/*` surface is exempt,
+         *     `test_identity_auth_mechanics_are_never_gated_by_subscription_state`
+         *     enforces this for every route under this prefix — a suspended company's
+         *     user must still be able to get back in).
+         *
+         *     Always returns the same generic-success shape regardless of whether the
+         *     email exists, belongs to an active user, or belongs to an archived
+         *     company, and regardless of whether the delivery attempt below actually
+         *     succeeds — see `identity.service.request_password_reset()`'s own
+         *     docstring for the anti-enumeration reasoning; a mail-provider outage
+         *     must never turn into a distinguishable response either. The raw token
+         *     is never returned to the caller — it is either handed to
+         *     `identity.mail.send_password_reset_email` (real delivery) or, only
+         *     under `settings.debug`, logged server-side for local testing; in
+         *     production (`debug=False`) it is never logged anywhere.
+         */
+        post: operations["forgot_password_api_v1_auth_forgot_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset Password Endpoint
+         * @description Same public, pre-auth posture as `forgot_password` above. Deliberately
+         *     does not log the caller in / set a session cookie afterward: every
+         *     existing session for this user was just revoked
+         *     (`identity.service.reset_password()`), so auto-login here would
+         *     immediately create a brand new one while the caller has only proven
+         *     possession of the reset link, not re-entered their (new) password at a
+         *     real login prompt.
+         */
+        post: operations["reset_password_endpoint_api_v1_auth_reset_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/me": {
         parameters: {
             query?: never;
@@ -2221,6 +2283,14 @@ export interface components {
              */
             audit_id: string;
         };
+        /** ForgotPasswordRequest */
+        ForgotPasswordRequest: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -2982,6 +3052,13 @@ export interface components {
             /** Over Limit */
             over_limit: number;
         };
+        /** ResetPasswordRequest */
+        ResetPasswordRequest: {
+            /** Token */
+            token: string;
+            /** Password */
+            password: string;
+        };
         /** SearchOut */
         SearchOut: {
             /** Customers */
@@ -3726,6 +3803,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    forgot_password_api_v1_auth_forgot_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ForgotPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_password_endpoint_api_v1_auth_reset_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
                 };
             };
             /** @description Validation Error */

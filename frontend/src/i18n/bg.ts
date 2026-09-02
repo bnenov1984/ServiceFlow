@@ -53,6 +53,24 @@ export const bg = {
   "auth.pin_confirm": "Потвърди",
   "auth.pin_no_pin_hint": "Няма зададен PIN",
 
+  // --- Tenant Forgot Password V1 ---
+  "auth.forgot_password_link": "Забравена парола?",
+  "auth.forgot_password_title": "Забравена парола",
+  "auth.forgot_password_hint": "Въведете имейла на акаунта си и ще изпратим инструкции за възстановяване на паролата.",
+  "auth.forgot_password_submit": "Изпрати",
+  "auth.forgot_password_success": "Ако съществува акаунт с този имейл, изпратихме инструкции за възстановяване на паролата.",
+  "auth.back_to_login": "← Обратно към вход",
+  "auth.reset_password_title": "Нова парола",
+  "auth.reset_password_new_password": "Нова парола",
+  "auth.reset_password_confirm": "Потвърдете новата парола",
+  "auth.reset_password_submit": "Запази новата парола",
+  "auth.reset_password_success": "Паролата е сменена успешно. Влезте с новата си парола.",
+  "auth.reset_password_missing_token": "Липсва или невалидна връзка за възстановяване.",
+  "auth.reset_password_mismatch": "Паролите не съвпадат.",
+  "auth.reset_password_length_hint": "Паролата трябва да е между {min} и {max} символа.",
+  "auth.reset_password_request_new_link": "Заявете нова връзка за възстановяване",
+  "errors.auth.reset_token_invalid": "Връзката за възстановяване е невалидна или изтекла.",
+
   // --- self-service PIN setup ---
   "pin.set_form_enter_label": "Нов PIN",
   "pin.set_form_confirm_label": "Потвърдете PIN",

@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { t } from "../i18n/bg";
 import { ApiError, api, setCsrfToken } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
@@ -117,8 +117,14 @@ export function LoginPage() {
           autoComplete="current-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
         />
+        <Link
+          to="/forgot-password"
+          className="mb-4 mt-1 inline-block text-sm font-medium text-blue-700 hover:underline"
+        >
+          {t("auth.forgot_password_link")}
+        </Link>
         {error && (
           <p role="alert" className="mb-4 text-sm text-red-700">
             {error}
