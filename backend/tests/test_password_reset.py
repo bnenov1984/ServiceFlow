@@ -506,3 +506,111 @@ def test_missing_csrf_header_is_not_required_for_public_reset_endpoints(
     _seed()
     resp = _forgot(client)
     assert resp.status_code == 200  # no CSRF header sent, still succeeds
+
+
+# --- Batch B: email delivery wiring through the endpoint --------------------
+#
+# These monkeypatch business_os.identity.mail.send_password_reset_email —
+# never a real SMTP server (backend/tests/test_identity_mail.py already
+# covers the adapter itself in full isolation).
+
+
+def test_mail_adapter_invoked_for_a_valid_eligible_user(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from business_os.identity import mail
+
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        mail, "send_password_reset_email",
+        lambda to, raw_token: calls.append((to, raw_token)) or True,
+    )
+    _seed()
+    resp = _forgot(client)
+    assert resp.status_code == 200
+    assert len(calls) == 1
+    assert calls[0][0] == EMAIL
+    assert calls[0][1]  # a non-empty raw token was passed through
+
+
+def test_no_mail_sent_for_unknown_email(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from business_os.identity import mail
+
+    calls: list[object] = []
+    monkeypatch.setattr(mail, "send_password_reset_email",
+                        lambda to, raw_token: calls.append((to, raw_token)) or True)
+    _seed()
+    resp = _forgot(client, "nobody@nowhere.bg")
+    assert resp.status_code == 200
+    assert calls == []
+
+
+def test_no_mail_sent_for_inactive_user(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from business_os.identity import mail
+
+    calls: list[object] = []
+    monkeypatch.setattr(mail, "send_password_reset_email",
+                        lambda to, raw_token: calls.append((to, raw_token)) or True)
+    _seed()
+    _set_user_active(EMAIL, False)
+    resp = _forgot(client)
+    assert resp.status_code == 200
+    assert calls == []
+
+
+def test_generic_http_response_unchanged_when_delivery_fails(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A mail-provider outage must never surface as a distinguishable
+    response — same {"ok": True} shape and status code as a fully
+    successful request."""
+    from business_os.identity import mail
+
+    monkeypatch.setattr(mail, "send_password_reset_email", lambda to, raw_token: False)
+    _seed()
+    resp = _forgot(client)
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+
+
+def test_production_logs_do_not_expose_the_reset_token_or_link(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+) -> None:
+    from business_os.identity import mail
+
+    monkeypatch.setattr(mail, "send_password_reset_email", lambda to, raw_token: True)
+    _seed()
+
+    with caplog.at_level("INFO", logger="business_os.identity.router"):
+        resp = _forgot(client)
+    assert resp.status_code == 200
+
+    row = _latest_token_row()
+    all_log_text = "\n".join(record.getMessage() for record in caplog.records)
+    assert row.token_hash not in all_log_text
+    assert "reset-password?token=" not in all_log_text  # debug is off by default
+
+
+def test_debug_logs_the_full_reset_link(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+) -> None:
+    from business_os.identity import mail
+    from business_os.identity import router as identity_router
+    from serviceflow.config import get_settings
+
+    monkeypatch.setattr(mail, "send_password_reset_email", lambda to, raw_token: True)
+    real_settings = get_settings()
+    debug_settings = real_settings.model_copy(update={"debug": True})
+    monkeypatch.setattr(identity_router, "get_settings", lambda: debug_settings)
+    _seed()
+
+    with caplog.at_level("INFO", logger="business_os.identity.router"):
+        resp = _forgot(client)
+    assert resp.status_code == 200
+
+    all_log_text = "\n".join(record.getMessage() for record in caplog.records)
+    assert "reset-password?token=" in all_log_text

@@ -6,13 +6,14 @@ dialog, technician picker); create/activate/deactivate/role-change are Etap 3
 vendor-set seat limit (ADR-BOS-009 ownership matrix).
 """
 
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from sqlalchemy.orm import Session
 
-from business_os.identity import service
+from business_os.identity import mail, service
 from business_os.identity.deps import (
     SESSION_COOKIE,
     AuthDep,
@@ -26,6 +27,8 @@ from business_os.identity.models import AuthSession, Company, User
 from business_os.shared_kernel.cookies import session_cookie_policy
 from business_os.shared_kernel.normalize import is_valid_eik, normalize_eik
 from serviceflow.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 users_router = APIRouter()
@@ -317,16 +320,29 @@ def forgot_password(body: ForgotPasswordRequest, request: Request, db: DbDep) ->
 
     Always returns the same generic-success shape regardless of whether the
     email exists, belongs to an active user, or belongs to an archived
-    company — see `identity.service.request_password_reset()`'s own
-    docstring for the anti-enumeration reasoning. Delivery of the actual
-    reset link is a separate concern (added in the next batch); this
-    endpoint only ever creates the token server-side, never returns it."""
+    company, and regardless of whether the delivery attempt below actually
+    succeeds — see `identity.service.request_password_reset()`'s own
+    docstring for the anti-enumeration reasoning; a mail-provider outage
+    must never turn into a distinguishable response either. The raw token
+    is never returned to the caller — it is either handed to
+    `identity.mail.send_password_reset_email` (real delivery) or, only
+    under `settings.debug`, logged server-side for local testing; in
+    production (`debug=False`) it is never logged anywhere."""
     try:
-        service.request_password_reset(db, body.email, _client_key(request))
+        raw_token = service.request_password_reset(db, body.email, _client_key(request))
     except service.AuthError as e:
         raise HTTPException(status_code=e.status, detail={
             "code": "auth_failed", "message_key": e.message_key, "params": {},
         }) from e
+
+    if raw_token is not None:
+        settings = get_settings()
+        if settings.debug:
+            logger.info(
+                "forgot_password (debug): reset link = %s",
+                mail.build_reset_link(raw_token),
+            )
+        mail.send_password_reset_email(body.email, raw_token)
     return {"ok": True}
 
 
