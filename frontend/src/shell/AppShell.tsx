@@ -264,14 +264,32 @@ function RepairFlowToolbar() {
   );
 }
 
+// Every dialog in the app (PinSwitchDialog, ReasonDialog, DeliveryDialog, ...)
+// renders a native <dialog> via components/Dialog.tsx's showModal() - browsers
+// always paint an open native <dialog> in the top layer, above everything
+// else on the page regardless of z-index, including this file's own plain
+// z-50 lock overlay below. Left open, a stale dialog visually and
+// interactively blocks the lock screen entirely (confirmed bug: PIN entry
+// on the lock screen silently went to the still-open dialog instead).
+// Calling .close() dispatches each dialog's native "close" event, which
+// Dialog.tsx already wires to the owning component's onClose - the same path
+// Escape already uses - so this also runs that component's own close cleanup.
+function closeOpenDialogs(): void {
+  document.querySelectorAll<HTMLDialogElement>("dialog[open]").forEach((d) => d.close());
+}
+
 function useIdleLock(): [boolean, () => void, () => void] {
   const [locked, setLocked] = useState(false);
 
   useEffect(() => {
-    let timer = setTimeout(() => setLocked(true), IDLE_LOCK_MS);
+    const lockNow = () => {
+      closeOpenDialogs();
+      setLocked(true);
+    };
+    let timer = setTimeout(lockNow, IDLE_LOCK_MS);
     const reset = () => {
       clearTimeout(timer);
-      timer = setTimeout(() => setLocked(true), IDLE_LOCK_MS);
+      timer = setTimeout(lockNow, IDLE_LOCK_MS);
     };
     const events = ["mousemove", "mousedown", "keydown", "touchstart", "scroll"] as const;
     events.forEach((name) => window.addEventListener(name, reset, { passive: true }));
@@ -284,7 +302,14 @@ function useIdleLock(): [boolean, () => void, () => void] {
   // Manual lock ("Заключи екрана" in the account menu) reuses the same
   // `locked` state and LockedPanel/onUnlocked flow the idle timeout drives -
   // no second lock UI, just a different trigger for the same overlay.
-  return [locked, () => setLocked(false), () => setLocked(true)];
+  return [
+    locked,
+    () => setLocked(false),
+    () => {
+      closeOpenDialogs();
+      setLocked(true);
+    },
+  ];
 }
 
 export function AppShell() {

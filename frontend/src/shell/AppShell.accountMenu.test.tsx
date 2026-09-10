@@ -165,6 +165,42 @@ describe("AppShell: account menu", () => {
     await waitFor(() => expect(screen.queryByText("Екранът е заключен")).not.toBeInTheDocument());
   });
 
+  it("closes an open dialog when 'Заключи екрана' fires, instead of leaving it stuck on top of the lock screen (regression)", async () => {
+    // Native <dialog> (components/Dialog.tsx, showModal()) always paints in
+    // the browser's top layer, above the lock overlay's plain z-50 div,
+    // regardless of z-index - a dialog left open when the lock fires used to
+    // sit there unresponsive on top, with the real lock screen invisible and
+    // unreachable underneath it.
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/platform/health") return Promise.resolve({ status: "ok" });
+      if (path === "/users") {
+        return Promise.resolve([
+          { id: "u1", name: "Мария", is_owner: true, is_active: true, has_pin: true },
+          { id: "u2", name: "Иван", is_owner: false, is_active: true, has_pin: true },
+        ]);
+      }
+      return Promise.reject(new Error(`unexpected GET ${path}`));
+    });
+    renderShell(true);
+    const user = userEvent.setup();
+
+    await openMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Смяна на потребител" }));
+    await user.click(await screen.findByRole("button", { name: /Иван/ }));
+    expect(await screen.findByLabelText("PIN")).toBeInTheDocument();
+    expect(document.querySelectorAll("dialog[open]")).toHaveLength(1);
+
+    // Manual lock exercises the same locked/LockedPanel path the real
+    // 5-minute idle timeout drives (see useIdleLock) - no need to fake timers
+    // to hit the exact scenario reported: a dialog left open when the lock
+    // fires.
+    await openMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Заключи екрана" }));
+
+    expect(document.querySelectorAll("dialog[open]")).toHaveLength(0);
+    expect(await screen.findByText("Екранът е заключен")).toBeInTheDocument();
+  });
+
   it("logs out from the menu and redirects to /login", async () => {
     mockLogout.mockImplementation(async () => {
       await mockPost("/auth/logout");
