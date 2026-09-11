@@ -5,7 +5,7 @@
  */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -146,6 +146,30 @@ export function OrderHeader({
   const [pending, setPending] = useState<PendingAction>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Confirmed bug: a no-dialog transition (requestTransition's plain "ok"
+  // branch) awaits POST -> refreshOrder() -> close() with nothing to stop a
+  // user from starting a second action while the first is still in flight -
+  // the first action's own trailing close()/setSubmitting(false)/setError()
+  // can land *after* the second action already opened its own dialog,
+  // silently closing it (observed: a delivery dialog closing itself ~1s
+  // after opening, from the *previous* transition's stale cleanup). Every
+  // action that can set `pending` bumps this token (openPending below, and
+  // each run* at its own start); every run* only touches shared state at
+  // the end if no newer action has started since.
+  const actionTokenRef = useRef(0);
+  const openPending = (action: NonNullable<PendingAction>) => {
+    actionTokenRef.current += 1;
+    setPending(action);
+    // A stale run*'s guarded finally{} legitimately skips its own
+    // setSubmitting(false) once superseded (it's not this action's state to
+    // clear) — but nothing else was going to clear it either, since this
+    // new action's own setSubmitting(true) doesn't fire until its confirm
+    // button is actually clicked. Left unreset, that confirm button opens
+    // permanently disabled ("Зареждане..." from the moment the dialog
+    // appears, never "Предай"/etc.) — reset explicitly here instead.
+    setSubmitting(false);
+    setError(null);
+  };
 
   // Shared cache entry with AccessoriesListSection — a toggle in either place
   // (this dialog or the persistent list) keeps both in sync via invalidation.
@@ -167,6 +191,7 @@ export function OrderHeader({
   const runStatusChange = async (
     body: Record<string, unknown>,
   ) => {
+    const token = ++actionTokenRef.current;
     setSubmitting(true);
     setError(null);
     try {
@@ -179,17 +204,20 @@ export function OrderHeader({
       } else {
         pushToast("success", t("order.status_changed"));
       }
-      close();
+      if (actionTokenRef.current === token) close();
     } catch (err) {
-      setError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
+      if (actionTokenRef.current === token) {
+        setError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
+      }
     } finally {
-      setSubmitting(false);
+      if (actionTokenRef.current === token) setSubmitting(false);
     }
   };
 
   const runDelivery = async (
     warrantyDays: number | null, payment: DeliveryPaymentInput | null,
   ) => {
+    const token = ++actionTokenRef.current;
     setSubmitting(true);
     setError(null);
     try {
@@ -208,21 +236,23 @@ export function OrderHeader({
       } else {
         pushToast("success", t("order.status_changed"));
       }
-      close();
+      if (actionTokenRef.current === token) close();
     } catch (err) {
-      setError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
+      if (actionTokenRef.current === token) {
+        setError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
+      }
     } finally {
-      setSubmitting(false);
+      if (actionTokenRef.current === token) setSubmitting(false);
     }
   };
 
   const requestTransition = (to: string) => {
     if (TERMINAL_FAILURE_CODES.has(to)) {
-      setPending({ kind: "reason", to });
+      openPending({ kind: "reason", to });
     } else if (statusCode === "waiting_customer" && !isTerminal(to)) {
-      setPending({ kind: "approval", to });
+      openPending({ kind: "approval", to });
     } else if (to === "delivered") {
-      setPending({ kind: "delivery" });
+      openPending({ kind: "delivery" });
     } else {
       void runStatusChange({ to });
     }
@@ -234,45 +264,52 @@ export function OrderHeader({
   };
 
   const runUnlock = async (reason: string) => {
+    const token = ++actionTokenRef.current;
     setSubmitting(true);
     setError(null);
     try {
       await api.post(`/orders/${orderId}/unlock`, { reason });
       await refreshOrder();
       pushToast("success", t("order.unlocked"));
-      close();
+      if (actionTokenRef.current === token) close();
     } catch (err) {
-      setError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
+      if (actionTokenRef.current === token) {
+        setError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
+      }
     } finally {
-      setSubmitting(false);
+      if (actionTokenRef.current === token) setSubmitting(false);
     }
   };
 
   const runWarrantyReturn = async (complaint: string) => {
+    const token = ++actionTokenRef.current;
     setSubmitting(true);
     setError(null);
     try {
       const newOrder = await api.post<{ id: string }>(`/orders/${orderId}/warranty-return`, { complaint });
-      close();
+      if (actionTokenRef.current === token) close();
       navigate(`/orders/${newOrder.id}`);
     } catch (err) {
-      setError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
+      if (actionTokenRef.current === token) {
+        setError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
+      }
     } finally {
-      setSubmitting(false);
+      if (actionTokenRef.current === token) setSubmitting(false);
     }
   };
 
   const runArchive = async () => {
+    const token = ++actionTokenRef.current;
     setSubmitting(true);
     try {
       await api.post(`/orders/${orderId}/archive`);
       await refreshOrder();
       pushToast("success", t("order.archived"));
-      close();
+      if (actionTokenRef.current === token) close();
     } catch (err) {
       pushToast("error", err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
     } finally {
-      setSubmitting(false);
+      if (actionTokenRef.current === token) setSubmitting(false);
     }
   };
 
@@ -323,7 +360,7 @@ export function OrderHeader({
           {orderIsTerminal && (
             <button
               type="button"
-              onClick={() => setPending({ kind: "unlock" })}
+              onClick={() => openPending({ kind: "unlock" })}
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 min-h-touch"
             >
               {t("order.unlock")}
@@ -332,7 +369,7 @@ export function OrderHeader({
           {orderIsDelivered && (
             <button
               type="button"
-              onClick={() => setPending({ kind: "warranty_return" })}
+              onClick={() => openPending({ kind: "warranty_return" })}
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 min-h-touch"
             >
               {t("order.warranty_return")}
@@ -341,7 +378,7 @@ export function OrderHeader({
           {orderIsTerminal && (
             <button
               type="button"
-              onClick={() => setPending({ kind: "archive" })}
+              onClick={() => openPending({ kind: "archive" })}
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 min-h-touch"
             >
               {t("order.archive")}

@@ -79,16 +79,51 @@ interaction surface) or any transition that opens a dialog (skip-ahead
 "warn" transitions, the terminal-failure reason dialog, delivery) — those are
 each their own future test, not bundled into this one.
 
+### `order-delivery.spec.ts`
+
+Same intake setup, then drives the *entire* clean lifecycle in one pass:
+received → diagnostics → repair → ready (three no-dialog "ok" transitions,
+same menu as `order-status.spec.ts`) → delivered, which opens
+`DeliveryDialog` (fills warranty days, leaves payment blank since it's
+optional, confirms). Deliberately never clicks "Печат на протокол" — that
+path hits a known, separately-tracked fpdf crash
+(`backend/tests/test_protocol.py`, `xfail(strict=True)`) unrelated to the
+status transition this test verifies. Two things worth knowing if this file
+needs touching again:
+
+- **Real bug found and fixed here, not a test workaround**:
+  `OrderHeader.tsx`'s `runStatusChange`/`runDelivery`/etc. all await
+  `POST → refreshOrder() → close()`. Clicking through consecutive
+  transitions fast enough that a *previous* transition's async chain is
+  still in flight let its stale `close()` call clear the pending state a
+  *newer* action had just set — a delivery dialog opened by transition N+1
+  could close itself ~1s later from transition N's trailing cleanup. Fixed
+  with an operation-token guard (`actionTokenRef`/`openPending` in
+  `OrderHeader.tsx`) so a superseded action's completion can't touch shared
+  `pending`/`submitting`/`error` state anymore. This test is what surfaced
+  it — root-caused by instrumenting `setPending`/`HTMLDialogElement.close`
+  with a throwaway diagnostic spec (not committed), not guessed at.
+- The test itself still waits for the network to go idle
+  (`page.waitForLoadState('networkidle')`) after each transition before
+  starting the next, as defense in depth and more realistic pacing — not a
+  substitute for the app fix above, which is what actually makes this safe
+  to click through quickly at all.
+- `Dialog.tsx`'s `<h2>` title isn't `aria-labelledby`'d to the `<dialog>`
+  element (a real, separate accessibility gap, same shape as `OrderStep`'s
+  complaint textarea) — the dialog carries no accessible name, so it's
+  matched by bare role plus a separate visible-text check on the title,
+  not `getByRole('dialog', { name: ... })`.
+
 ## Domain ownership and growth rules
 
-All four files above are flat at the E2E root today, but each already has a
+All five files above are flat at the E2E root today, but each already has a
 conceptual home:
 
 - `auth.spec.ts` → future `platform/` domain
-- `customer.spec.ts`, `order-intake.spec.ts`, `order-status.spec.ts` →
-  future `repairflow/` domain
+- `customer.spec.ts`, `order-intake.spec.ts`, `order-status.spec.ts`,
+  `order-delivery.spec.ts` → future `repairflow/` domain
 
-`repairflow/` now has three specs — the materialization rule below says
+`repairflow/` now has four specs — the materialization rule below says
 that's enough to justify the directory, but none moves yet; do it as its own
 change, not a side effect of adding another file.
 
