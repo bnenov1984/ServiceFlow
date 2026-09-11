@@ -52,15 +52,45 @@ Logs in as owner (same pattern as above), enters the RepairFlow app, and
 creates a customer via the "+ Нова поръчка" → "+ Нов клиент" flow, asserting
 the new customer name appears in the UI.
 
+### `order-intake.spec.ts`
+
+Logs in as owner, enters RepairFlow, and drives the full three-step intake
+flow to a real created order: "+ Нова поръчка" → new customer (same as
+`customer.spec.ts`) → new asset ("Друго", submitted with no fields — every
+asset field is optional at the API) → order step (complaint only — the
+textarea has no accessible label/placeholder, a real pre-existing gap in
+`OrderStep.tsx`, so it's targeted structurally as the page's only
+`<textarea>`) → submit. Asserts navigation to `/orders/:id` and that the
+order-number heading and the complaint text are both visible on the order
+detail page.
+
+### `order-status.spec.ts`
+
+Repeats `order-intake.spec.ts`'s setup to get a real order onto the board
+(login → RepairFlow → intake), confirms it starts at "Приета" (received,
+docs/01 BR-1), then drives the "Промени статус" menu (`OrderHeader.tsx`'s
+`StatusTransitionMenu`, `role="menu"`/`role="menuitem"`) to advance it to
+"Диагностика" — the matrix's plain "ok" next step from "received", the one
+transition with no reason/approval/delivery dialog attached
+(`OrderHeader.tsx`'s `requestTransition`). Asserts the new status is visible
+and the old one no longer is. Deliberately doesn't touch the Kanban board's
+drag-and-drop path (same underlying transition, a separate and more brittle
+interaction surface) or any transition that opens a dialog (skip-ahead
+"warn" transitions, the terminal-failure reason dialog, delivery) — those are
+each their own future test, not bundled into this one.
+
 ## Domain ownership and growth rules
 
-Both files above are flat at the E2E root today, but each already has a
+All four files above are flat at the E2E root today, but each already has a
 conceptual home:
 
 - `auth.spec.ts` → future `platform/` domain
-- `customer.spec.ts` → future `repairflow/` domain
+- `customer.spec.ts`, `order-intake.spec.ts`, `order-status.spec.ts` →
+  future `repairflow/` domain
 
-Neither moves yet — see materialization rule below.
+`repairflow/` now has three specs — the materialization rule below says
+that's enough to justify the directory, but none moves yet; do it as its own
+change, not a side effect of adding another file.
 
 **Future top-level QA domains** (none exist as directories yet):
 
