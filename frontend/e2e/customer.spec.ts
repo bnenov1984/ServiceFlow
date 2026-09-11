@@ -16,7 +16,10 @@ test('owner can create a customer', async ({ page }) => {
     .getByRole('button', { name: 'RepairFlow' })
     .click();
 
-  await expect(page).toHaveURL('/');
+  // Not '/' — IndexRoute (App.tsx) immediately re-navigates "/" -> "/orders"
+  // once the chooser sets a last-app preference (dual-module company), so
+  // '/' never actually settles; asserting it races the app's own redirect.
+  await expect(page).toHaveURL('/orders');
 
   await page
     .getByRole('button', { name: '+ Нова поръчка' })

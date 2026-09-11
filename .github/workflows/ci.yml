@@ -85,3 +85,134 @@ jobs:
       - run: npx playwright install --with-deps chromium
 
       - run: npx playwright test
+
+  # Tests the PR's own checkout, unlike `e2e` above (which smoke-tests
+  # whatever's already deployed to Render — kept as-is, not replaced). Same
+  # Postgres-service and migration/role-grant pattern as the `backend` job,
+  # plus `serviceflow.seed` — the same CLI script a developer runs locally
+  # (CLAUDE.md's own dev-DB instructions) — to create one throwaway E2E
+  # owner, instead of a second seeding mechanism.
+  e2e-local:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: serviceflow
+          POSTGRES_PASSWORD: ci-password
+          POSTGRES_DB: serviceflow_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U serviceflow"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+
+    env:
+      DB_ADMIN_URL: postgresql+psycopg://serviceflow:ci-password@localhost:5432/serviceflow_test
+      # Never a superuser (ADR-016/017) — same non-superuser role/password
+      # tests/conftest.py's migrated_db fixture and every developer's local
+      # dev DB already use, not a CI-only credential.
+      DB_APP_URL: postgresql+psycopg://sf_app:sf-app-pw@localhost:5432/serviceflow_test
+      E2E_BASE_URL: http://localhost:4173
+      E2E_OWNER_EMAIL: e2e-ci-owner@test.bg
+      E2E_OWNER_PASSWORD: e2e-ci-local-password-123
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: uv sync --dev
+        working-directory: backend
+
+      - name: Migrate database (admin role)
+        working-directory: backend
+        env:
+          SERVICEFLOW_DATABASE_URL: ${{ env.DB_ADMIN_URL }}
+        run: uv run alembic upgrade head
+
+      - name: Create non-superuser app role (mirrors tests/conftest.py's migrated_db fixture)
+        env:
+          PGPASSWORD: ci-password
+        run: |
+          psql -h localhost -U serviceflow -d serviceflow_test <<'SQL'
+          DO $$ BEGIN IF NOT EXISTS
+          (SELECT FROM pg_roles WHERE rolname = 'sf_app') THEN
+          CREATE ROLE sf_app LOGIN PASSWORD 'sf-app-pw'; END IF; END $$;
+          GRANT USAGE ON SCHEMA public TO sf_app;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO sf_app;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public
+          GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO sf_app;
+          SQL
+
+      - name: Seed one throwaway E2E owner (repairflow + professional-services, matching every existing e2e test's expectations)
+        working-directory: backend
+        env:
+          SERVICEFLOW_DATABASE_URL: ${{ env.DB_APP_URL }}
+        run: uv run python -m serviceflow.seed "E2E CI Company" "E2E Owner" "$E2E_OWNER_EMAIL" "$E2E_OWNER_PASSWORD"
+
+      - name: Start backend
+        working-directory: backend
+        env:
+          SERVICEFLOW_DATABASE_URL: ${{ env.DB_APP_URL }}
+          # Non-Secure session cookies (shared_kernel/cookies.py) — this job
+          # talks plain http://localhost, same as any developer's local dev
+          # server (backend/.env sets this identically).
+          SERVICEFLOW_DEBUG: "true"
+        run: |
+          nohup uv run uvicorn serviceflow.main:app --port 8000 > backend.log 2>&1 &
+          disown
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/api/v1/auth/me || echo 000)
+            if [ "$code" != "000" ]; then echo "backend up (HTTP $code) after ${i}s"; exit 0; fi
+            sleep 1
+          done
+          echo "backend never came up"; cat backend.log; exit 1
+
+      - run: npm install -g npm@11.6.2
+        working-directory: frontend
+
+      - run: npm ci
+        working-directory: frontend
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Start frontend (production build, vite preview — proxies /api to :8000 the same way vite.config.ts's dev-server proxy does)
+        working-directory: frontend
+        run: |
+          nohup npm run preview -- --port 4173 > preview.log 2>&1 &
+          disown
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:4173/ || echo 000)
+            if [ "$code" != "000" ]; then echo "frontend up (HTTP $code) after ${i}s"; exit 0; fi
+            sleep 1
+          done
+          echo "frontend never came up"; cat preview.log; exit 1
+
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+
+      - run: npx playwright test
+        working-directory: frontend
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-local
+          path: frontend/playwright-report/
+          retention-days: 7
+
+      - name: Upload Playwright traces/screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces-local
+          path: frontend/test-results/
+          retention-days: 7

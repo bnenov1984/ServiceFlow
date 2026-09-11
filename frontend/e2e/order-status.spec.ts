@@ -15,7 +15,10 @@ test('owner advances an order from Приета to Диагностика via th
     .getByRole('button', { name: 'RepairFlow' })
     .click();
 
-  await expect(page).toHaveURL('/');
+  // Not '/' — IndexRoute (App.tsx) immediately re-navigates "/" -> "/orders"
+  // once the chooser sets a last-app preference (dual-module company), so
+  // '/' never actually settles; asserting it races the app's own redirect.
+  await expect(page).toHaveURL('/orders');
 
   // Get a real order onto the board first (same flow as order-intake.spec.ts)
   // — the status menu only has something to test once an order exists.
