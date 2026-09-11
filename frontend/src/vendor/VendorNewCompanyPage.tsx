@@ -4,7 +4,9 @@
  * controls (not part of that contract). Module selection (RepairFlow /
  * PropertyFlow) is mandatory since the 01.08.2026 PO decision: no application
  * is active by default, and both are real, backend-gated entitlements
- * (`require_repairflow_active`/`require_ps_active`).
+ * (`require_repairflow_active`/`require_ps_active`). Exactly one, never both
+ * (PO decision, 11.09.2026: one application per company) — a radio group,
+ * not checkboxes.
  *
  * Two separate business-description fields (PO decision, 01.08.2026):
  * `business_profile` stays a fixed, small vocabulary — it controls which
@@ -31,10 +33,11 @@ const BUSINESS_PROFILES: { code: string; labelKey: Parameters<typeof t>[0] }[] =
 ];
 
 // PO decision (01.08.2026): no application is active by default — the
-// vendor must explicitly check at least one. RepairFlow is now a real,
-// backend-gated entitlement (require_repairflow_active), the same shape
-// PropertyFlow's require_ps_active already had — both are equal, ordinary
-// checkbox options here, either or both may be selected.
+// vendor must explicitly pick one. RepairFlow is now a real, backend-gated
+// entitlement (require_repairflow_active), the same shape PropertyFlow's
+// require_ps_active already had — both are equal, ordinary radio options
+// here. Mutually exclusive (PO decision, 11.09.2026): a company runs
+// exactly one application, never both.
 const MODULE_OPTIONS: { code: string; labelKey: Parameters<typeof t>[0] }[] = [
   { code: "repairflow", labelKey: "app.repairflow" },
   { code: "professional-services", labelKey: "app.propertyflow" },
@@ -55,7 +58,7 @@ export function VendorNewCompanyPage() {
   const [ownerPassword, setOwnerPassword] = useState("");
   const [businessProfile, setBusinessProfile] = useState("generic_repair");
   const [businessTypeLabel, setBusinessTypeLabel] = useState("");
-  const [selectedModules, setSelectedModules] = useState<Set<string>>(new Set());
+  const [selectedModule, setSelectedModule] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -71,16 +74,8 @@ export function VendorNewCompanyPage() {
     if (businessTypeLabel.trim().length === 0) {
       errors.business_type_label = t("errors.provisioning.business_type_label_required");
     }
-    if (selectedModules.size === 0) errors.modules = t("errors.provisioning.no_modules_selected");
+    if (selectedModule === null) errors.modules = t("errors.provisioning.no_modules_selected");
     return errors;
-  };
-
-  const toggleModule = (code: string, checked: boolean) => {
-    setSelectedModules((prev) => {
-      const next = new Set(prev);
-      if (checked) next.add(code); else next.delete(code);
-      return next;
-    });
   };
 
   const onSubmit = async (e: FormEvent) => {
@@ -104,7 +99,7 @@ export function VendorNewCompanyPage() {
         owner_password: ownerPassword,
         business_profile: businessProfile,
         business_type_label: businessTypeLabel.trim(),
-        modules: [...selectedModules],
+        modules: selectedModule === null ? [] : [selectedModule],
       };
       const result = await api.post<ProvisionCompanyResult>("/platform-admin/companies", body);
       await queryClient.invalidateQueries({ queryKey: queryKeys.vendorCompanies });
@@ -244,9 +239,10 @@ export function VendorNewCompanyPage() {
             {MODULE_OPTIONS.map((m) => (
               <label key={m.code} className="flex items-center gap-2 text-sm text-slate-700">
                 <input
-                  type="checkbox"
-                  checked={selectedModules.has(m.code)}
-                  onChange={(e) => toggleModule(m.code, e.target.checked)}
+                  type="radio"
+                  name="module"
+                  checked={selectedModule === m.code}
+                  onChange={() => setSelectedModule(m.code)}
                 />
                 {t(m.labelKey)}
               </label>

@@ -297,6 +297,15 @@ export function VendorCompanyDetailPage() {
               >
                 {t("vendor.revoke_professional_services")}
               </button>
+            ) : company.data.active_modules.length > 0 ? (
+              // One application per company (PO decision, 11.09.2026):
+              // granting PropertyFlow while a different module (e.g.
+              // repairflow) is active would just 409 from grant_entitlement
+              // — surface that as a disabled state instead of a doomed
+              // button, same information, no failed round trip.
+              <p className="text-sm text-slate-500">
+                {t("vendor.grant_blocked_other_module_active")}
+              </p>
             ) : (
               <button
                 type="button"

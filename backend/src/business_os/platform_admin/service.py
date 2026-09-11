@@ -305,6 +305,14 @@ def provision_company(
         # at provisioning time. Checked before any write so an empty
         # selection never creates a company nobody can use.
         raise ProvisioningError("errors.provisioning.no_modules_selected", status=400)
+    if len(modules) > 1:
+        # PO decision, 11.09.2026: a company operates exactly one application
+        # - RepairFlow and PropertyFlow are mutually exclusive per company,
+        # never co-entitled. Supersedes the earlier "either or both may be
+        # selected" framing this endpoint originally shipped with
+        # (01.08.2026) - see grant_entitlement below for the symmetric check
+        # on the add-a-module-later path.
+        raise ProvisioningError("errors.provisioning.multiple_modules_not_allowed", status=400)
 
     try:
         provisioned = identity_contracts.provision_company(
@@ -416,10 +424,22 @@ def grant_entitlement(
     the router's `Path` constraint) — there is no module-key registry yet
     (ADR-BOS-010 §Alternatives: deferred until per-module trial/expiry is a
     real requirement), the same as `identity.service._activate_module`.
+
+    Rejects granting a module while a *different* one is already active
+    (PO decision, 11.09.2026: one application per company, RepairFlow and
+    PropertyFlow mutually exclusive) — re-granting the module the company
+    already has stays the idempotent no-op described above. To move a
+    company from one application to the other, revoke the old entitlement
+    first, then grant the new one; those remain two separate audited calls,
+    not a combined "switch" endpoint.
     """
     metadata = identity_contracts.get_company_admin_metadata(db, company_id)
     if metadata is None:
         raise EntitlementError("errors.provisioning.company_not_found", status=404)
+
+    other_active_modules = [m for m in metadata.active_modules if m != module_key]
+    if other_active_modules:
+        raise EntitlementError("errors.provisioning.multiple_modules_not_allowed", status=409)
 
     changed = module_key not in metadata.active_modules
     identity_contracts.grant_module(db, company_id, module_key)

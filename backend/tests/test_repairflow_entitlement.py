@@ -112,19 +112,24 @@ def test_propertyflow_only_can_use_propertyflow_but_not_repairflow(client: TestC
     assert rf_resp.json()["detail"]["message_key"] == "errors.repairflow.module_inactive"
 
 
-def test_both_selected_grants_both(client: TestClient) -> None:
+def test_selecting_both_at_provisioning_is_rejected(client: TestClient) -> None:
+    """One application per company (PO decision, 11.09.2026) — RepairFlow and
+    PropertyFlow are mutually exclusive, so provisioning with both selected
+    must fail before any company/owner is created, the same posture as the
+    empty-selection case just above."""
     _reset_rate_limiter()
     _seed_admin()
     vendor_me = _vendor_login(client)
     result = _provision(client, str(vendor_me["csrf_token"]),
                         ["repairflow", "professional-services"], "owner.both@test.bg")
-    assert result["status"] == 200, result["body"]
 
-    tenant_me = _tenant_login(client, "owner.both@test.bg")
-    headers = {"X-CSRF-Token": str(tenant_me["csrf_token"])}
-
-    assert client.get("/api/v1/customers").status_code == 200
-    assert client.get("/api/v1/ps/clients", headers=headers).status_code == 200
+    assert result["status"] == 400, result["body"]
+    body = result["body"]
+    assert isinstance(body, dict)
+    assert body["detail"]["message_key"] == "errors.provisioning.multiple_modules_not_allowed"
+    assert client.post("/api/v1/auth/login", json={
+        "email": "owner.both@test.bg", "password": "парола-1234567",
+    }).status_code == 401
 
 
 def test_provisioning_with_no_modules_is_rejected(client: TestClient) -> None:

@@ -255,7 +255,10 @@ def grant_entitlement(
 ) -> EntitlementResponse:
     """Grant one module entitlement. Idempotent: calling this again on an
     already-active module is a harmless no-op (`changed=False` in the
-    response), not an error."""
+    response), not an error. Granting a *different* module while one is
+    already active is rejected (409, `errors.provisioning.
+    multiple_modules_not_allowed`) — one application per company; revoke
+    the current one first to switch."""
     _, admin = auth
     try:
         result = service.grant_entitlement(db, admin.id, company_id, module_key)

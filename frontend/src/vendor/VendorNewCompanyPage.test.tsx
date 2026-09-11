@@ -92,7 +92,7 @@ describe("VendorNewCompanyPage", () => {
     expect(screen.queryByLabelText(/места|лимит|валута|часова зона|локал/i)).not.toBeInTheDocument();
   });
 
-  it("renders both module checkboxes unchecked by default — no application active by default", () => {
+  it("renders both module radio options unselected by default — no application active by default", () => {
     renderPage();
     expect(screen.getByLabelText("RepairFlow")).not.toBeChecked();
     expect(screen.getByLabelText("PropertyFlow")).not.toBeChecked();
@@ -198,20 +198,21 @@ describe("VendorNewCompanyPage", () => {
     expect(mockPost.mock.calls[0][1]).toMatchObject({ modules: ["professional-services"] });
   });
 
-  it("sends both module codes when both checkboxes are checked", async () => {
-    mockPost.mockResolvedValue({
-      ...SUCCESS_RESULT, activated_modules: ["repairflow", "professional-services"],
-    });
+  it("is a radio group, not checkboxes — selecting the other option replaces, not adds", async () => {
+    mockPost.mockResolvedValue({ ...SUCCESS_RESULT, activated_modules: ["professional-services"] });
     renderPage();
     const user = userEvent.setup();
     await fillRequiredFields(user);
     await user.click(screen.getByLabelText("RepairFlow"));
     await user.click(screen.getByLabelText("PropertyFlow"));
+
+    expect(screen.getByLabelText("RepairFlow")).not.toBeChecked();
+    expect(screen.getByLabelText("PropertyFlow")).toBeChecked();
+
     await user.click(screen.getByRole("button", { name: "Създай компания" }));
 
     await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
-    const modules: string[] = mockPost.mock.calls[0][1].modules;
-    expect(new Set(modules)).toEqual(new Set(["repairflow", "professional-services"]));
+    expect(mockPost.mock.calls[0][1]).toMatchObject({ modules: ["professional-services"] });
   });
 
   it("targets the vendor-prefixed endpoint (proving the vendor CSRF branch applies)", async () => {

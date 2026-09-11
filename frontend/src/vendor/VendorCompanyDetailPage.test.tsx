@@ -108,6 +108,16 @@ describe("VendorCompanyDetailPage", () => {
     expect(screen.queryByText("Пробният период приключва на")).not.toBeInTheDocument();
   });
 
+  it("hides the grant button and explains why when a different module is already active", async () => {
+    mockGet.mockResolvedValue({ ...BASE_COMPANY, active_modules: ["repairflow"] });
+    renderPage();
+
+    expect(await screen.findByText(
+      "Компанията вече ползва друго приложение. Деактивирайте го, за да превключите.",
+    )).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Активирай PropertyFlow" })).not.toBeInTheDocument();
+  });
+
   it("shows the trial end date when present", async () => {
     mockGet.mockResolvedValue({
       id: "c1", name: "Сервиз Б", business_profile: "generic_repair",

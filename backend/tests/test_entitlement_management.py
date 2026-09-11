@@ -91,6 +91,16 @@ def _audit_actions() -> list[str]:
     raise AssertionError("unreachable")
 
 
+def _revoke_repairflow(client: TestClient, company_id: uuid.UUID, headers: dict[str, str]) -> None:
+    """`_seed_tenant()` starts every company with `"repairflow"` active. One
+    application per company (PO decision, 11.09.2026) means granting
+    MODULE_KEY on top of that is now rejected — tests below that want a
+    MODULE_KEY grant to succeed must first vacate the seeded entitlement,
+    the same "revoke old, grant new" sequence a real app switch uses."""
+    resp = client.delete(f"{VENDOR}/companies/{company_id}/modules/repairflow", headers=headers)
+    assert resp.status_code == 200, resp.text
+
+
 # --- Grant / revoke, idempotency ------------------------------------------
 
 
@@ -99,14 +109,15 @@ def test_grant_activates_the_module(client: TestClient) -> None:
     company_id = _seed_tenant()
     _seed_admin()
     me = _vendor_login(client)
+    headers = {"X-CSRF-Token": str(me["csrf_token"])}
+    _revoke_repairflow(client, company_id, headers)
 
-    resp = client.put(f"{VENDOR}/companies/{company_id}/modules/{MODULE_KEY}",
-                      headers={"X-CSRF-Token": str(me["csrf_token"])})
+    resp = client.put(f"{VENDOR}/companies/{company_id}/modules/{MODULE_KEY}", headers=headers)
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["company_id"] == str(company_id)
     assert body["module_key"] == MODULE_KEY
-    assert set(body["active_modules"]) == {"repairflow", MODULE_KEY}
+    assert body["active_modules"] == [MODULE_KEY]
     assert body["changed"] is True
     assert body["audit_id"]
     assert _audit_actions().count("company.module_granted") == 1
@@ -118,6 +129,7 @@ def test_granting_an_already_active_module_is_idempotent(client: TestClient) -> 
     _seed_admin()
     me = _vendor_login(client)
     headers = {"X-CSRF-Token": str(me["csrf_token"])}
+    _revoke_repairflow(client, company_id, headers)
 
     first = client.put(f"{VENDOR}/companies/{company_id}/modules/{MODULE_KEY}", headers=headers)
     assert first.json()["changed"] is True
@@ -125,7 +137,7 @@ def test_granting_an_already_active_module_is_idempotent(client: TestClient) -> 
     second = client.put(f"{VENDOR}/companies/{company_id}/modules/{MODULE_KEY}", headers=headers)
     assert second.status_code == 200
     assert second.json()["changed"] is False
-    assert set(second.json()["active_modules"]) == {"repairflow", MODULE_KEY}  # not duplicated
+    assert second.json()["active_modules"] == [MODULE_KEY]  # not duplicated
 
     # Idempotent does not mean unaudited — a vendor action attempted is still
     # worth a record, even as a no-op.
@@ -138,14 +150,16 @@ def test_revoke_deactivates_the_module(client: TestClient) -> None:
     _seed_admin()
     me = _vendor_login(client)
     headers = {"X-CSRF-Token": str(me["csrf_token"])}
+    _revoke_repairflow(client, company_id, headers)
     client.put(f"{VENDOR}/companies/{company_id}/modules/{MODULE_KEY}", headers=headers)
 
     resp = client.delete(f"{VENDOR}/companies/{company_id}/modules/{MODULE_KEY}", headers=headers)
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["active_modules"] == ["repairflow"]
+    assert body["active_modules"] == []
     assert body["changed"] is True
-    assert _audit_actions().count("company.module_revoked") == 1
+    # "repairflow" (revoked above) and MODULE_KEY (revoked here): 2 total.
+    assert _audit_actions().count("company.module_revoked") == 2
 
 
 def test_revoking_an_already_inactive_module_is_idempotent(client: TestClient) -> None:
@@ -162,21 +176,40 @@ def test_revoking_an_already_inactive_module_is_idempotent(client: TestClient) -
     assert _audit_actions().count("company.module_revoked") == 1
 
 
-def test_grant_and_revoke_are_scoped_to_the_named_module_only(client: TestClient) -> None:
-    """Granting one module must not disturb another already-active one."""
+# --- One application per company (PO decision, 11.09.2026) ----------------
+
+
+def test_granting_a_second_module_while_one_is_active_is_rejected(client: TestClient) -> None:
     _reset_rate_limiter()
-    company_id = _seed_tenant()
+    company_id = _seed_tenant()  # starts with "repairflow" already active
     _seed_admin()
     me = _vendor_login(client)
     headers = {"X-CSRF-Token": str(me["csrf_token"])}
 
-    client.put(f"{VENDOR}/companies/{company_id}/modules/{MODULE_KEY}", headers=headers)
-    resp = client.put(f"{VENDOR}/companies/{company_id}/modules/another-module", headers=headers)
-    assert set(resp.json()["active_modules"]) == {"repairflow", MODULE_KEY, "another-module"}
+    resp = client.put(f"{VENDOR}/companies/{company_id}/modules/{MODULE_KEY}", headers=headers)
+    assert resp.status_code == 409, resp.text
+    detail = resp.json()["detail"]
+    assert detail["message_key"] == "errors.provisioning.multiple_modules_not_allowed"
+    # Rejected, not partially applied — the seeded entitlement is untouched
+    # and no audit row was written for a grant that never happened.
+    assert _audit_actions().count("company.module_granted") == 0
 
-    resp = client.delete(f"{VENDOR}/companies/{company_id}/modules/{MODULE_KEY}",
-                         headers=headers)
-    assert set(resp.json()["active_modules"]) == {"repairflow", "another-module"}
+
+def test_switching_applications_is_revoke_then_grant(client: TestClient) -> None:
+    """No combined "switch" endpoint (ADR-BOS-010 §Decision 1 scope) — moving
+    a company from one application to the other is two separate, separately
+    audited calls: revoke the old entitlement, then grant the new one."""
+    _reset_rate_limiter()
+    company_id = _seed_tenant()  # starts with "repairflow" already active
+    _seed_admin()
+    me = _vendor_login(client)
+    headers = {"X-CSRF-Token": str(me["csrf_token"])}
+
+    client.delete(f"{VENDOR}/companies/{company_id}/modules/repairflow", headers=headers)
+    resp = client.put(f"{VENDOR}/companies/{company_id}/modules/{MODULE_KEY}", headers=headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["active_modules"] == [MODULE_KEY]
+    assert _audit_actions()[-2:] == ["company.module_revoked", "company.module_granted"]
 
 
 # --- Existence check -------------------------------------------------------
@@ -253,6 +286,8 @@ def test_entitlement_change_never_touches_subscription_state(client: TestClient)
     me = _vendor_login(client)
     headers = {"X-CSRF-Token": str(me["csrf_token"])}
 
+    _revoke_repairflow(client, company_id, headers)
+
     for db in _db():
         before = db.get(Company, company_id)  # type: ignore[attr-defined]
         before_state = before.subscription_state
@@ -290,6 +325,7 @@ def test_granting_and_revoking_actually_changes_what_the_tenant_can_reach(
 
     vendor_me = _vendor_login(client)
     vendor_headers = {"X-CSRF-Token": str(vendor_me["csrf_token"])}
+    _revoke_repairflow(client, company_id, vendor_headers)
     client.put(f"{VENDOR}/companies/{company_id}/modules/{MODULE_KEY}", headers=vendor_headers)
 
     # Same tenant session as before — no re-login, proving the guard reads
