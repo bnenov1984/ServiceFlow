@@ -4,6 +4,15 @@ on:
   push:
   pull_request:
 
+# Cancel a superseded run rather than let it finish alongside the newer one.
+# Without this, two overlapping runs on the same branch race: the backend
+# job's own Postgres service is per-run so that part is safe, but the e2e
+# job hits one shared live environment (E2E_BASE_URL) and two overlapping
+# e2e runs collide on the same seeded owner account.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend:
     runs-on: ubuntu-latest

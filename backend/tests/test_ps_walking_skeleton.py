@@ -71,7 +71,13 @@ def test_full_journey_client_assignment_next_action(client: TestClient) -> None:
     assignment = resp.json()
     assert assignment["current_stage"]["name"] == "Нов"
 
-    yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+    # UTC, not datetime.date.today(): the endpoint classifies risk against
+    # datetime.now(UTC).date(), and near local midnight in Sofia (UTC+2/3)
+    # the local calendar date is already a day ahead of UTC's - this test
+    # must use the same clock the endpoint uses or it flips "overdue" to
+    # "attention" for a couple of hours every night.
+    today_utc = datetime.datetime.now(datetime.UTC).date()
+    yesterday = (today_utc - datetime.timedelta(days=1)).isoformat()
     resp = client.post(
         "/api/v1/ps/next-actions",
         json={

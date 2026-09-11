@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -147,8 +147,13 @@ def recompute_risk(assignment: PSAssignment, today: date | None = None) -> bool:
     changed. Returns whether anything changed - the idempotence contract
     the background job (evaluate_company_risk) relies on: re-running with
     no underlying change must be a true no-op, including at the database
-    level (no dirty row, no `updated_at` tick)."""
-    today = today or date.today()
+    level (no dirty row, no `updated_at` tick).
+
+    Defaults to the UTC calendar date, matching actions.service.compute_risk
+    - the two risk engines must agree on what "today" means, or the same
+    moment near local midnight can read as "overdue" from one and not the
+    other purely depending on the caller's OS timezone."""
+    today = today or datetime.now(UTC).date()
     new_risk = risk.deadline_risk(assignment.official_deadline_on, assignment.lifecycle_state,
                                   today)
     new_stale = risk.is_stale(_last_activity_on(assignment), assignment.lifecycle_state, today)
@@ -205,7 +210,7 @@ def evaluate_company_risk(db: Session, ctx: TenantContext, today: date | None = 
     is_stale both return the "off" value otherwise), so only those rows
     can possibly change here. Writes happen only where recompute_risk
     reports an actual change - idempotent by construction."""
-    today = today or date.today()
+    today = today or datetime.now(UTC).date()
     stmt = scoped(select(PSAssignment), PSAssignment, ctx).where(
         PSAssignment.lifecycle_state == "active"
     )

@@ -92,7 +92,10 @@ def test_change_deadline_recomputes_risk_and_writes_append_only_history(
     a = _create_assignment(client, headers, official_deadline_on=far)
     assert a["current_deadline_risk"] == "normal"
 
-    soon = datetime.date.today().isoformat()  # due today
+    # UTC, matching recompute_risk's default clock (see test_ps_walking_
+    # skeleton.py for why datetime.date.today() is unsafe for a same-day
+    # boundary assertion like this one).
+    soon = datetime.datetime.now(datetime.UTC).date().isoformat()  # due today
     resp = client.post(
         f"/api/v1/ps/assignments/{a['id']}/deadline",
         json={"official_deadline_on": soon, "reason": "клиентът поиска по-рано"},
