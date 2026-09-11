@@ -114,16 +114,56 @@ needs touching again:
   matched by bare role plus a separate visible-text check on the title,
   not `getByRole('dialog', { name: ... })`.
 
+### `order-invoice.spec.ts`
+
+Same delivery flow as `order-delivery.spec.ts`, then issues an invoice
+against the delivered order. Two setup steps that aren't obvious from the
+happy-path UI:
+
+- **Seller setup is required first.** `commercial/service.py`'s `issue()`
+  rejects with `errors.invoices.seller_incomplete` unless the company has
+  an address and a checksum-valid EIK (`company/requisites`,
+  `CompanyRequisitesPage.tsx` at `/settings/company`) — a freshly seeded
+  company has neither. The test fills both before touching an order, using
+  `"130489869"`, the same known-valid test EIK the backend invoice suite
+  already uses (`test_invoice_issue.py` and siblings). The buyer side needs
+  no equivalent setup: the test customer stays an individual (the intake
+  form's default), and `_buyer_snapshot` only demands address/EIK for
+  company buyers.
+- **The order has no part/labor lines** (asset type "Друго", nothing added
+  at intake), so the draft invoice starts empty — `InvoiceDraftEditor`'s
+  Issue button is disabled while empty, and the backend independently
+  rejects an empty draft (`errors.invoices.empty`) regardless of the UI
+  guard. The test adds one manual line before saving.
+
+Other things worth knowing:
+
+- **Issue posts the server-persisted draft, not local edits** —
+  `submitIssue` never saves first, so Save is a hard prerequisite to Issue,
+  not just good practice before navigating away.
+- **The order page has several sections with an identically-labeled
+  "Добави" button** (Задачи, Аксесоари, and the invoice line editor itself)
+  — every invoice-card interaction in this test is scoped to a locator
+  rooted at the "Фактура" heading's parent, not matched page-wide.
+- **The outer "Издай фактура" button and the issue-confirmation dialog's
+  own confirm button share the same label** (`order.invoice_button`, used
+  for both) — the first click is scoped to the invoice card (unambiguous
+  before the dialog exists), the second to `page.getByRole('dialog')`.
+- A freshly created draft does not reliably land expanded — the test opens
+  it explicitly ("Отвори") rather than assuming `InvoiceEntry`'s
+  `defaultOpen` took effect.
+
 ## Domain ownership and growth rules
 
-All five files above are flat at the E2E root today, but each already has a
+All six files above are flat at the E2E root today, but each already has a
 conceptual home:
 
 - `auth.spec.ts` → future `platform/` domain
 - `customer.spec.ts`, `order-intake.spec.ts`, `order-status.spec.ts`,
-  `order-delivery.spec.ts` → future `repairflow/` domain
+  `order-delivery.spec.ts`, `order-invoice.spec.ts` → future `repairflow/`
+  domain
 
-`repairflow/` now has four specs — the materialization rule below says
+`repairflow/` now has five specs — the materialization rule below says
 that's enough to justify the directory, but none moves yet; do it as its own
 change, not a side effect of adding another file.
 
