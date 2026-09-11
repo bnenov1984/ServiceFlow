@@ -141,7 +141,10 @@ def test_anonymize_records_an_audit_event_without_leaking_personal_data(
 
 
 def _asset_with_sensitive_value(client: TestClient, h: dict[str, str], cid: str) -> str:
-    from business_os.shared_kernel.db import open_session
+    from sqlalchemy import select
+
+    from business_os.identity.models import User
+    from business_os.shared_kernel.db import bind_tenant_scope, open_session
     from serviceflow.assets.models import Asset
 
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
@@ -151,6 +154,9 @@ def _asset_with_sensitive_value(client: TestClient, h: dict[str, str], cid: str)
     # No API writes sensitive_values yet (docs/08 §assets: "wired later") —
     # set it directly, simulating a stored encrypted passcode.
     for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
+        owner = db.scalar(select(User).where(User.email == "a@a.bg"))
+        assert owner is not None
+        bind_tenant_scope(db, owner.company_id)
         asset = db.get(Asset, aid)
         assert asset is not None
         asset.sensitive_values = b"encrypted-passcode-bytes"
@@ -161,7 +167,10 @@ def _asset_with_sensitive_value(client: TestClient, h: dict[str, str], cid: str)
 def test_anonymize_clears_sensitive_values_for_currently_owned_assets(
     client: TestClient,
 ) -> None:
-    from business_os.shared_kernel.db import open_session
+    from sqlalchemy import select
+
+    from business_os.identity.models import User
+    from business_os.shared_kernel.db import bind_tenant_scope, open_session
     from serviceflow.assets.models import Asset
 
     csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
@@ -174,6 +183,9 @@ def test_anonymize_clears_sensitive_values_for_currently_owned_assets(
     client.post(f"/api/v1/customers/{cid}/anonymize", headers=h)
 
     for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
+        owner = db.scalar(select(User).where(User.email == "a@a.bg"))
+        assert owner is not None
+        bind_tenant_scope(db, owner.company_id)
         asset = db.get(Asset, aid)
         assert asset is not None
         assert asset.sensitive_values is None
@@ -190,7 +202,10 @@ def test_anonymize_does_not_scrub_an_asset_now_owned_by_another_customer(
     damaged when A is later anonymized."""
     import uuid as uuid_mod
 
-    from business_os.shared_kernel.db import open_session
+    from sqlalchemy import select
+
+    from business_os.identity.models import User
+    from business_os.shared_kernel.db import bind_tenant_scope, open_session
     from serviceflow.assets.models import Asset
 
     csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
@@ -210,6 +225,9 @@ def test_anonymize_does_not_scrub_an_asset_now_owned_by_another_customer(
     client.post(f"/api/v1/customers/{cid_a}/anonymize", headers=h)
 
     for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
+        owner = db.scalar(select(User).where(User.email == "a@a.bg"))
+        assert owner is not None
+        bind_tenant_scope(db, owner.company_id)
         asset = db.get(Asset, aid)
         assert asset is not None
         assert asset.customer_id == uuid_mod.UUID(cid_b)
@@ -405,7 +423,10 @@ def test_legacy_company_customer_without_country_reads_as_bg(client: TestClient)
     """A company_requisites blob written before Wave 5 (no "country" key at
     all) must still read back as "BG" — the only country this product ever
     supported before this field existed — with no backfill migration."""
-    from business_os.shared_kernel.db import open_session
+    from sqlalchemy import select
+
+    from business_os.identity.models import User
+    from business_os.shared_kernel.db import bind_tenant_scope, open_session
     from serviceflow.customers.models import Customer
 
     csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
@@ -417,6 +438,9 @@ def test_legacy_company_customer_without_country_reads_as_bg(client: TestClient)
 
     # Simulate a pre-Wave-5 row: overwrite directly, stripping "country".
     for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
+        owner = db.scalar(select(User).where(User.email == "a@a.bg"))
+        assert owner is not None
+        bind_tenant_scope(db, owner.company_id)
         customer = db.get(Customer, cid)
         assert customer is not None
         customer.company_requisites = {"address": "гр. София", "eik": "130489869",
@@ -644,7 +668,9 @@ def test_vat_registered_true_without_vat_number_is_rejected(client: TestClient) 
     resp = client.post("/api/v1/customers", headers={"X-CSRF-Token": csrf}, json={
         "name": "Пример ЕООД", "phone": "029001122", "is_company": True,
         "vat_registered": True,
-        "company_requisites": {"address": "гр. София", "eik": "130489869"},
+        # No eik: nothing for _derive_bg_vat_number (Wave 5) to derive a
+        # vat_number from, so the rejection path is actually reachable.
+        "company_requisites": {"address": "гр. София"},
     })
     assert resp.status_code == 400
     assert resp.json()["detail"]["message_key"] == "errors.customers.vat_number_required"
@@ -657,9 +683,11 @@ def test_vat_registered_true_without_vat_number_is_rejected_on_update(client: Te
     single-request create case."""
     csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
     h = {"X-CSRF-Token": csrf}
+    # No eik here either: an eik on file would let _derive_bg_vat_number
+    # (Wave 5) auto-fill vat_number on the PATCH below, same as at create.
     cid = client.post("/api/v1/customers", headers=h, json={
         "name": "Пример ЕООД", "phone": "029001122", "is_company": True,
-        "company_requisites": {"address": "гр. София", "eik": "130489869"},
+        "company_requisites": {"address": "гр. София"},
     }).json()["id"]
 
     resp = client.patch(f"/api/v1/customers/{cid}", headers=h, json={"vat_registered": True})

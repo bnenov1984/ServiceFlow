@@ -104,10 +104,16 @@ def test_patch_preserves_legacy_choice_value_it_never_touches(client: TestClient
     # Simulate a pre-migration-0020 asset: overwrite the stored brand directly
     # (the API itself would reject "VW" now — this bypasses it on purpose to
     # reach the state a real pre-existing company's data is already in).
-    from business_os.shared_kernel.db import open_session
+    from sqlalchemy import select
+
+    from business_os.identity.models import User
+    from business_os.shared_kernel.db import bind_tenant_scope, open_session
     from serviceflow.assets.models import Asset
 
     for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
+        owner = db.scalar(select(User).where(User.email == "a@a.bg"))
+        assert owner is not None
+        bind_tenant_scope(db, owner.company_id)
         asset = db.get(Asset, aid)
         assert asset is not None
         asset.field_values = {**asset.field_values, "brand": "VW"}
@@ -281,17 +287,18 @@ def test_transfer_owner_moves_current_owner_and_preserves_orders(client: TestCli
     # nothing was rewritten in place (service-layer read, no API surface yet).
     from sqlalchemy import text as _text
 
-    from business_os.shared_kernel.db import TenantContext, open_session
+    from business_os.shared_kernel.db import TenantContext, bind_tenant_scope, open_session
     from serviceflow.assets import service as assets_service
 
     for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
-        company_id = db.execute(
-            _text("SELECT company_id FROM customers WHERE id = :cid"), {"cid": cid1},
-        ).scalar_one()
-        user_id = db.execute(
-            _text("SELECT id FROM users WHERE company_id = :company_id LIMIT 1"),
-            {"company_id": company_id},
-        ).scalar_one()
+        # users is RLS-exempt (identity bootstrap table) — safe to read
+        # directly before any tenant scope is established. asset_ownership
+        # is not: bind_tenant_scope() first, or RLS FORCE fail-closes it to
+        # nothing regardless of the explicit scoped() filter below.
+        user_id, company_id = db.execute(
+            _text("SELECT id, company_id FROM users WHERE email = 'a@a.bg'"),
+        ).one()
+        bind_tenant_scope(db, company_id)
         ctx = TenantContext(company_id=company_id, user_id=user_id, is_owner=True)
         history = assets_service.list_ownership_history(db, ctx, uuid.UUID(aid))
         assert len(history) == 2

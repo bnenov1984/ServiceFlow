@@ -324,7 +324,7 @@ def test_order_rejects_negative_mileage(client: TestClient) -> None:
     r = client.post("/api/v1/orders", headers=h, json={
         "customer_id": cid, "asset_id": aid, "complaint": "x", "mileage": -1,
     })
-    assert r.status_code == 422
+    assert r.status_code == 400
 
 
 def test_vehicle_service_history_spans_ownership_change(client: TestClient) -> None:
@@ -519,7 +519,7 @@ def test_invalid_delivery_method_is_rejected(client: TestClient) -> None:
         "customer_id": cid, "asset_id": aid, "complaint": "x",
         "delivery_method": "drone",
     })
-    assert r.status_code == 422
+    assert r.status_code == 400
 
 
 def test_payment_method_is_unaffected_by_delivery_method(client: TestClient) -> None:

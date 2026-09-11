@@ -24,7 +24,14 @@ from serviceflow.timeline import models as _timeline_models  # noqa: F401
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers defaults to True, which silently disables any
+    # logger already created before this runs (e.g. business_os.identity.
+    # router's, if some earlier-imported module already grabbed it) since
+    # alembic.ini's [loggers] only lists root/sqlalchemy/alembic. Confirmed
+    # bug: this made a caplog-based test flip pass/fail depending on whether
+    # an unrelated, earlier-collected test file happened to import the app
+    # (and thus that logger) before the first migration ran.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # URL comes from the environment (ADR-017: config via env), never from alembic.ini.
 _url = os.environ.get("SERVICEFLOW_DATABASE_URL")

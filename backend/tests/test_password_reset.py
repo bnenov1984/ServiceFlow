@@ -581,8 +581,18 @@ def test_production_logs_do_not_expose_the_reset_token_or_link(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
 ) -> None:
     from business_os.identity import mail
+    from business_os.identity import router as identity_router
+    from serviceflow.config import get_settings
 
     monkeypatch.setattr(mail, "send_password_reset_email", lambda to, raw_token: True)
+    # Explicitly pinned, not assumed: conftest.py's `client` fixture always
+    # sets SERVICEFLOW_DEBUG=true (needed for non-Secure TestClient cookies),
+    # so "debug is off by default" does not actually hold in this harness —
+    # relying on it made this test's outcome depend on whatever adjacent
+    # test last touched get_settings, same fix as its sibling below.
+    real_settings = get_settings()
+    production_settings = real_settings.model_copy(update={"debug": False})
+    monkeypatch.setattr(identity_router, "get_settings", lambda: production_settings)
     _seed()
 
     with caplog.at_level("INFO", logger="business_os.identity.router"):
@@ -592,7 +602,7 @@ def test_production_logs_do_not_expose_the_reset_token_or_link(
     row = _latest_token_row()
     all_log_text = "\n".join(record.getMessage() for record in caplog.records)
     assert row.token_hash not in all_log_text
-    assert "reset-password?token=" not in all_log_text  # debug is off by default
+    assert "reset-password?token=" not in all_log_text
 
 
 def test_debug_logs_the_full_reset_link(

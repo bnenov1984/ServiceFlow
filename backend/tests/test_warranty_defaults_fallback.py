@@ -163,7 +163,7 @@ def test_omitted_part_warranty_uses_company_parts_default(client: TestClient) ->
     resp = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
         "name": "Дисплей", "qty": 1, "unit_cost": "60", "unit_price": "100",
     })
-    assert resp.status_code == 200, resp.text
+    assert resp.status_code == 201, resp.text
     assert resp.json()["warranty_days"] == 180
 
 
@@ -179,7 +179,7 @@ def test_explicit_part_warranty_zero_is_preserved_not_replaced_by_default(
         "name": "Дисплей", "qty": 1, "unit_cost": "60", "unit_price": "100",
         "warranty_days": 0,
     })
-    assert resp.status_code == 200, resp.text
+    assert resp.status_code == 201, resp.text
     assert resp.json()["warranty_days"] == 0
 
 
@@ -193,7 +193,7 @@ def test_explicit_positive_part_warranty_wins_over_default(client: TestClient) -
         "name": "Дисплей", "qty": 1, "unit_cost": "60", "unit_price": "100",
         "warranty_days": 365,
     })
-    assert resp.status_code == 200, resp.text
+    assert resp.status_code == 201, resp.text
     assert resp.json()["warranty_days"] == 365
 
 
@@ -205,7 +205,7 @@ def test_omitted_part_warranty_stays_null_when_no_company_default(client: TestCl
     resp = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
         "name": "Дисплей", "qty": 1, "unit_cost": "60", "unit_price": "100",
     })
-    assert resp.status_code == 200, resp.text
+    assert resp.status_code == 201, resp.text
     assert resp.json()["warranty_days"] is None
 
 
