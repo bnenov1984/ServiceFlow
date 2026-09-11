@@ -4,7 +4,11 @@
 shops; a local edition is parked as a future option (11.07.2026 pivot, docs/14).
 **Product/architecture decisions live in `docs/`, spanning both frozen and
 active areas** — see [docs/INDEX.md](docs/INDEX.md) for the documentation map,
-freeze/change process, and current status.
+freeze/change process, and current status. Business OS platform-core work
+(identity, tenancy, module entitlement, Vendor Control Plane, RepairFlow/
+PropertyFlow as sibling applications) has its own router at
+[docs/business-os/CLAUDE.md](docs/business-os/CLAUDE.md) — start there for
+anything touching the platform/application boundary.
 
 ## Hard rules (violations are review-blockers)
 
