@@ -19,12 +19,14 @@ this block.
 
 | Field | Value |
 |---|---|
-| Platform/repository stage | Етап 3 (SaaS Shell & Administration) + Етап 4 (Commercial Documents) — both in progress, overlapping (see stage sections below) |
+| Platform/repository stage | Етап 3 (SaaS Shell & Administration) — core administration/onboarding/Vendor Control Plane implemented, billing still V1 manual-vendor-driven; Етап 4 (Commercial Documents) — draft/issue/annul/PDF/VAT-modes all landed, reissue and credit/debit notes explicitly deferred. Neither stage's exit checklist has been formally closed; Етап 5 (Hardening & Pilot) is the realistic next stage of new work. |
 | BusinessOS phase | Phase 4.5 — Vendor Control Plane & RepairFlow business profiles (docs/business-os/08_EVOLUTION_ROADMAP.md, amended 26.07.2026) |
-| Active vertical/module | RepairFlow (core) — active development; Professional Services — implemented; Construction Supervision — planned only, no backend |
-| Current focus | Post-deployment verification and hardening: end-to-end test coverage across core flows (auth, customer/order lifecycle) |
+| Active vertical/module | RepairFlow (core) — active development, frontend built out well past the original Etap 2 gate (intake, Kanban board, delivery, invoices, vehicle/service history, warranty settings, employee admin, password reset); Professional Services — implemented; Construction Supervision — planned only, no backend |
+| Current focus | Closing out Etap 4 loose ends (accountant sign-off reconciliation — see note below) and broadening E2E coverage before moving into Etap 5 hardening |
 | Deployment state | Live on Render (frontend + backend), backed by Neon PostgreSQL; cross-origin CORS and session-cookie configuration in place for the split-origin setup |
-| Last reviewed | 2026-08-24 |
+| Test suite (2026-09-12 snapshot) | Backend: 750 tests collected (`uv run pytest --collect-only`), up from 364 on 2026-08-02. Frontend: 506 vitest cases, up from 162. `uv run lint-imports`: 9/9 contracts kept, 0 broken. CI green on `main`. |
+| **Open risk — accountant sign-off reconciliation** | `docs/ACCOUNTANT_REVIEW.md` (consolidated 08.08.2026) still lists open `PROFESSIONAL REVIEW REQUIRED` items (B2/individual buyer field completeness, VAT rounding rule) and, as of its own 09.08.2026 note, expected company (B2B) buyers to be unconditionally rejected by `commercial/service.py`. As of this review, that file's own top comment says issuance "covers individuals and domestic company buyers" — broader than what the accountant-review doc last recorded. **Needs a definitive check of which buyer types are actually issuable in production today against what has genuinely been signed off**, before Etap 4 is called done (docs/12 §4 names accountant sign-off as an explicit release gate for `commercial`). |
+| Last reviewed | 2026-09-12 |
 
 ## Етап 0 — Foundation ✅ (revalidated for SaaS)
 
@@ -41,8 +43,9 @@ Frozen set unchanged except the platform layer: ADR-016/017/018 join; 002/005/
 
 ## Етап 2 — Core MVP (Клиент → Поръчка → Актив → Задачи → Статуси → Бележки → Приключване) — ~9–11 weeks
 
-**Backend: ✅ done (migrations #1–#6, commits 31b2038…24a9e40).** Frontend not
-started — gated (see below).
+**Backend: ✅ done (migrations #1–#6, commits 31b2038…24a9e40).** Frontend:
+✅ built and shipped past the original gate (see below) — the "not started"
+phrasing here is historical, not current.
 
 - Migration #1: companies, users, sessions **+ RLS policies + scoped-query
   chokepoint (ADR-016)**; login/PIN, seeded Owner **per dev/staging tenant** (self-
@@ -60,16 +63,30 @@ started — gated (see below).
   append-only на ниво база (trigger) · **минимален приемо-предавателен протокол**
   (server-side PDF, fpdf2 + DejaVu Sans за кирилица) · BR-2 unlock изключението.
   81/81 backend tests green; ruff/mypy/import-linter clean throughout.
-- **Not yet built (backend):** global search (P0-7) — postponed, no consumer
-  until the frontend needs it; will land alongside the Kanban/dashboard work.
-- **Frontend gate (PO директива, 11.07.2026) — BLOCKS everything below:**
-  преди какъвто и да е frontend код се изработва отделен **Frontend Design
-  Document** (детайлизира 10: компонентна йерархия, състояния, data-fetching
-  контракти към 09, дизайн токени, responsive поведение, error/loading/empty
-  състояния per екран) и се одобрява от PO. Frontend-ът се пише само срещу него.
-- Exit (still open): four screens built against the design doc · search wired in
-  · E2E journeys 1, 2, 4 green (вкл. protocol print snapshot + isolation suite) ·
-  non-developer completes intake→close unassisted **в браузър срещу staging**.
+- **Not yet built (backend):** global search (P0-7) — still no cross-entity
+  search endpoint or frontend `GlobalSearch` component as of 2026-09-12;
+  postponed, no consumer forcing it yet.
+- **Frontend gate (PO директива, 11.07.2026) — cleared.** The Frontend Design
+  Document gate was passed some time before this review; the frontend has
+  since been built well past the original four-screen scope (order intake,
+  Kanban board (`orders/KanbanBoard.tsx`), delivery dialog, invoice
+  draft/issue/annul views, vehicle identity/service history, warranty
+  settings, employee admin, password reset/forgot-password). This bullet is
+  kept only as a historical note — do not treat it as a live blocker.
+- Exit checklist, actual state (2026-09-12): four+ screens built and shipped ·
+  Kanban wired in · search (P0-7) still **not** wired in (see above) · E2E
+  coverage exists for journeys 1 (intake→delivery, via
+  `e2e/repairflow/order-intake.spec.ts` + `order-delivery.spec.ts`) and 3
+  (invoice lifecycle, via `order-invoice.spec.ts`) plus `e2e/auth.spec.ts`/
+  `e2e/repairflow/order-intake-customer.spec.ts`/`order-status.spec.ts`
+  (`repairflow/` materialized 2026-09-12, per `frontend/e2e/CLAUDE.md`);
+  journey 2 (rejection path) and journey 4 (Kanban
+  concurrency — though a same-day race-condition fix, d02e051, suggests this
+  has been hardened ad hoc rather than via a dedicated spec) have no
+  dedicated E2E coverage yet · non-developer unassisted staging walkthrough
+  not confirmed in this review. This checklist was never formally closed out
+  when the gate was passed — worth a deliberate close rather than leaving it
+  implicitly done.
 
 ## Етап 3 — SaaS Shell & Administration — ~6–8 weeks
 
@@ -146,9 +163,30 @@ order's part/labor lines via `service_orders.contracts.get_order_lines`
 is needed) but every row this slice creates stays `status="draft"` — number,
 seller/buyer snapshot, net/vat/gross, pdf_storage_key all stay NULL · also
 adds the `fk_payments_invoice_id_invoices` constraint migration #8 deferred.
-**Invoice issue/annul/reissue/PDF/VAT remain not started**: numbering
+**Update, 2026-09-12: issue/annul/PDF/VAT modes have since landed** (this
+paragraph's "remain not started" line is stale and kept below only for
+history). Confirmed in code: `commercial/router.py`/`service.py` implement
+`POST /invoices/{id}/issue` (gapless numbering via `next_invoice_number()`,
+issued-immutability), `POST /invoices/{id}/annul`, on-demand PDF rendering
+(`commercial/pdf.py`, fpdf2, not stored — `pdf_storage_key` stays unset by
+design), and both VAT modes (`vat_mode="registered"` at 20% ROUND_HALF_UP,
+`"not_registered"` at 0). **Reissue is deliberately not built**: annul + a
+separate new manual invoice is the current workaround; linked
+reissue/credit-debit-notes are a distinct, later slice, not retrofitted onto
+`annuls_invoice_id`. Numbering ownership (`document_sequences`, BOS-05 §1)
+resolved in favor of `service_orders` keeping the table, per the original
+options. **See the accountant sign-off reconciliation note in the Repo-Wide
+Status block above before treating this stage as done** — the accountant
+review doc and the current code's buyer-type coverage may have diverged.
+
+<details>
+<summary>Original (2026-08-24) note, superseded above</summary>
+
+Invoice issue/annul/reissue/PDF/VAT remain not started: numbering
 ownership (`document_sequences` — still the one Open item, BOS-05 §1),
 accountant review, VAT modes, immutability, PDF, annul/reissue.
+
+</details>
 
 **Central invoice workspace ("Фактури") ✅ landed 09.08.2026.** RepairFlow's
 `/invoices` nav item, previously grayed, is now a real page: `GET /invoices`

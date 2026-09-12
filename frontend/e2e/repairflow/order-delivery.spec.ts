@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { getOwnerCredentials, loginAsOwner } from './support/login';
+import { getOwnerCredentials, loginAsOwner } from '../support/login';
 
 test('owner delivers an order through the full status lifecycle', async ({ page }) => {
   const { email, password } = getOwnerCredentials();

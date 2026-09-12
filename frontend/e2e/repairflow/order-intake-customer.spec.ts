@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { getOwnerCredentials, loginAsOwner } from './support/login';
+import { getOwnerCredentials, loginAsOwner } from '../support/login';
 
 test('owner can create a customer', async ({ page }) => {
   const { email, password } = getOwnerCredentials();

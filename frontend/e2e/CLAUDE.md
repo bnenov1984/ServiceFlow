@@ -33,6 +33,9 @@ user would, as opposed to the unit tests under `frontend/src/`.
 
 ### `auth.spec.ts`
 
+Stays flat at the E2E root — `platform/` isn't materialized yet (only one
+spec lives there conceptually so far; see the materialization rule below).
+
 Covers login at `/`:
 
 - **owner can login** — fills the Bulgarian-labeled email/password fields
@@ -46,17 +49,19 @@ Covers login at `/`:
 Both tests throw early if the required env vars aren't set, rather than
 failing on a blank-field assertion.
 
-### `customer.spec.ts`
+### `repairflow/order-intake-customer.spec.ts`
 
 Logs in as owner (same pattern as above), enters the RepairFlow app, and
 creates a customer via the "+ Нова поръчка" → "+ Нов клиент" flow, asserting
-the new customer name appears in the UI.
+the new customer name appears in the UI. (Renamed from `customer.spec.ts` —
+it's an intake-flow test, not a standalone customer-resource test; see the
+notes below.)
 
-### `order-intake.spec.ts`
+### `repairflow/order-intake.spec.ts`
 
 Logs in as owner, enters RepairFlow, and drives the full three-step intake
 flow to a real created order: "+ Нова поръчка" → new customer (same as
-`customer.spec.ts`) → new asset ("Друго", submitted with no fields — every
+`order-intake-customer.spec.ts`) → new asset ("Друго", submitted with no fields — every
 asset field is optional at the API) → order step (complaint only — the
 textarea has no accessible label/placeholder, a real pre-existing gap in
 `OrderStep.tsx`, so it's targeted structurally as the page's only
@@ -64,7 +69,7 @@ textarea has no accessible label/placeholder, a real pre-existing gap in
 order-number heading and the complaint text are both visible on the order
 detail page.
 
-### `order-status.spec.ts`
+### `repairflow/order-status.spec.ts`
 
 Repeats `order-intake.spec.ts`'s setup to get a real order onto the board
 (login → RepairFlow → intake), confirms it starts at "Приета" (received,
@@ -79,7 +84,7 @@ interaction surface) or any transition that opens a dialog (skip-ahead
 "warn" transitions, the terminal-failure reason dialog, delivery) — those are
 each their own future test, not bundled into this one.
 
-### `order-delivery.spec.ts`
+### `repairflow/order-delivery.spec.ts`
 
 Same intake setup, then drives the *entire* clean lifecycle in one pass:
 received → diagnostics → repair → ready (three no-dialog "ok" transitions,
@@ -114,7 +119,7 @@ needs touching again:
   matched by bare role plus a separate visible-text check on the title,
   not `getByRole('dialog', { name: ... })`.
 
-### `order-invoice.spec.ts`
+### `repairflow/order-invoice.spec.ts`
 
 Same delivery flow as `order-delivery.spec.ts`, then issues an invoice
 against the delivered order. Two setup steps that aren't obvious from the
@@ -155,48 +160,47 @@ Other things worth knowing:
 
 ## Domain ownership and growth rules
 
-All six files above are flat at the E2E root today, but each already has a
-conceptual home:
+**`repairflow/` is now a real directory** (materialized 2026-09-12): it holds
+`order-intake-customer.spec.ts`, `order-intake.spec.ts`, `order-status.spec.ts`,
+`order-delivery.spec.ts`, `order-invoice.spec.ts` — five specs, all importing
+the shared `../support/login` helper (note the `../`, not `./`, from inside
+the subdirectory). `auth.spec.ts` stays flat at the E2E root for now — it's
+the only spec conceptually belonging to `platform/`, and the materialization
+rule below says one file isn't yet enough to justify a directory.
 
-- `auth.spec.ts` → future `platform/` domain
-- `customer.spec.ts`, `order-intake.spec.ts`, `order-status.spec.ts`,
-  `order-delivery.spec.ts`, `order-invoice.spec.ts` → future `repairflow/`
-  domain
-
-`repairflow/` now has five specs — the materialization rule below says
-that's enough to justify the directory, but none moves yet; do it as its own
-change, not a side effect of adding another file.
-
-**Future top-level QA domains** (none exist as directories yet):
+**Future top-level QA domains** (only `repairflow/` exists as a directory so far):
 
 - `platform/` — BusinessOS Core: login/session, app chooser, `settings/employees`,
-  `settings/company`.
+  `settings/company`. Not materialized yet — only `auth.spec.ts` exists
+  conceptually here.
 - `repairflow/` — RepairFlow app: orders, intake, customers, invoices, dashboard.
-- `professional-services/` — PropertyFlow app.
-- `vendor/` — Vendor Control Plane (`/vendor/*`). **Must remain a sibling of the
-  other domains, never nested under `platform/`** — the app keeps vendor and
-  tenant sessions structurally isolated (vendor is never reachable from a
-  tenant session), and nesting vendor tests under `platform/` would invite the
-  fixture-sharing the app deliberately prevents.
+  **Materialized.**
+- `professional-services/` — PropertyFlow app. No specs exist yet.
+- `vendor/` — Vendor Control Plane (`/vendor/*`). No specs exist yet. **Must
+  remain a sibling of the other domains, never nested under `platform/`** —
+  the app keeps vendor and tenant sessions structurally isolated (vendor is
+  never reachable from a tenant session), and nesting vendor tests under
+  `platform/` would invite the fixture-sharing the app deliberately prevents.
 
 **When a domain becomes a real directory:** only once it has two or more
 meaningful specs (one file doesn't yet create a navigation problem a directory
 would solve), or it carries non-obvious operational knowledge that needs
 routing regardless of file count (e.g. an isolation rule or a fixture hazard).
-Don't create a directory for a domain with no tests yet.
+Don't create a directory for a domain with no tests yet — this is exactly why
+`platform/`, `professional-services/`, and `vendor/` stay unmaterialized above
+despite being named.
 
 **When a domain directory gets its own `CLAUDE.md`:** only when there's
 genuine domain-specific knowledge to route — not automatically on directory
-creation. When one is created, it should point upward to this file and to
-`../../CLAUDE.md` / `../../docs/INDEX.md` rather than restate conventions
-(env vars, credentials, locators) already covered here.
+creation. `repairflow/` doesn't have one yet; nothing routed there is specific
+enough to that subdirectory alone (the notes below apply repo-wide E2E
+knowledge, not repairflow-only knowledge). When one is created, it should
+point upward to this file and to `../../CLAUDE.md` / `../../docs/INDEX.md`
+rather than restate conventions (env vars, credentials, locators) already
+covered here.
 
 **Notes:**
 
-- `customer.spec.ts` is currently misnamed for what it tests — it's a
-  RepairFlow intake/order-flow test (customer creation happens inside the
-  "+ Нова поръчка" dialog), not a standalone customer-resource test. Worth
-  renaming once `repairflow/` is materialized; not renamed now.
 - `docs/12_TESTING_STRATEGY.md` §3's "five E2E journeys" predate the
   BusinessOS multi-app pivot (PIN switches, протокол print, single-tenant
   flows) and don't map cleanly onto today's routes. Treat that list as

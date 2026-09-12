@@ -1,11 +1,11 @@
 import { test, expect } from '@playwright/test';
-import { getOwnerCredentials, loginAsOwner } from './support/login';
+import { getOwnerCredentials, loginAsOwner } from '../support/login';
 
-test('owner can complete order intake from a new customer to a real order', async ({ page }) => {
+test('owner advances an order from Приета to Диагностика via the status menu', async ({ page }) => {
   const { email, password } = getOwnerCredentials();
 
   const unique = Date.now();
-  const customerName = `E2E Intake Customer ${unique}`;
+  const customerName = `E2E Status Customer ${unique}`;
   const customerPhone = `08${String(unique).slice(-8)}`;
   const complaint = `E2E тест оплакване ${unique}`;
 
@@ -20,11 +20,12 @@ test('owner can complete order intake from a new customer to a real order', asyn
   // '/' never actually settles; asserting it races the app's own redirect.
   await expect(page).toHaveURL('/orders');
 
+  // Get a real order onto the board first (same flow as order-intake.spec.ts)
+  // — the status menu only has something to test once an order exists.
   await page
     .getByRole('button', { name: '+ Нова поръчка' })
     .click();
 
-  // Стъпка 1: Клиент
   await page
     .getByRole('button', { name: '+ Нов клиент' })
     .click();
@@ -43,9 +44,6 @@ test('owner can complete order intake from a new customer to a real order', asyn
 
   await expect(page.getByText(customerName)).toBeVisible();
 
-  // Стъпка 2: Актив — "Друго" needs no fields filled; both are optional at
-  // the API (no required field defs), so a minimal valid asset is one
-  // created with an empty form.
   await page
     .getByRole('button', { name: '+ Нов актив' })
     .click();
@@ -58,13 +56,6 @@ test('owner can complete order intake from a new customer to a real order', asyn
     .getByRole('button', { name: 'Продължи' })
     .click();
 
-  // Стъпка 3: Поръчка — the complaint <label> is a plain sibling of the
-  // <textarea> with no htmlFor/id/aria-label/placeholder, so it has no
-  // accessible name for getByRole/getByLabel to match. This is a real,
-  // pre-existing accessibility gap in OrderStep.tsx (not introduced by this
-  // test) — the textarea is the only one on the page at this step, so a
-  // structural locator is the only reliable option without changing
-  // production code.
   await page
     .locator('textarea')
     .fill(complaint);
@@ -73,12 +64,23 @@ test('owner can complete order intake from a new customer to a real order', asyn
     .getByRole('button', { name: 'Създай поръчка' })
     .click();
 
-  // Authentication/navigation check
   await expect(page).toHaveURL(/\/orders\/[0-9a-f-]{36}$/);
 
-  // Authenticated UI check
-  await expect(
-    page.getByRole('heading', { name: /^№ / })
-  ).toBeVisible();
-  await expect(page.getByText(complaint)).toBeVisible();
+  // A freshly created order starts at "received" ("Приета", docs/01 BR-1) —
+  // confirm the starting state before changing it.
+  await expect(page.getByText('Приета', { exact: true })).toBeVisible();
+
+  // "received" -> "diagnostics" is the matrix's plain "ok" next step (no
+  // reason/approval/delivery dialog attached to it — see OrderHeader.tsx's
+  // requestTransition), the simplest real status change to drive end to end.
+  await page
+    .getByRole('button', { name: 'Промени статус' })
+    .click();
+
+  await page
+    .getByRole('menuitem', { name: 'Диагностика' })
+    .click();
+
+  await expect(page.getByText('Диагностика', { exact: true })).toBeVisible();
+  await expect(page.getByText('Приета', { exact: true })).not.toBeVisible();
 });
