@@ -171,7 +171,7 @@ describe("CustomerStep create flow", () => {
 
     await user.click(screen.getByRole("button", { name: "Фирма" }));
 
-    expect(screen.getByRole("button", { name: "Не е проверено" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("button", { name: "Не е проверено" })).not.toBeInTheDocument();
     expect(screen.getByText(/не може да бъде издадена фактура/)).toBeInTheDocument();
     expect(screen.queryByLabelText("ДДС номер")).not.toBeInTheDocument();
   });

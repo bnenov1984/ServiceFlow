@@ -374,23 +374,30 @@ def update_company_requisites(
     fields: dict[str, Any],
 ) -> Company:
     """Owner-only (route-enforced). `fields` comes from the router's
-    `CompanyRequisitesPatch` (Pydantic `extra="forbid"`, only `address`,
-    `phone`, `vat_registered` declared) via `model_dump(exclude_unset=True)`
-    — this function additionally filters to `COMPANY_REQUISITE_KEYS` before
-    writing into the JSONB blob, so even a future caller passing a raw dict
-    can never smuggle an arbitrary key into `requisites`. Reassigns the
-    whole dict (never mutates in place) so SQLAlchemy's change tracking
-    picks it up, matching `Customer.company_requisites = None` elsewhere."""
+    `CompanyRequisitesPatch` (Pydantic `extra="forbid"`, only `name`,
+    `address`, `phone`, `eik`, `vat_registered` declared) via
+    `model_dump(exclude_unset=True)` — this function additionally filters to
+    `COMPANY_REQUISITE_KEYS` before writing into the JSONB blob, so even a
+    future caller passing a raw dict can never smuggle an arbitrary key into
+    `requisites`. Reassigns the whole dict (never mutates in place) so
+    SQLAlchemy's change tracking picks it up, matching
+    `Customer.company_requisites = None` elsewhere. `name` and
+    `vat_registered` are real `Company` columns, not JSONB keys, so they're
+    applied directly instead of going through the requisites blob."""
     company = get_company(db, company_id)
     assert company is not None
 
     requisite_updates = {k: v for k, v in fields.items() if k in COMPANY_REQUISITE_KEYS}
     if requisite_updates:
         company.requisites = {**company.requisites, **requisite_updates}
+    if "name" in fields:
+        company.name = fields["name"]
     if "vat_registered" in fields:
         company.vat_registered = fields["vat_registered"]
 
     audit_detail = dict(requisite_updates)
+    if "name" in fields:
+        audit_detail["name"] = fields["name"]
     if "vat_registered" in fields:
         audit_detail["vat_registered"] = fields["vat_registered"]
     _audit(db, company_id, actor_user_id, "company_requisites_updated", audit_detail)

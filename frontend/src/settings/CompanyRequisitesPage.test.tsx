@@ -59,12 +59,14 @@ describe("CompanyRequisitesPage", () => {
 
   it("loads and pre-fills the current requisites for an owner", async () => {
     vi.mocked(api.get).mockResolvedValue({
+      name: "Авто Сервиз ЕООД",
       address: "гр. София, ул. Тестова 1", phone: "029876543", eik: "130489869",
       vat_registered: true,
     });
     renderPage();
 
-    expect(await screen.findByDisplayValue("гр. София, ул. Тестова 1")).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("Авто Сервиз ЕООД")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("гр. София, ул. Тестова 1")).toBeInTheDocument();
     expect(screen.getByDisplayValue("029876543")).toBeInTheDocument();
     expect(screen.getByDisplayValue("130489869")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Регистрация по ЗДДС" })).toBeChecked();
@@ -73,9 +75,10 @@ describe("CompanyRequisitesPage", () => {
   it("submits the edited fields via PATCH and shows a success toast", async () => {
     const user = userEvent.setup();
     vi.mocked(api.get).mockResolvedValue({
-      address: null, phone: null, eik: null, vat_registered: false,
+      name: "Авто Сервиз ЕООД", address: null, phone: null, eik: null, vat_registered: false,
     });
     vi.mocked(api.patch).mockResolvedValue({
+      name: "Авто Сервиз ЕООД",
       address: "гр. Пловдив", phone: "032111222", eik: null, vat_registered: false,
     });
     renderPage();
@@ -86,7 +89,28 @@ describe("CompanyRequisitesPage", () => {
     await user.click(screen.getByRole("button", { name: "Запази" }));
 
     expect(api.patch).toHaveBeenCalledWith("/company/requisites", {
-      address: "гр. Пловдив", phone: "032111222", eik: "", vat_registered: false,
+      name: "Авто Сервиз ЕООД", address: "гр. Пловдив", phone: "032111222", eik: "", vat_registered: false,
+    });
+    expect(await screen.findByText("Данните за фирмата са запазени.")).toBeInTheDocument();
+  });
+
+  it("saves an edited company name via PATCH", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockResolvedValue({
+      name: "Старо име ЕООД", address: null, phone: null, eik: null, vat_registered: false,
+    });
+    vi.mocked(api.patch).mockResolvedValue({
+      name: "Ново име ЕООД", address: null, phone: null, eik: null, vat_registered: false,
+    });
+    renderPage();
+
+    const nameInput = await screen.findByLabelText("Име на фирмата");
+    await user.clear(nameInput);
+    await user.type(nameInput, "Ново име ЕООД");
+    await user.click(screen.getByRole("button", { name: "Запази" }));
+
+    expect(api.patch).toHaveBeenCalledWith("/company/requisites", {
+      name: "Ново име ЕООД", address: "", phone: "", eik: "", vat_registered: false,
     });
     expect(await screen.findByText("Данните за фирмата са запазени.")).toBeInTheDocument();
   });
@@ -94,10 +118,10 @@ describe("CompanyRequisitesPage", () => {
   it("saves an edited ЕИК via PATCH", async () => {
     const user = userEvent.setup();
     vi.mocked(api.get).mockResolvedValue({
-      address: null, phone: null, eik: null, vat_registered: false,
+      name: "Авто Сервиз ЕООД", address: null, phone: null, eik: null, vat_registered: false,
     });
     vi.mocked(api.patch).mockResolvedValue({
-      address: null, phone: null, eik: "130489869", vat_registered: false,
+      name: "Авто Сервиз ЕООД", address: null, phone: null, eik: "130489869", vat_registered: false,
     });
     renderPage();
 
@@ -106,7 +130,7 @@ describe("CompanyRequisitesPage", () => {
     await user.click(screen.getByRole("button", { name: "Запази" }));
 
     expect(api.patch).toHaveBeenCalledWith("/company/requisites", {
-      address: "", phone: "", eik: "130489869", vat_registered: false,
+      name: "Авто Сервиз ЕООД", address: "", phone: "", eik: "130489869", vat_registered: false,
     });
     expect(await screen.findByText("Данните за фирмата са запазени.")).toBeInTheDocument();
   });
@@ -114,7 +138,7 @@ describe("CompanyRequisitesPage", () => {
   it("renders a save error inline instead of silently failing", async () => {
     const user = userEvent.setup();
     vi.mocked(api.get).mockResolvedValue({
-      address: null, phone: null, eik: null, vat_registered: false,
+      name: "Авто Сервиз ЕООД", address: null, phone: null, eik: null, vat_registered: false,
     });
     vi.mocked(api.patch).mockRejectedValue(
       new ApiError(402, "subscription_not_active", "errors.subscription.mutations_blocked"),
@@ -138,7 +162,9 @@ describe("CompanyRequisitesPage — Wave 4 Issue 38 (warranty defaults)", () => 
     });
   }
 
-  const REQUISITES = { address: null, phone: null, eik: null, vat_registered: false };
+  const REQUISITES = {
+    name: "Авто Сервиз ЕООД", address: null, phone: null, eik: null, vat_registered: false,
+  };
 
   it("shows an empty input for a null default and the literal 0 for an explicit zero", async () => {
     mockGetByPath({
@@ -212,7 +238,9 @@ describe("CompanyRequisitesPage — issue 04 (free-text warranty terms)", () => 
     });
   }
 
-  const REQUISITES = { address: null, phone: null, eik: null, vat_registered: false };
+  const REQUISITES = {
+    name: "Авто Сервиз ЕООД", address: null, phone: null, eik: null, vat_registered: false,
+  };
   const BLANK_TERMS = {
     standard_term: null, conditions: null, text: null, additional_conditions: null,
   };

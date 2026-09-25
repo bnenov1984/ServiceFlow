@@ -124,6 +124,9 @@ class CompanyRequisitesPatch(BaseModel):
     # way to submit an arbitrary JSON key through this contract.
     model_config = ConfigDict(extra="forbid")
 
+    # `Company.name` (R1, LAW-CONFIRMED required) — a real column, not part
+    # of the `requisites` JSONB blob, unlike the three below.
+    name: str | None = Field(default=None, min_length=1, max_length=200)
     address: str | None = Field(default=None, max_length=500)
     phone: str | None = Field(default=None, max_length=30)
     # ЕИК/БУЛСТАТ (docs/ACCOUNTANT_REVIEW.md §3 R1, LAW-CONFIRMED required).
@@ -146,6 +149,7 @@ class CompanyRequisitesPatch(BaseModel):
 
 
 class CompanyRequisitesOut(BaseModel):
+    name: str
     address: str | None
     phone: str | None
     eik: str | None
@@ -155,7 +159,7 @@ class CompanyRequisitesOut(BaseModel):
 def _company_requisites_out(company: Company) -> CompanyRequisitesOut:
     requisites = company.requisites or {}
     return CompanyRequisitesOut(
-        address=requisites.get("address"), phone=requisites.get("phone"),
+        name=company.name, address=requisites.get("address"), phone=requisites.get("phone"),
         eik=requisites.get("eik"), vat_registered=company.vat_registered,
     )
 

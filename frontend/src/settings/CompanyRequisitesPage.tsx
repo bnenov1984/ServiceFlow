@@ -18,6 +18,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { SettingsNav } from "./SettingsNav";
 
 interface CompanyRequisites {
+  name: string;
   address: string | null;
   phone: string | null;
   eik: string | null;
@@ -246,6 +247,7 @@ export function CompanyRequisitesPage() {
     enabled: Boolean(me?.is_owner),
   });
 
+  const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [phone, setPhone] = useState("");
   const [eik, setEik] = useState("");
@@ -255,6 +257,7 @@ export function CompanyRequisitesPage() {
 
   useEffect(() => {
     if (requisites.data) {
+      setName(requisites.data.name);
       setAddress(requisites.data.address ?? "");
       setPhone(requisites.data.phone ?? "");
       setEik(requisites.data.eik ?? "");
@@ -278,7 +281,7 @@ export function CompanyRequisitesPage() {
     setError(null);
     try {
       const updated = await api.patch<CompanyRequisites>("/company/requisites", {
-        address: address.trim(), phone: phone.trim(), eik: eik.trim(),
+        name: name.trim(), address: address.trim(), phone: phone.trim(), eik: eik.trim(),
         vat_registered: vatRegistered,
       });
       queryClient.setQueryData(queryKeys.companyRequisites, updated);
@@ -307,6 +310,23 @@ export function CompanyRequisitesPage() {
           onSubmit={(e) => void onSubmit(e)}
           className="flex max-w-lg flex-col gap-4 rounded-lg border border-slate-200 bg-white p-6"
         >
+          <div>
+            <label
+              className="mb-1 block text-sm font-medium text-slate-700"
+              htmlFor="company-name"
+            >
+              {t("company.field_name")}
+            </label>
+            <input
+              id="company-name"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={200}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
+            />
+          </div>
+
           <div>
             <label
               className="mb-1 block text-sm font-medium text-slate-700"

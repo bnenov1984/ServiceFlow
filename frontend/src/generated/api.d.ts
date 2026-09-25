@@ -1859,6 +1859,8 @@ export interface components {
         };
         /** CompanyRequisitesOut */
         CompanyRequisitesOut: {
+            /** Name */
+            name: string;
             /** Address */
             address: string | null;
             /** Phone */
@@ -1870,6 +1872,8 @@ export interface components {
         };
         /** CompanyRequisitesPatch */
         CompanyRequisitesPatch: {
+            /** Name */
+            name?: string | null;
             /** Address */
             address?: string | null;
             /** Phone */

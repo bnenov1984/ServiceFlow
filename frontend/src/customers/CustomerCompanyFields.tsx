@@ -5,11 +5,13 @@
  * edit section, so the two surfaces can never drift apart.
  *
  * VAT-registration status (Customer VAT Identity prerequisite slice) is a
- * tri-state control, not a checkbox: unknown/not-registered/registered are
- * all valid, complete states on their own — unknown must stay visually and
- * semantically distinct from "confirmed not registered," never defaulted
- * to it. The VAT-number input only ever appears for the registered state.
- * This component only edits the *draft* form value — clearing a stale
+ * two-choice control (Да/Не) backed by a tri-state value: unknown/
+ * not-registered/registered are all valid, complete states on their own,
+ * but "unknown" is only ever the pre-first-choice default — the PO does not
+ * want it surfaced as a pickable third option (company-settings-fixes issue
+ * 02), so it is reachable only by never having chosen Да or Не yet, never
+ * by clicking anything. The VAT-number input only ever appears for the
+ * registered state. This component only edits the *draft* form value — clearing a stale
  * vat_number when the effective status isn't "registered" at save time is
  * the caller's job (CustomerCompanyDetailsSection/CustomerStep), the same
  * place that already decides what to actually send on save.
@@ -204,14 +206,6 @@ export function CustomerCompanyFields({
               role="group"
               aria-label={t("company.field_vat_registered")}
             >
-              <button
-                type="button"
-                aria-pressed={requisites.vatRegistered === null}
-                onClick={() => onRequisitesChange({ ...requisites, vatRegistered: null })}
-                className={toggleClass(requisites.vatRegistered === null)}
-              >
-                {t("customer.vat_status_unknown")}
-              </button>
               <button
                 type="button"
                 aria-pressed={requisites.vatRegistered === false}

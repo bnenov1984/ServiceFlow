@@ -80,7 +80,9 @@ describe("CustomerCompanyDetailsSection", () => {
     expect(screen.getByLabelText("Адрес")).toHaveValue("гр. София");
     expect(screen.getByLabelText("ЕИК / БУЛСТАТ")).toHaveValue("130489869");
     expect(screen.getByRole("button", { name: "Фирма" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "Не е проверено" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("button", { name: "Не е проверено" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Да" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Не" })).toHaveAttribute("aria-pressed", "false");
   });
 
   it("prefills the VAT number when editing an already-registered company", async () => {
@@ -171,7 +173,7 @@ describe("CustomerCompanyDetailsSection", () => {
 
     expect(screen.getByLabelText("Адрес")).toHaveValue("");
     expect(screen.getByLabelText("ЕИК / БУЛСТАТ")).toHaveValue("");
-    expect(screen.getByRole("button", { name: "Не е проверено" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("button", { name: "Не е проверено" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("ДДС номер")).not.toBeInTheDocument();
   });
 });

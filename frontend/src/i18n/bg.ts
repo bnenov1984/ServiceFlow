@@ -743,6 +743,7 @@ export const bg = {
   "settings.nav_company": "Фирма",
   "company.requisites_title": "Данни за фирмата",
   "company.requisites_hint": "Тези данни се използват в протокола за приемане и ще се използват при издаване на фактури.",
+  "company.field_name": "Име на фирмата",
   "company.field_country": "Държава",
   "company.country_other": "Друга",
   "company.field_address": "Адрес",
