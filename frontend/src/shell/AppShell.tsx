@@ -264,7 +264,7 @@ function RepairFlowToolbar() {
   );
 }
 
-// Every dialog in the app (PinSwitchDialog, ReasonDialog, DeliveryDialog, ...)
+// Every dialog in the app (PinSwitchDialog, ReasonDialog, CompletionDialog, ...)
 // renders a native <dialog> via components/Dialog.tsx's showModal() - browsers
 // always paint an open native <dialog> in the top layer, above everything
 // else on the page regardless of z-index, including this file's own plain

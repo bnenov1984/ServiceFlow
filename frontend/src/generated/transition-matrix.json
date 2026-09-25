@@ -37,9 +37,9 @@
       "sort": 7
     },
     {
-      "code": "delivered",
+      "code": "completed",
       "kind": "terminal_success",
-      "name_bg": "Предадена",
+      "name_bg": "Приключена",
       "sort": 8
     },
     {
@@ -68,7 +68,7 @@
       "waiting_parts": "warn",
       "repair": "warn",
       "ready": "warn",
-      "delivered": "no",
+      "completed": "no",
       "declined": "ok",
       "unrepairable": "ok",
       "cancelled": "ok"
@@ -79,7 +79,7 @@
       "waiting_parts": "ok",
       "repair": "ok",
       "ready": "warn",
-      "delivered": "no",
+      "completed": "no",
       "declined": "ok",
       "unrepairable": "ok",
       "cancelled": "ok"
@@ -90,7 +90,7 @@
       "waiting_parts": "ok",
       "repair": "ok",
       "ready": "warn",
-      "delivered": "no",
+      "completed": "no",
       "declined": "ok",
       "unrepairable": "ok",
       "cancelled": "ok"
@@ -101,7 +101,7 @@
       "waiting_customer": "ok",
       "repair": "ok",
       "ready": "warn",
-      "delivered": "no",
+      "completed": "no",
       "declined": "ok",
       "unrepairable": "ok",
       "cancelled": "ok"
@@ -112,7 +112,7 @@
       "waiting_customer": "ok",
       "waiting_parts": "ok",
       "ready": "ok",
-      "delivered": "no",
+      "completed": "no",
       "declined": "no",
       "unrepairable": "ok",
       "cancelled": "ok"
@@ -123,12 +123,12 @@
       "waiting_customer": "no",
       "waiting_parts": "no",
       "repair": "ok",
-      "delivered": "ok",
+      "completed": "ok",
       "declined": "no",
       "unrepairable": "no",
       "cancelled": "ok"
     },
-    "delivered": {
+    "completed": {
       "received": "no",
       "diagnostics": "no",
       "waiting_customer": "no",
@@ -146,7 +146,7 @@
       "waiting_parts": "no",
       "repair": "no",
       "ready": "no",
-      "delivered": "no",
+      "completed": "no",
       "unrepairable": "no",
       "cancelled": "no"
     },
@@ -157,7 +157,7 @@
       "waiting_parts": "no",
       "repair": "no",
       "ready": "no",
-      "delivered": "no",
+      "completed": "no",
       "declined": "no",
       "cancelled": "no"
     },
@@ -168,7 +168,7 @@
       "waiting_parts": "no",
       "repair": "no",
       "ready": "no",
-      "delivered": "no",
+      "completed": "no",
       "declined": "no",
       "unrepairable": "no"
     }

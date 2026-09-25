@@ -21,7 +21,7 @@ vi.mock("../auth/AuthContext", () => ({
 
 const orderId = "order-1";
 
-function renderCard(deliveredAt: string | null = null, isOwner = true, customerId?: string) {
+function renderCard(completedAt: string | null = null, isOwner = true, customerId?: string) {
   mockUseAuth.mockReturnValue({ me: { is_owner: isOwner } });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const Wrapper = ({ children }: { children: ReactNode }) => (
@@ -32,7 +32,7 @@ function renderCard(deliveredAt: string | null = null, isOwner = true, customerI
     </QueryClientProvider>
   );
   const view = render(
-    <InvoiceCard orderId={orderId} deliveredAt={deliveredAt} customerId={customerId} />,
+    <InvoiceCard orderId={orderId} completedAt={completedAt} customerId={customerId} />,
     { wrapper: Wrapper },
   );
   return { ...view, client };

@@ -45,7 +45,7 @@ interface OrderDetailOut {
   // Order-completion timestamp — the frozen client-side default source for
   // InvoiceCard's tax_event_date suggestion (docs/ACCOUNTANT_REVIEW.md D1:
   // a convenience default only, never sent unedited/unseen).
-  delivered_at: string | null;
+  completed_at: string | null;
   // Wave 3 Issues 21/26/27 — mileage recorded on THIS visit, if any.
   mileage: number | null;
   // Wave 4 Issue 38 — this order's own labor/work warranty, if already chosen.
@@ -189,7 +189,7 @@ export function OrderPage() {
             </>
           )}
           <PromisedDateBlock orderId={order.id} promisedOn={order.promised_on} editable={!orderIsTerminal} />
-          <InvoiceCard orderId={order.id} deliveredAt={order.delivered_at} customerId={order.customer_id} />
+          <InvoiceCard orderId={order.id} completedAt={order.completed_at} customerId={order.customer_id} />
         </div>
 
         <div className="flex flex-col gap-4">

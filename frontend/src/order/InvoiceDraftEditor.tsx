@@ -65,22 +65,22 @@ function todayLocalISODate(): string {
 /** Client-side convenience default only — the user sees and can edit it
  * before confirming (docs/ACCOUNTANT_REVIEW.md D1: never backend-derived,
  * and never silently sent unedited). Sliced directly from the ISO string,
- * never routed through a Date object: delivered_at is a UTC timestamp, and
+ * never routed through a Date object: completed_at is a UTC timestamp, and
  * parsing+reformatting it through local Date arithmetic risks rendering the
  * wrong calendar day near a local midnight boundary. */
-function defaultTaxEventDate(deliveredAt: string | null): string {
-  return deliveredAt ? deliveredAt.slice(0, 10) : todayLocalISODate();
+function defaultTaxEventDate(completedAt: string | null): string {
+  return completedAt ? completedAt.slice(0, 10) : todayLocalISODate();
 }
 
 export function InvoiceDraftEditor({
-  invoiceId, orderId, deliveredAt, customerId, onClose, embedded = true,
+  invoiceId, orderId, completedAt, customerId, onClose, embedded = true,
 }: {
   invoiceId: string;
   // Wave 6 Issue 30 — undefined for a manual (order-less) invoice; every
   // order-scoped cache invalidation below is skipped in that case, since
   // there is no order to invalidate against.
   orderId?: string;
-  deliveredAt: string | null; customerId?: string;
+  completedAt: string | null; customerId?: string;
   onClose?: () => void; embedded?: boolean;
 }) {
   const { me } = useAuth();
@@ -355,7 +355,7 @@ export function InvoiceDraftEditor({
           submitting={issuing}
           error={issueError}
           draftTotal={invoice.draft_total}
-          defaultTaxEventDate={defaultTaxEventDate(deliveredAt)}
+          defaultTaxEventDate={defaultTaxEventDate(completedAt)}
           customerId={customerId}
         />
       )}

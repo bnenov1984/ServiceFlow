@@ -31,6 +31,12 @@ export interface ProvisionCompanyRequest {
   business_profile: string;
   business_type_label: string;
   modules: string[];
+  // Audit correction (issue 04, 2026-09-25): optional — the Owner can set
+  // or change every one of these afterward via company settings.
+  warranty_standard_term?: string | null;
+  warranty_conditions?: string | null;
+  warranty_text?: string | null;
+  warranty_additional_conditions?: string | null;
 }
 
 export interface ProvisionCompanyResult {

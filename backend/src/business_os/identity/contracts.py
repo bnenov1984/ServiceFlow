@@ -34,6 +34,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from business_os.identity import mail as _mail
 from business_os.identity import service as _service
 from business_os.identity.service import ProvisioningError
 
@@ -55,9 +56,11 @@ __all__ = [
     "provision_company",
     "restore_company",
     "revoke_module",
+    "send_email_with_attachment",
     "set_business_profile",
     "set_subscription_state",
     "set_subscription_trial",
+    "set_warranty_defaults",
     "SUBSCRIPTION_STATES",
 ]
 
@@ -116,6 +119,19 @@ def get_warranty_defaults(db: Session, company_id: uuid.UUID) -> dict[str, int |
     `service.get_warranty_defaults`; callers must never read
     `Company.settings` directly."""
     return _service.get_warranty_defaults(db, company_id)
+
+
+def send_email_with_attachment(to: str, subject: str, body: str,
+                               attachment_filename: str, attachment_bytes: bytes) -> bool:
+    """Audit correction, issue 03: the sanctioned way for `service_orders` to
+    email the completion protocol PDF via identity's SMTP relay. Returns
+    True/False (never raises), same contract as `mail.send_email` — callers
+    must surface a False return as their own domain error (e.g.
+    `OrderError`), never swallow it. Wraps `mail.send_email_with_attachment`;
+    callers must never import `identity.mail` or touch `smtplib` directly."""
+    return _mail.send_email_with_attachment(
+        to, subject, body, attachment_filename, attachment_bytes,
+    )
 
 
 def record_audit_event(db: Session, company_id: uuid.UUID, actor_user_id: uuid.UUID | None,
@@ -180,6 +196,19 @@ def set_business_profile(db: Session, company_id: uuid.UUID, profile: str) -> No
 def get_business_profile(db: Session, company_id: uuid.UUID) -> str:
     """`generic_repair` if never assigned (ADR-BOS-011 §Decision 2 default)."""
     return _service.get_business_profile(db, company_id)
+
+
+def set_warranty_defaults(db: Session, company_id: uuid.UUID, fields: dict[str, Any]) -> None:
+    """Issue 04 (audit correction, 2026-09-25): lets Vendor/Admin seed
+    initial warranty terms/defaults at company onboarding — a deliberate,
+    PO-confirmed reversal of "Vendor never sets commercial terms" (see
+    order-completion/issues/04 for the reasoning). `fields` keys must be a
+    subset of `service.WARRANTY_DEFAULT_KEYS`; unknown keys are silently
+    dropped, same allow-list discipline `update_warranty_defaults` (the
+    tenant Owner-facing endpoint) uses. Non-committing — composed inside
+    `ProvisionCompany`'s single transaction. Owner can freely overwrite
+    every field afterward through `PATCH /company/warranty-defaults`."""
+    _service._set_warranty_defaults(db, company_id, fields)
 
 
 def set_business_type_label(db: Session, company_id: uuid.UUID, label: str) -> None:

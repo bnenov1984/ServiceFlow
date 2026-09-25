@@ -59,6 +59,12 @@ export function VendorNewCompanyPage() {
   const [businessProfile, setBusinessProfile] = useState("generic_repair");
   const [businessTypeLabel, setBusinessTypeLabel] = useState("");
   const [selectedModule, setSelectedModule] = useState<string | null>(null);
+  // Audit correction (issue 04): entirely optional — the Owner can fill or
+  // change every one of these later, in company settings.
+  const [warrantyStandardTerm, setWarrantyStandardTerm] = useState("");
+  const [warrantyConditions, setWarrantyConditions] = useState("");
+  const [warrantyText, setWarrantyText] = useState("");
+  const [warrantyAdditionalConditions, setWarrantyAdditionalConditions] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -100,6 +106,10 @@ export function VendorNewCompanyPage() {
         business_profile: businessProfile,
         business_type_label: businessTypeLabel.trim(),
         modules: selectedModule === null ? [] : [selectedModule],
+        warranty_standard_term: warrantyStandardTerm.trim() || null,
+        warranty_conditions: warrantyConditions.trim() || null,
+        warranty_text: warrantyText.trim() || null,
+        warranty_additional_conditions: warrantyAdditionalConditions.trim() || null,
       };
       const result = await api.post<ProvisionCompanyResult>("/platform-admin/companies", body);
       await queryClient.invalidateQueries({ queryKey: queryKeys.vendorCompanies });
@@ -251,6 +261,75 @@ export function VendorNewCompanyPage() {
           {fieldErrors.modules && (
             <p role="alert" className="mt-0.5 text-xs text-red-700">{fieldErrors.modules}</p>
           )}
+        </div>
+
+        <div className="border-t border-slate-100 pt-4">
+          <h2 className="mb-1 text-sm font-semibold text-slate-900">
+            {t("vendor.warranty_terms_title")}
+          </h2>
+          <p className="mb-3 text-xs text-slate-500">{t("vendor.warranty_terms_hint")}</p>
+
+          <div className="flex flex-col gap-3">
+            <div>
+              <label
+                className="mb-1 block text-sm font-medium text-slate-700"
+                htmlFor="warranty-standard-term"
+              >
+                {t("company.field_warranty_standard_term")}
+              </label>
+              <input
+                id="warranty-standard-term"
+                value={warrantyStandardTerm}
+                onChange={(e) => setWarrantyStandardTerm(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
+              />
+            </div>
+            <div>
+              <label
+                className="mb-1 block text-sm font-medium text-slate-700"
+                htmlFor="warranty-conditions"
+              >
+                {t("company.field_warranty_conditions")}
+              </label>
+              <textarea
+                id="warranty-conditions"
+                rows={2}
+                value={warrantyConditions}
+                onChange={(e) => setWarrantyConditions(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+              />
+            </div>
+            <div>
+              <label
+                className="mb-1 block text-sm font-medium text-slate-700"
+                htmlFor="warranty-text"
+              >
+                {t("company.field_warranty_text")}
+              </label>
+              <textarea
+                id="warranty-text"
+                rows={3}
+                value={warrantyText}
+                onChange={(e) => setWarrantyText(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+              />
+            </div>
+            <div>
+              <label
+                className="mb-1 block text-sm font-medium text-slate-700"
+                htmlFor="warranty-additional-conditions"
+              >
+                {t("company.field_warranty_additional_conditions")}
+              </label>
+              <textarea
+                id="warranty-additional-conditions"
+                rows={2}
+                value={warrantyAdditionalConditions}
+                onChange={(e) => setWarrantyAdditionalConditions(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+              />
+            </div>
+          </div>
         </div>
 
         {error && <p role="alert" className="text-sm text-red-700">{error}</p>}

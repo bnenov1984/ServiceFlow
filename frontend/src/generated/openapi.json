@@ -252,7 +252,7 @@
           "platform-admin"
         ],
         "summary": "Grant Entitlement",
-        "description": "Grant one module entitlement. Idempotent: calling this again on an\nalready-active module is a harmless no-op (`changed=False` in the\nresponse), not an error.",
+        "description": "Grant one module entitlement. Idempotent: calling this again on an\nalready-active module is a harmless no-op (`changed=False` in the\nresponse), not an error. Granting a *different* module while one is\nalready active is rejected (409, `errors.provisioning.\nmultiple_modules_not_allowed`) — one application per company; revoke\nthe current one first to switch.",
         "operationId": "grant_entitlement_api_v1_platform_admin_companies__company_id__modules__module_key__put",
         "parameters": [
           {
@@ -2561,6 +2561,63 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orders/{order_id}/protocol/email": {
+      "post": {
+        "tags": [
+          "orders"
+        ],
+        "summary": "Email Completion Protocol",
+        "operationId": "email_completion_protocol_api_v1_orders__order_id__protocol_email_post",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Order Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProtocolEmailRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Email Completion Protocol Api V1 Orders  Order Id  Protocol Email Post"
+                }
               }
             }
           },
@@ -7771,7 +7828,7 @@
             ],
             "title": "Origin Order Id"
           },
-          "delivered_at": {
+          "completed_at": {
             "anyOf": [
               {
                 "type": "string",
@@ -7781,7 +7838,7 @@
                 "type": "null"
               }
             ],
-            "title": "Delivered At"
+            "title": "Completed At"
           },
           "terminal_reason": {
             "anyOf": [
@@ -7908,7 +7965,7 @@
           "promised_on",
           "warranty_days",
           "origin_order_id",
-          "delivered_at",
+          "completed_at",
           "terminal_reason",
           "archived",
           "row_version",
@@ -8127,7 +8184,7 @@
             ],
             "title": "Origin Order Id"
           },
-          "delivered_at": {
+          "completed_at": {
             "anyOf": [
               {
                 "type": "string",
@@ -8137,7 +8194,7 @@
                 "type": "null"
               }
             ],
-            "title": "Delivered At"
+            "title": "Completed At"
           },
           "terminal_reason": {
             "anyOf": [
@@ -8245,7 +8302,7 @@
           "promised_on",
           "warranty_days",
           "origin_order_id",
-          "delivered_at",
+          "completed_at",
           "terminal_reason",
           "archived",
           "row_version",
@@ -8341,7 +8398,7 @@
             ],
             "title": "Origin Order Id"
           },
-          "delivered_at": {
+          "completed_at": {
             "anyOf": [
               {
                 "type": "string",
@@ -8351,7 +8408,7 @@
                 "type": "null"
               }
             ],
-            "title": "Delivered At"
+            "title": "Completed At"
           },
           "terminal_reason": {
             "anyOf": [
@@ -8435,7 +8492,7 @@
           "promised_on",
           "warranty_days",
           "origin_order_id",
-          "delivered_at",
+          "completed_at",
           "terminal_reason",
           "archived",
           "row_version"
@@ -8557,17 +8614,18 @@
             "title": "Unit Price",
             "default": "0"
           },
-          "warranty_days": {
+          "warranty_months": {
             "anyOf": [
               {
                 "type": "integer",
+                "maximum": 120.0,
                 "minimum": 0.0
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Warranty Days"
+            "title": "Warranty Months"
           }
         },
         "type": "object",
@@ -8603,7 +8661,7 @@
             "type": "string",
             "title": "State"
           },
-          "warranty_days": {
+          "warranty_months": {
             "anyOf": [
               {
                 "type": "integer"
@@ -8612,7 +8670,7 @@
                 "type": "null"
               }
             ],
-            "title": "Warranty Days"
+            "title": "Warranty Months"
           }
         },
         "type": "object",
@@ -8653,17 +8711,18 @@
             ],
             "title": "Qty"
           },
-          "warranty_days": {
+          "warranty_months": {
             "anyOf": [
               {
                 "type": "integer",
+                "maximum": 120.0,
                 "minimum": 0.0
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Warranty Days"
+            "title": "Warranty Months"
           },
           "unit_cost": {
             "anyOf": [
@@ -8867,6 +8926,17 @@
         "title": "PlatformAdminMe",
         "description": "Deliberately narrow: who you are and the CSRF token you need. No\n`company_id` field exists here because a Vendor Administrator has no\ncompany — this response shape is where that stops being a comment and\nbecomes a contract."
       },
+      "ProtocolEmailRequest": {
+        "properties": {
+          "include_warranty": {
+            "type": "boolean",
+            "title": "Include Warranty",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "ProtocolEmailRequest"
+      },
       "ProvisionCompanyRequest": {
         "properties": {
           "company_name": {
@@ -8909,6 +8979,54 @@
             },
             "type": "array",
             "title": "Modules"
+          },
+          "warranty_standard_term": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warranty Standard Term"
+          },
+          "warranty_conditions": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warranty Conditions"
+          },
+          "warranty_text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warranty Text"
+          },
+          "warranty_additional_conditions": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warranty Additional Conditions"
           }
         },
         "type": "object",
@@ -9728,12 +9846,60 @@
               }
             ],
             "title": "Parts Days"
+          },
+          "standard_term": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standard Term"
+          },
+          "conditions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conditions"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "additional_conditions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Additional Conditions"
           }
         },
         "type": "object",
         "required": [
           "labor_days",
-          "parts_days"
+          "parts_days",
+          "standard_term",
+          "conditions",
+          "text",
+          "additional_conditions"
         ],
         "title": "WarrantyDefaultsOut"
       },
@@ -9762,6 +9928,54 @@
               }
             ],
             "title": "Parts Days"
+          },
+          "standard_term": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standard Term"
+          },
+          "conditions": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conditions"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "additional_conditions": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Additional Conditions"
           }
         },
         "additionalProperties": false,

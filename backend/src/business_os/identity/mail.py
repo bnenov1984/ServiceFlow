@@ -1,10 +1,12 @@
-"""Minimal outbound email — one function, stdlib `smtplib` only. Not a
-notification service: no queue, no retry, no template engine, no
-preferences, no generic event bus. The only current caller is Tenant
-Forgot Password V1 (`identity/router.py`'s `forgot_password` endpoint,
-`build_reset_link`/`send_password_reset_email` below); if a second real
-need for outbound email ever appears, that is the moment to reconsider
-this shape, not before.
+"""Minimal outbound email — stdlib `smtplib` only. Not a notification
+service: no queue, no retry, no template engine, no preferences, no
+generic event bus. Two callers so far: Tenant Forgot Password V1
+(`identity/router.py`'s `forgot_password` endpoint, `build_reset_link`/
+`send_password_reset_email` below) and, via `identity.contracts`'
+`send_email_with_attachment` wrapper, `service_orders`' completion-protocol
+email (Wave 4 audit correction, issue 03) — exposed through the identity
+public-contract boundary (`identity/contracts.py`, `.importlinter`'s
+`identity-public-boundary`), not imported directly from outside `identity`.
 
 Lives in `identity`, not `shared_kernel`: it needs `serviceflow.config`
 for SMTP settings, and `shared_kernel` is explicitly forbidden from
@@ -61,6 +63,41 @@ def send_email(to: str, subject: str, body: str) -> bool:
         # a mail-provider outage must never turn an otherwise-successful
         # forgot-password request into a 500 (identity/router.py's
         # forgot_password already committed the token before this runs).
+        logger.exception("identity.mail: delivery failed")
+        return False
+    return True
+
+
+def send_email_with_attachment(to: str, subject: str, body: str,
+                               attachment_filename: str, attachment_bytes: bytes,
+                               attachment_mime: tuple[str, str] = ("application", "pdf")) -> bool:
+    """Same contract as `send_email` (returns True/False, never raises) with
+    one binary attachment. Order-completion-protocol email (Wave 4 audit
+    correction, issue 03) is the first caller — the second real need for
+    outbound email this module's own docstring said would justify growing
+    its shape."""
+    settings = get_settings()
+    if not settings.smtp_host or not settings.smtp_from:
+        logger.warning("identity.mail: SMTP not configured — message not sent")
+        return False
+
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = settings.smtp_from
+    message["To"] = to
+    message.set_content(body)
+    maintype, subtype = attachment_mime
+    message.add_attachment(attachment_bytes, maintype=maintype, subtype=subtype,
+                           filename=attachment_filename)
+
+    try:
+        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as smtp:
+            if settings.smtp_use_tls:
+                smtp.starttls()
+            if settings.smtp_username and settings.smtp_password:
+                smtp.login(settings.smtp_username, settings.smtp_password)
+            smtp.send_message(message)
+    except (smtplib.SMTPException, OSError):
         logger.exception("identity.mail: delivery failed")
         return False
     return True

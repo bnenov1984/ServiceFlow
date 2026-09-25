@@ -183,6 +183,28 @@ describe("VendorNewCompanyPage", () => {
       business_profile: "generic_repair",
       business_type_label: "Сервиз за велосипеди и тротинетки",
       modules: ["repairflow"],
+      warranty_standard_term: null, warranty_conditions: null,
+      warranty_text: null, warranty_additional_conditions: null,
+    });
+  });
+
+  it("sends the four warranty fields, trimmed, when filled in — otherwise null", async () => {
+    mockPost.mockResolvedValue(SUCCESS_RESULT);
+    renderPage();
+    const user = userEvent.setup();
+    await fillRequiredFields(user);
+    await user.click(screen.getByLabelText("RepairFlow"));
+    await user.type(screen.getByLabelText("Стандартен гаранционен срок"), "  12 месеца  ");
+    await user.type(screen.getByLabelText("Гаранционни условия"), "Условие");
+    // "Текст на гаранцията" and "Допълнителни условия" left blank on purpose.
+    await user.click(screen.getByRole("button", { name: "Създай компания" }));
+
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+    expect(mockPost.mock.calls[0][1]).toMatchObject({
+      warranty_standard_term: "12 месеца",
+      warranty_conditions: "Условие",
+      warranty_text: null,
+      warranty_additional_conditions: null,
     });
   });
 

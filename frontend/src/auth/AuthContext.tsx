@@ -30,7 +30,7 @@ export interface Me {
   // Optional on the TS shape (not on the wire — the backend always sends
   // it) so the many existing test fixtures that build a `Me` object by
   // hand don't all need updating for a field they don't exercise; real
-  // consumers (DeliveryDialog, part-warranty prefill) read it defensively.
+  // consumers (CompletionDialog, part-warranty prefill) read it defensively.
   warranty_defaults?: WarrantyDefaults;
   // Cleanup batch Issue 26: same "always on the wire, optional on the TS
   // shape" convention as warranty_defaults above — OrderStep reads this to

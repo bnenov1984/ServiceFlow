@@ -177,6 +177,7 @@ describe("CompanyRequisitesPage — Wave 4 Issue 38 (warranty defaults)", () => 
 
     expect(api.patch).toHaveBeenCalledWith("/company/warranty-defaults", {
       labor_days: 90, parts_days: 0,
+      standard_term: null, conditions: null, text: null, additional_conditions: null,
     });
     expect(await screen.findByText("Гаранцията по подразбиране е запазена.")).toBeInTheDocument();
     // The requisites PATCH must never have been touched by this save.
@@ -198,6 +199,78 @@ describe("CompanyRequisitesPage — Wave 4 Issue 38 (warranty defaults)", () => 
 
     expect(api.patch).toHaveBeenCalledWith("/company/warranty-defaults", {
       labor_days: null, parts_days: 30,
+      standard_term: null, conditions: null, text: null, additional_conditions: null,
+    });
+  });
+});
+
+describe("CompanyRequisitesPage — issue 04 (free-text warranty terms)", () => {
+  function mockGetByPath(byPath: Record<string, unknown>) {
+    vi.mocked(api.get).mockImplementation((path: string) => {
+      if (path in byPath) return Promise.resolve(byPath[path]) as never;
+      return Promise.reject(new Error(`unexpected GET ${path}`));
+    });
+  }
+
+  const REQUISITES = { address: null, phone: null, eik: null, vat_registered: false };
+  const BLANK_TERMS = {
+    standard_term: null, conditions: null, text: null, additional_conditions: null,
+  };
+
+  it("prefills the four text fields from the backend", async () => {
+    mockGetByPath({
+      "/company/requisites": REQUISITES,
+      "/company/warranty-defaults": {
+        labor_days: null, parts_days: null,
+        standard_term: "12 месеца", conditions: "Условие А",
+        text: "Пълен текст", additional_conditions: "Допълнително Б",
+      },
+    });
+    renderPage();
+
+    expect(await screen.findByLabelText("Стандартен гаранционен срок")).toHaveValue("12 месеца");
+    expect(screen.getByLabelText("Гаранционни условия")).toHaveValue("Условие А");
+    expect(screen.getByLabelText("Текст на гаранцията")).toHaveValue("Пълен текст");
+    expect(screen.getByLabelText("Допълнителни условия")).toHaveValue("Допълнително Б");
+  });
+
+  it("saves the four text fields, trimmed, alongside the numeric defaults", async () => {
+    const user = userEvent.setup();
+    mockGetByPath({
+      "/company/requisites": REQUISITES,
+      "/company/warranty-defaults": { labor_days: null, parts_days: null, ...BLANK_TERMS },
+    });
+    vi.mocked(api.patch).mockResolvedValue({ labor_days: null, parts_days: null, ...BLANK_TERMS });
+    renderPage();
+
+    await user.type(await screen.findByLabelText("Стандартен гаранционен срок"), "  12 месеца  ");
+    await user.type(screen.getByLabelText("Гаранционни условия"), "Условие");
+    await user.click(screen.getByRole("button", { name: "Запази гаранцията" }));
+
+    expect(api.patch).toHaveBeenCalledWith("/company/warranty-defaults", {
+      labor_days: null, parts_days: null,
+      standard_term: "12 месеца", conditions: "Условие", text: null, additional_conditions: null,
+    });
+  });
+
+  it("sends null for a text field left blank", async () => {
+    const user = userEvent.setup();
+    mockGetByPath({
+      "/company/requisites": REQUISITES,
+      "/company/warranty-defaults": {
+        labor_days: null, parts_days: null, standard_term: "12 месеца",
+        conditions: null, text: null, additional_conditions: null,
+      },
+    });
+    vi.mocked(api.patch).mockResolvedValue({ labor_days: null, parts_days: null, ...BLANK_TERMS });
+    renderPage();
+
+    const input = await screen.findByLabelText("Стандартен гаранционен срок");
+    await user.clear(input);
+    await user.click(screen.getByRole("button", { name: "Запази гаранцията" }));
+
+    expect(api.patch).toHaveBeenCalledWith("/company/warranty-defaults", {
+      labor_days: null, parts_days: null, ...BLANK_TERMS,
     });
   });
 });

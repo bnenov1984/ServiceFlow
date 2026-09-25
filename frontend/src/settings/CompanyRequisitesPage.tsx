@@ -27,6 +27,12 @@ interface CompanyRequisites {
 interface WarrantyDefaults {
   labor_days: number | null;
   parts_days: number | null;
+  // Audit correction (issue 04, 2026-09-25): free-text terms, seeded by
+  // Vendor/Admin at onboarding, editable here afterward.
+  standard_term: string | null;
+  conditions: string | null;
+  text: string | null;
+  additional_conditions: string | null;
 }
 
 function errorText(error: unknown): string {
@@ -35,7 +41,7 @@ function errorText(error: unknown): string {
 
 // "" (empty input) <-> null (no default configured); any other digit string
 // <-> that integer, including "0" (explicitly "Без гаранция") — same
-// empty-string-means-null convention DeliveryDialog's own warranty-days
+// empty-string-means-null convention CompletionDialog's own warranty-days
 // input already uses.
 function daysToInput(days: number | null | undefined): string {
   return typeof days === "number" ? String(days) : "";
@@ -59,6 +65,10 @@ function WarrantyDefaultsSection() {
 
   const [laborDays, setLaborDays] = useState("");
   const [partsDays, setPartsDays] = useState("");
+  const [standardTerm, setStandardTerm] = useState("");
+  const [conditions, setConditions] = useState("");
+  const [termsText, setTermsText] = useState("");
+  const [additionalConditions, setAdditionalConditions] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,6 +76,10 @@ function WarrantyDefaultsSection() {
     if (defaults.data) {
       setLaborDays(daysToInput(defaults.data.labor_days));
       setPartsDays(daysToInput(defaults.data.parts_days));
+      setStandardTerm(defaults.data.standard_term ?? "");
+      setConditions(defaults.data.conditions ?? "");
+      setTermsText(defaults.data.text ?? "");
+      setAdditionalConditions(defaults.data.additional_conditions ?? "");
     }
   }, [defaults.data]);
 
@@ -77,6 +91,10 @@ function WarrantyDefaultsSection() {
     try {
       const updated = await api.patch<WarrantyDefaults>("/company/warranty-defaults", {
         labor_days: inputToDays(laborDays), parts_days: inputToDays(partsDays),
+        standard_term: standardTerm.trim() || null,
+        conditions: conditions.trim() || null,
+        text: termsText.trim() || null,
+        additional_conditions: additionalConditions.trim() || null,
       });
       queryClient.setQueryData(queryKeys.companyWarrantyDefaults, updated);
       pushToast("success", t("company.warranty_saved"));
@@ -133,6 +151,74 @@ function WarrantyDefaultsSection() {
           value={partsDays}
           onChange={(e) => setPartsDays(e.target.value)}
           className="w-32 rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
+        />
+      </div>
+
+      <div>
+        <label
+          className="mb-1 block text-sm font-medium text-slate-700"
+          htmlFor="company-warranty-standard-term"
+        >
+          {t("company.field_warranty_standard_term")}
+        </label>
+        <input
+          id="company-warranty-standard-term"
+          type="text"
+          maxLength={200}
+          value={standardTerm}
+          onChange={(e) => setStandardTerm(e.target.value)}
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
+        />
+      </div>
+
+      <div>
+        <label
+          className="mb-1 block text-sm font-medium text-slate-700"
+          htmlFor="company-warranty-conditions"
+        >
+          {t("company.field_warranty_conditions")}
+        </label>
+        <textarea
+          id="company-warranty-conditions"
+          rows={3}
+          maxLength={2000}
+          value={conditions}
+          onChange={(e) => setConditions(e.target.value)}
+          className="w-full rounded-lg border border-slate-300 px-3 py-2"
+        />
+      </div>
+
+      <div>
+        <label
+          className="mb-1 block text-sm font-medium text-slate-700"
+          htmlFor="company-warranty-text"
+        >
+          {t("company.field_warranty_text")}
+        </label>
+        <textarea
+          id="company-warranty-text"
+          rows={5}
+          maxLength={4000}
+          value={termsText}
+          onChange={(e) => setTermsText(e.target.value)}
+          className="w-full rounded-lg border border-slate-300 px-3 py-2"
+        />
+      </div>
+
+      <div>
+        <label
+          className="mb-1 block text-sm font-medium text-slate-700"
+          htmlFor="company-warranty-additional-conditions"
+        >
+          {t("company.field_warranty_additional_conditions")}
+        </label>
+        <textarea
+          id="company-warranty-additional-conditions"
+          rows={3}
+          maxLength={2000}
+          value={additionalConditions}
+          onChange={(e) => setAdditionalConditions(e.target.value)}
+          className="w-full rounded-lg border border-slate-300 px-3 py-2"
         />
       </div>
 

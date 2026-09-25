@@ -17,37 +17,37 @@ ALL = list(statuses.STATUSES)
 EXPECTED: dict[str, dict[str, str]] = {
     "received": {
         "diagnostics": "ok", "waiting_customer": "warn", "waiting_parts": "warn",
-        "repair": "warn", "ready": "warn", "delivered": "no",
+        "repair": "warn", "ready": "warn", "completed": "no",
         "declined": "ok", "unrepairable": "ok", "cancelled": "ok",
     },
     "diagnostics": {
         "received": "no", "waiting_customer": "ok", "waiting_parts": "ok",
-        "repair": "ok", "ready": "warn", "delivered": "no",
+        "repair": "ok", "ready": "warn", "completed": "no",
         "declined": "ok", "unrepairable": "ok", "cancelled": "ok",
     },
     "waiting_customer": {
         "received": "no", "diagnostics": "ok", "waiting_parts": "ok",
-        "repair": "ok", "ready": "warn", "delivered": "no",
+        "repair": "ok", "ready": "warn", "completed": "no",
         "declined": "ok", "unrepairable": "ok", "cancelled": "ok",
     },
     "waiting_parts": {
         "received": "no", "diagnostics": "ok", "waiting_customer": "ok",
-        "repair": "ok", "ready": "warn", "delivered": "no",
+        "repair": "ok", "ready": "warn", "completed": "no",
         "declined": "ok", "unrepairable": "ok", "cancelled": "ok",
     },
     "repair": {
         "received": "no", "diagnostics": "ok", "waiting_customer": "ok",
-        "waiting_parts": "ok", "ready": "ok", "delivered": "no",
+        "waiting_parts": "ok", "ready": "ok", "completed": "no",
         "declined": "no", "unrepairable": "ok", "cancelled": "ok",
     },
     "ready": {
         "received": "no", "diagnostics": "no", "waiting_customer": "no",
-        "waiting_parts": "no", "repair": "ok", "delivered": "ok",
+        "waiting_parts": "no", "repair": "ok", "completed": "ok",
         "declined": "no", "unrepairable": "no", "cancelled": "ok",
     },
 }
 
-TERMINAL_CODES = {"delivered", "declined", "unrepairable", "cancelled"}
+TERMINAL_CODES = {"completed", "declined", "unrepairable", "cancelled"}
 
 
 def test_expected_table_covers_every_open_status_pair() -> None:
@@ -84,4 +84,4 @@ def test_kind_partition() -> None:
     assert statuses.TERMINAL == TERMINAL_CODES
     assert set(ALL) - TERMINAL_CODES == statuses.OPEN
     assert statuses.kind_of("ready") == statuses.Kind.READY
-    assert statuses.kind_of("delivered") == statuses.Kind.TERMINAL_SUCCESS
+    assert statuses.kind_of("completed") == statuses.Kind.TERMINAL_SUCCESS

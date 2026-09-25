@@ -409,26 +409,32 @@ def update_company_requisites(
 # integers: NULL/missing = no default configured, 0 = explicitly "Без
 # гаранция", positive = days. Negative is rejected at the router (Pydantic
 # `ge=0`), never reaches here.
-WARRANTY_DEFAULT_KEYS = ("labor_days", "parts_days")
+#
+# Audit correction (issue 04, 2026-09-25): four free-text fields added
+# alongside the numeric ones — PO's "гаранция на сервиза" concept (standard
+# term, conditions, the terms text itself, additional conditions), distinct
+# from the numeric labor/parts day-counts used for warranty-return
+# eligibility math. Same JSONB bag, same allow-list discipline, just more
+# keys — no reason for a second settings sub-tree.
+WARRANTY_DEFAULT_KEYS = (
+    "labor_days", "parts_days",
+    "standard_term", "conditions", "text", "additional_conditions",
+)
 
 
-def get_warranty_defaults(db: Session, company_id: uuid.UUID) -> dict[str, int | None]:
+def get_warranty_defaults(db: Session, company_id: uuid.UUID) -> dict[str, Any]:
     company = get_company(db, company_id)
     defaults = (company.settings.get("repairflow", {}).get("warranty_defaults", {})
                if company is not None else {})
     return {key: defaults.get(key) for key in WARRANTY_DEFAULT_KEYS}
 
 
-def update_warranty_defaults(db: Session, company_id: uuid.UUID, actor_user_id: uuid.UUID,
-                             fields: dict[str, Any]) -> Company:
-    """Owner-only (route-enforced, `company_router`'s `require_owner`).
-    `fields` comes from the router's `WarrantyDefaultsPatch`
-    (`extra="forbid"`, only `labor_days`/`parts_days` declared) via
-    `model_dump(exclude_unset=True)` — mirrors `update_company_requisites`'s
-    allow-list discipline exactly, filtered to `WARRANTY_DEFAULT_KEYS` before
-    writing. Reassigns every level of the JSONB path (never mutates in
-    place), same reason `update_company_requisites`/`set_business_profile`
-    both do: SQLAlchemy's change tracking only sees a replaced value."""
+def _set_warranty_defaults(db: Session, company_id: uuid.UUID, fields: dict[str, Any]) -> None:
+    """Idempotent, non-committing — same settings-JSONB-key pattern as
+    `_activate_module`/`set_business_profile`. Shared by `update_warranty_
+    defaults` (below, its own commit — the tenant Owner-facing endpoint) and
+    `identity.contracts.set_warranty_defaults` (no commit — composed inside
+    `ProvisionCompany`'s single transaction, issue 04's onboarding seed)."""
     company = get_company(db, company_id)
     assert company is not None
 
@@ -438,6 +444,23 @@ def update_warranty_defaults(db: Session, company_id: uuid.UUID, actor_user_id: 
         warranty_defaults = {**repairflow.get("warranty_defaults", {}), **updates}
         repairflow["warranty_defaults"] = warranty_defaults
         company.settings = {**company.settings, "repairflow": repairflow}
+
+
+def update_warranty_defaults(db: Session, company_id: uuid.UUID, actor_user_id: uuid.UUID,
+                             fields: dict[str, Any]) -> Company:
+    """Owner-only (route-enforced, `company_router`'s `require_owner`) —
+    the tenant-facing post-onboarding edit path. `fields` comes from the
+    router's `WarrantyDefaultsPatch` (`extra="forbid"`, only
+    `WARRANTY_DEFAULT_KEYS` declared) via `model_dump(exclude_unset=True)`
+    — mirrors `update_company_requisites`'s allow-list discipline exactly.
+    Audits and commits, unlike `_set_warranty_defaults`: this is always its
+    own standalone request, never composed inside a larger transaction."""
+    company = get_company(db, company_id)
+    assert company is not None
+
+    updates = {k: v for k, v in fields.items() if k in WARRANTY_DEFAULT_KEYS}
+    if updates:
+        _set_warranty_defaults(db, company_id, updates)
         _audit(db, company_id, actor_user_id, "warranty_defaults_updated", updates)
         db.commit()
     return company

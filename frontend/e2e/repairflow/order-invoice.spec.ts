@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { getOwnerCredentials, loginAsOwner } from '../support/login';
+import { enterRepairFlow, getOwnerCredentials, loginAsOwner } from '../support/login';
 
 test('owner delivers an order and issues an invoice for it', async ({ page }) => {
   const { email, password } = getOwnerCredentials();
@@ -11,14 +11,7 @@ test('owner delivers an order and issues an invoice for it', async ({ page }) =>
 
   await loginAsOwner(page, email, password);
 
-  await page
-    .getByRole('button', { name: 'RepairFlow' })
-    .click();
-
-  // Not '/' — IndexRoute (App.tsx) immediately re-navigates "/" -> "/orders"
-  // once the chooser sets a last-app preference (dual-module company), so
-  // '/' never actually settles; asserting it races the app's own redirect.
-  await expect(page).toHaveURL('/orders');
+  await enterRepairFlow(page);
 
   // Setup: Issue requires a complete seller (company.service.py's issue() —
   // address + a checksum-valid EIK, errors.invoices.seller_incomplete
@@ -106,29 +99,28 @@ test('owner delivers an order and issues an invoice for it', async ({ page }) =>
     await page.waitForLoadState('networkidle');
   }
 
+  // ready -> completed has its own dedicated primary button, not the
+  // "Промени статус" dropdown (audit correction, 2026-09-25 — see
+  // order-delivery.spec.ts / frontend/e2e/CLAUDE.md).
   await page
-    .getByRole('button', { name: 'Промени статус' })
-    .click();
-
-  await page
-    .getByRole('menuitem', { name: 'Предадена' })
+    .getByRole('button', { name: 'Приключи поръчката' })
     .click();
 
   // Dialog.tsx's <h2> title isn't aria-labelledby'd to the <dialog> element
   // (a real, pre-existing accessibility gap), so the dialog carries no
   // accessible name — check role and visible title text separately.
   await expect(page.getByRole('dialog')).toBeVisible();
-  await expect(page.getByText('Предаване на клиента')).toBeVisible();
+  await expect(page.getByText('Приключване на поръчката')).toBeVisible();
 
   await page
     .getByRole('spinbutton', { name: 'Гаранция (дни)' })
     .fill('180');
 
   await page
-    .getByRole('button', { name: 'Предай' })
+    .getByRole('button', { name: 'Приключи', exact: true })
     .click();
 
-  await expect(page.getByText('Предадена', { exact: true })).toBeVisible();
+  await expect(page.getByText('Приключена', { exact: true })).toBeVisible();
 
   // Invoice: scoped to the "Фактура" card specifically — the order page
   // has several other sections with their own identically-labeled "Добави"

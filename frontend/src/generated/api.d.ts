@@ -133,7 +133,10 @@ export interface paths {
          * Grant Entitlement
          * @description Grant one module entitlement. Idempotent: calling this again on an
          *     already-active module is a harmless no-op (`changed=False` in the
-         *     response), not an error.
+         *     response), not an error. Granting a *different* module while one is
+         *     already active is rejected (409, `errors.provisioning.
+         *     multiple_modules_not_allowed`) — one application per company; revoke
+         *     the current one first to switch.
          */
         put: operations["grant_entitlement_api_v1_platform_admin_companies__company_id__modules__module_key__put"];
         post?: never;
@@ -869,6 +872,23 @@ export interface paths {
         get: operations["order_protocol_api_v1_orders__order_id__protocol_pdf_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/orders/{order_id}/protocol/email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Email Completion Protocol */
+        post: operations["email_completion_protocol_api_v1_orders__order_id__protocol_email_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2630,8 +2650,8 @@ export interface components {
             warranty_days: number | null;
             /** Origin Order Id */
             origin_order_id: string | null;
-            /** Delivered At */
-            delivered_at: string | null;
+            /** Completed At */
+            completed_at: string | null;
             /** Terminal Reason */
             terminal_reason: string | null;
             /** Archived */
@@ -2746,8 +2766,8 @@ export interface components {
             warranty_days: number | null;
             /** Origin Order Id */
             origin_order_id: string | null;
-            /** Delivered At */
-            delivered_at: string | null;
+            /** Completed At */
+            completed_at: string | null;
             /** Terminal Reason */
             terminal_reason: string | null;
             /** Archived */
@@ -2810,8 +2830,8 @@ export interface components {
             warranty_days: number | null;
             /** Origin Order Id */
             origin_order_id: string | null;
-            /** Delivered At */
-            delivered_at: string | null;
+            /** Completed At */
+            completed_at: string | null;
             /** Terminal Reason */
             terminal_reason: string | null;
             /** Archived */
@@ -2868,8 +2888,8 @@ export interface components {
              * @default 0
              */
             unit_price: number | string;
-            /** Warranty Days */
-            warranty_days?: number | null;
+            /** Warranty Months */
+            warranty_months?: number | null;
         };
         /** PartLineOut */
         PartLineOut: {
@@ -2888,8 +2908,8 @@ export interface components {
             unit_price: number;
             /** State */
             state: string;
-            /** Warranty Days */
-            warranty_days?: number | null;
+            /** Warranty Months */
+            warranty_months?: number | null;
         };
         /** PartLinePatch */
         PartLinePatch: {
@@ -2897,8 +2917,8 @@ export interface components {
             name?: string | null;
             /** Qty */
             qty?: number | null;
-            /** Warranty Days */
-            warranty_days?: number | null;
+            /** Warranty Months */
+            warranty_months?: number | null;
             /** Unit Cost */
             unit_cost?: number | string | null;
             /** Unit Price */
@@ -2986,6 +3006,14 @@ export interface components {
             /** Csrf Token */
             csrf_token: string;
         };
+        /** ProtocolEmailRequest */
+        ProtocolEmailRequest: {
+            /**
+             * Include Warranty
+             * @default false
+             */
+            include_warranty: boolean;
+        };
         /** ProvisionCompanyRequest */
         ProvisionCompanyRequest: {
             /** Company Name */
@@ -3008,6 +3036,14 @@ export interface components {
             business_type_label: string;
             /** Modules */
             modules?: string[];
+            /** Warranty Standard Term */
+            warranty_standard_term?: string | null;
+            /** Warranty Conditions */
+            warranty_conditions?: string | null;
+            /** Warranty Text */
+            warranty_text?: string | null;
+            /** Warranty Additional Conditions */
+            warranty_additional_conditions?: string | null;
         };
         /**
          * ProvisionCompanyResponse
@@ -3333,6 +3369,14 @@ export interface components {
             labor_days: number | null;
             /** Parts Days */
             parts_days: number | null;
+            /** Standard Term */
+            standard_term: string | null;
+            /** Conditions */
+            conditions: string | null;
+            /** Text */
+            text: string | null;
+            /** Additional Conditions */
+            additional_conditions: string | null;
         };
         /** WarrantyDefaultsPatch */
         WarrantyDefaultsPatch: {
@@ -3340,6 +3384,14 @@ export interface components {
             labor_days?: number | null;
             /** Parts Days */
             parts_days?: number | null;
+            /** Standard Term */
+            standard_term?: string | null;
+            /** Conditions */
+            conditions?: string | null;
+            /** Text */
+            text?: string | null;
+            /** Additional Conditions */
+            additional_conditions?: string | null;
         };
         /** WarrantyReturnRequest */
         WarrantyReturnRequest: {
@@ -5130,6 +5182,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    email_completion_protocol_api_v1_orders__order_id__protocol_email_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProtocolEmailRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
                 };
             };
             /** @description Validation Error */

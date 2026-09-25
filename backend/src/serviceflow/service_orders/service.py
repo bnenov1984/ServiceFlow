@@ -17,7 +17,7 @@ from business_os.shared_kernel.ids import new_id
 from serviceflow.assets import service as assets_service
 from serviceflow.customers import service as customers_service
 from serviceflow.service_orders import lines as _lines
-from serviceflow.service_orders import statuses
+from serviceflow.service_orders import protocol, statuses
 from serviceflow.service_orders.models import Diagnosis, DocumentSequence, ServiceOrder
 
 UNLOCK_WINDOW = timedelta(hours=24)
@@ -292,6 +292,7 @@ def _build_completion_snapshot(db: Session, ctx: TenantContext,
     asset_type = (assets_service.get_type_by_id(db, ctx, asset.asset_type_id)
                  if asset is not None else None)
     company = identity_contracts.get_company_profile(db, ctx.company_id)
+    warranty_defaults = identity_contracts.get_warranty_defaults(db, ctx.company_id)
     diagnosis = get_diagnosis(db, ctx, order.id)
     technician_name = (
         identity_contracts.get_user_name(db, ctx.company_id, order.technician_id)
@@ -309,7 +310,7 @@ def _build_completion_snapshot(db: Session, ctx: TenantContext,
     return {
         "order": {
             "number": order.number,
-            "delivered_at": _now().isoformat(),
+            "completed_at": _now().isoformat(),
             "complaint": order.complaint,
             "mileage": order.mileage,
             "warranty_days": order.warranty_days,
@@ -322,6 +323,14 @@ def _build_completion_snapshot(db: Session, ctx: TenantContext,
             "name": company.name,
             "address": str(company.requisites.get("address", "")),
             "phone": str(company.requisites.get("phone", "")),
+            # Issue 04: frozen at completion time, same reasoning as every
+            # other field here — a later edit to the company's warranty
+            # terms must never retroactively change what a reprinted
+            # protocol shows.
+            "warranty_standard_term": warranty_defaults.get("standard_term"),
+            "warranty_conditions": warranty_defaults.get("conditions"),
+            "warranty_text": warranty_defaults.get("text"),
+            "warranty_additional_conditions": warranty_defaults.get("additional_conditions"),
         },
         "asset": {
             "type_name": asset_type.name_bg if asset_type is not None else "",
@@ -395,8 +404,8 @@ def change_status(db: Session, ctx: TenantContext, order: ServiceOrder, *, to: s
         order.prev_status_code = prev
         order.terminal_at = _now()
         order.terminal_reason = reason
-        if to == "delivered":
-            order.delivered_at = _now()
+        if to == "completed":
+            order.completed_at = _now()
             if warranty_days is not None:
                 # Explicit — including 0 ("Без гаранция") — always wins,
                 # even on a later redeliver after unlock.
@@ -421,7 +430,7 @@ def change_status(db: Session, ctx: TenantContext, order: ServiceOrder, *, to: s
             # what "reproducible regardless of later changes" rules out).
             if order.completion_snapshot is None:
                 order.completion_snapshot = _build_completion_snapshot(db, ctx, order)
-            _event(db, ctx, order, "order_delivered",
+            _event(db, ctx, order, "order_completed",
                    {"warranty_days": order.warranty_days})
 
     warning = "skip" if verdict == statuses.WARN else None
@@ -456,7 +465,7 @@ def unlock(db: Session, ctx: TenantContext, order: ServiceOrder,
     order.terminal_at = None
     order.terminal_reason = None
     order.prev_status_code = None
-    order.delivered_at = None
+    order.completed_at = None
     order.row_version += 1
     _event(db, ctx, order, "order_unlocked", {"from": frm, "to": back_to, "reason": reason})
     db.commit()
@@ -466,7 +475,7 @@ def unlock(db: Session, ctx: TenantContext, order: ServiceOrder,
 def warranty_return(db: Session, ctx: TenantContext, original: ServiceOrder,
                     complaint: str) -> ServiceOrder:
     if statuses.kind_of(original.status_code) != statuses.Kind.TERMINAL_SUCCESS:
-        raise OrderError("errors.orders.warranty_needs_delivered")
+        raise OrderError("errors.orders.warranty_needs_completed")
     new_order = create(
         db, ctx, customer_id=original.customer_id, asset_id=original.asset_id,
         complaint=complaint, priority="high", origin_order_id=original.id,
@@ -475,6 +484,38 @@ def warranty_return(db: Session, ctx: TenantContext, original: ServiceOrder,
            {"new_order_id": str(new_order.id), "new_number": new_order.number})
     db.commit()
     return new_order
+
+
+def send_completion_protocol_email(db: Session, ctx: TenantContext, order: ServiceOrder,
+                                   *, include_warranty: bool) -> None:
+    """Issue 03 (audit correction): emails the completion protocol PDF —
+    reads the exact same frozen `completion_snapshot` the print action
+    reads, never live data (same discipline as `GET .../protocol.pdf?
+    type=delivery`). Raises `OrderError` for every failure mode; never
+    silently no-ops. This differs on purpose from `identity.mail`'s
+    password-reset posture, which deliberately hides send failure from the
+    caller for account-enumeration reasons — there's no equivalent concern
+    here: an authenticated shop employee explicitly asked to send this and
+    needs to know if it didn't go out."""
+    if order.completion_snapshot is None:
+        raise OrderError("errors.protocol.delivery_unavailable", status=404)
+
+    customer = customers_service.get(db, ctx, order.customer_id)
+    if customer is None or not customer.email:
+        raise OrderError("errors.protocol.email_missing_customer_email", status=400)
+
+    pdf_bytes = protocol.generate_delivery_protocol(
+        protocol.build_delivery_protocol_data(order.completion_snapshot),
+        include_warranty=include_warranty,
+    )
+    company = identity_contracts.get_company_profile(db, ctx.company_id)
+    subject = f"Протокол за поръчка № {order.number} — {company.name}"
+    body = f"Прилагаме протокола за Вашата поръчка № {order.number}.\n\n{company.name}"
+    sent = identity_contracts.send_email_with_attachment(
+        customer.email, subject, body, f"protokol-{order.number}.pdf", pdf_bytes,
+    )
+    if not sent:
+        raise OrderError("errors.protocol.email_send_failed", status=502)
 
 
 def archive(db: Session, ctx: TenantContext, order: ServiceOrder) -> None:

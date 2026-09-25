@@ -23,7 +23,8 @@ from serviceflow.timeline.models import TimelineEvent
 # Adding a new ServiceFlow event type means adding its string here too.
 KNOWN_EVENT_TYPES = frozenset({
     "order_created", "technician_assigned", "diagnosis_recorded", "diagnosis_updated",
-    "estimate_rejected", "estimate_approved", "order_delivered", "status_changed",
+    "estimate_rejected", "estimate_approved", "order_delivered", "order_completed",
+    "status_changed",
     "order_unlocked", "warranty_return_opened", "order_archived",
     "part_added", "part_ordered", "part_received", "part_state_changed", "labor_added",
     "task_created", "task_completed", "task_reopened",

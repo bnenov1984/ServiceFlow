@@ -32,8 +32,8 @@ import { IssuedInvoiceView } from "./IssuedInvoiceView";
 import type { InvoiceOut } from "./invoiceTypes";
 
 export function InvoiceCard({
-  orderId, deliveredAt, customerId,
-}: { orderId: string; deliveredAt: string | null; customerId?: string }) {
+  orderId, completedAt, customerId,
+}: { orderId: string; completedAt: string | null; customerId?: string }) {
   const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
 
   const { data: invoices, isLoading } = useQuery({
@@ -59,7 +59,7 @@ export function InvoiceCard({
               key={invoice.id}
               invoice={invoice}
               orderId={orderId}
-              deliveredAt={deliveredAt}
+              completedAt={completedAt}
               customerId={customerId}
               defaultOpen={invoice.id === justCreatedId}
               divider={index > 0}
@@ -73,9 +73,9 @@ export function InvoiceCard({
 }
 
 function InvoiceEntry({
-  invoice, orderId, deliveredAt, customerId, defaultOpen, divider,
+  invoice, orderId, completedAt, customerId, defaultOpen, divider,
 }: {
-  invoice: InvoiceOut; orderId: string; deliveredAt: string | null; customerId?: string;
+  invoice: InvoiceOut; orderId: string; completedAt: string | null; customerId?: string;
   defaultOpen: boolean; divider: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -104,7 +104,7 @@ function InvoiceEntry({
         <InvoiceDraftEditor
           invoiceId={invoice.id}
           orderId={orderId}
-          deliveredAt={deliveredAt}
+          completedAt={completedAt}
           customerId={customerId}
           onClose={() => setOpen(false)}
         />

@@ -42,7 +42,7 @@ import { StatusBadge } from "./InvoicesPage";
 interface OrderSummary {
   id: string;
   number: string;
-  delivered_at: string | null;
+  completed_at: string | null;
   customer_id: string;
 }
 
@@ -146,7 +146,7 @@ export function InvoiceDetailPage() {
           <InvoiceDraftEditor
             invoiceId={invoice.id}
             orderId={invoice.order_id ?? undefined}
-            deliveredAt={order?.delivered_at ?? null}
+            completedAt={order?.completed_at ?? null}
             customerId={order?.customer_id ?? invoice.customer_id ?? undefined}
             embedded={false}
           />

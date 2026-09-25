@@ -183,16 +183,29 @@ def update_company_requisites(
 
 class WarrantyDefaultsPatch(BaseModel):
     # extra="forbid": same allow-list discipline as CompanyRequisitesPatch —
-    # only these two keys can ever reach service.update_warranty_defaults.
+    # only these declared keys can ever reach service.update_warranty_defaults.
     model_config = ConfigDict(extra="forbid")
 
     labor_days: int | None = Field(default=None, ge=0)
     parts_days: int | None = Field(default=None, ge=0)
+    # Audit correction (issue 04): free-text warranty terms ("гаранция на
+    # сервиза") — set by Vendor/Admin at onboarding, edited afterward by the
+    # Owner (this router's own require_owner gate covers post-onboarding
+    # edits only; onboarding writes go through platform_admin, a separate
+    # router entirely).
+    standard_term: str | None = Field(default=None, max_length=200)
+    conditions: str | None = Field(default=None, max_length=2000)
+    text: str | None = Field(default=None, max_length=4000)
+    additional_conditions: str | None = Field(default=None, max_length=2000)
 
 
 class WarrantyDefaultsOut(BaseModel):
     labor_days: int | None
     parts_days: int | None
+    standard_term: str | None
+    conditions: str | None
+    text: str | None
+    additional_conditions: str | None
 
 
 @company_router.get("/warranty-defaults")

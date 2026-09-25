@@ -51,7 +51,7 @@ describe("VehicleHistorySection (Wave 3 Issues 21/26/27)", () => {
         },
         {
           order_id: "order-old", order_number: "2026-00001", created_at: "2026-01-01T00:00:00Z",
-          status_code: "delivered", customer_id: "c1", customer_name: "Иван",
+          status_code: "completed", customer_id: "c1", customer_name: "Иван",
           complaint: "Смяна на масло", mileage: 100000,
         },
       ],
@@ -76,7 +76,7 @@ describe("VehicleHistorySection (Wave 3 Issues 21/26/27)", () => {
         },
         {
           order_id: "order-old", order_number: "2026-00001", created_at: "2026-01-01T00:00:00Z",
-          status_code: "delivered", customer_id: "c1", customer_name: "Иван",
+          status_code: "completed", customer_id: "c1", customer_name: "Иван",
           complaint: "Оглед", mileage: null,
         },
       ],
@@ -84,6 +84,6 @@ describe("VehicleHistorySection (Wave 3 Issues 21/26/27)", () => {
     renderSection();
 
     const row = await screen.findByText("Оглед");
-    expect(row.previousElementSibling?.textContent).toBe("Иван · Предадена");
+    expect(row.previousElementSibling?.textContent).toBe("Иван · Приключена");
   });
 });

@@ -85,7 +85,7 @@ class ServiceOrder(Base, TimestampMixin):
     terminal_reason: Mapped[str | None] = mapped_column(default=None)
     terminal_at: Mapped[datetime | None] = mapped_column(default=None)
     prev_status_code: Mapped[str | None] = mapped_column(default=None)
-    delivered_at: Mapped[datetime | None] = mapped_column(default=None)
+    completed_at: Mapped[datetime | None] = mapped_column(default=None)
     # Wave 4 Issue 7: independent, frozen-at-delivery JSON — same discipline
     # as commercial.Invoice.seller/.buyer (never a live reference into
     # Customer/Company/Asset/line rows, so a later edit to any of them can

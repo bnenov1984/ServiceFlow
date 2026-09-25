@@ -164,6 +164,15 @@ class DeliveryProtocolData:
     total: str
     technician_name: str | None
     labor_warranty_days: int | None
+    # Issue 04: company-level warranty terms, frozen into the snapshot at
+    # completion time. Absent on any snapshot built before this field
+    # existed (`build_delivery_protocol_data` defaults those to "") — same
+    # posture `completion_snapshot`'s own migration took toward pre-existing
+    # orders: no retroactive reconstruction.
+    warranty_standard_term: str
+    warranty_conditions: str
+    warranty_text: str
+    warranty_additional_conditions: str
 
 
 def build_delivery_protocol_data(snapshot: dict[str, Any]) -> DeliveryProtocolData:
@@ -183,7 +192,7 @@ def build_delivery_protocol_data(snapshot: dict[str, Any]) -> DeliveryProtocolDa
         company_name=company["name"], company_address=company["address"],
         company_phone=company["phone"],
         order_number=order["number"],
-        delivered_on=datetime.fromisoformat(order["delivered_at"]),
+        delivered_on=datetime.fromisoformat(order["completed_at"]),
         customer_name=customer["name"], customer_phone=customer["phone"],
         asset_type_name=asset["type_name"], asset_label=asset["label"],
         asset_identifiers=[(label, value) for label, value in asset["identifiers"]],
@@ -207,13 +216,18 @@ def build_delivery_protocol_data(snapshot: dict[str, Any]) -> DeliveryProtocolDa
         ],
         total=snapshot["total"], technician_name=snapshot["technician_name"],
         labor_warranty_days=order["warranty_days"],
+        warranty_standard_term=company.get("warranty_standard_term") or "",
+        warranty_conditions=company.get("warranty_conditions") or "",
+        warranty_text=company.get("warranty_text") or "",
+        warranty_additional_conditions=company.get("warranty_additional_conditions") or "",
     )
 
 
 def _warranty_text(days: int | None) -> str:
-    """NULL -> "Не е посочена" (unspecified), 0 -> "Без гаранция" (explicitly
-    none), positive -> plain day count. No month/year conversion (Wave 4
-    scope: render exactly what was recorded, nothing invented)."""
+    """Labor (order-level) warranty only — stays day-granularity end to end
+    (issue 05 only changed PART warranty's unit, not labor's). NULL -> "Не е
+    посочена" (unspecified), 0 -> "Без гаранция" (explicitly none),
+    positive -> plain day count."""
     if days is None:
         return "Не е посочена"
     if days == 0:
@@ -221,7 +235,35 @@ def _warranty_text(days: int | None) -> str:
     return f"{days} дни"
 
 
-def generate_delivery_protocol(data: DeliveryProtocolData) -> bytes:
+def _warranty_text_months(days: int | None) -> str:
+    """Part-line warranty only (issue 05, audit correction: months-
+    granularity at the UI/API boundary; `days` here is still the frozen
+    snapshot's day count — same `PartLine.warranty_days` storage as always,
+    converted only for display, same 30-days/month rule as the router's
+    `_days_to_months`). NULL -> "Не е посочена", 0 -> "Без гаранция",
+    positive -> "N месец"/"N месеца" (correct singular for exactly 1)."""
+    if days is None:
+        return "Не е посочена"
+    if days == 0:
+        return "Без гаранция"
+    months = round(days / 30)
+    if months == 0:
+        # A positive day count that rounds down to 0 months (e.g. 10 days,
+        # entered directly via a pre-issue-05 completion_snapshot or a
+        # non-router write) — render the day count rather than falsely
+        # claiming "Без гаранция", which 0 has its own distinct meaning for.
+        return f"{days} дни"
+    return f"{months} месец" if months == 1 else f"{months} месеца"
+
+
+def generate_delivery_protocol(
+    data: DeliveryProtocolData, *, include_warranty: bool = True,
+) -> bytes:
+    """`include_warranty=False` (issue 03: the plain "Изпрати протокол"
+    email action) omits the labor/part warranty lines entirely — everything
+    else is identical. The print button and the "+ гаранция" email action
+    both use the default `True`, matching this function's original,
+    unconditional behavior."""
     pdf = _pdf_with_fonts()
 
     pdf.set_font("DejaVu", "B", 16)
@@ -283,23 +325,41 @@ def generate_delivery_protocol(data: DeliveryProtocolData) -> bytes:
         pdf.cell(0, 6, "(няма)", new_x="LMARGIN", new_y="NEXT")
         pdf.set_font("DejaVu", "", 11)
     pdf.ln(2)
-    pdf.cell(0, 6, f"Гаранция за труд: {_warranty_text(data.labor_warranty_days)}",
-            new_x="LMARGIN", new_y="NEXT")
+    if include_warranty:
+        pdf.cell(0, 6, f"Гаранция за труд: {_warranty_text(data.labor_warranty_days)}",
+                new_x="LMARGIN", new_y="NEXT")
     pdf.ln(3)
 
     _section("Части")
     if data.part_lines:
         for p in data.part_lines:
             qty = f" x{p.qty}" if p.qty > 1 else ""
+            warranty_suffix = (
+                f" (гаранция: {_warranty_text_months(p.warranty_days)})" if include_warranty else ""
+            )
             pdf.cell(0, 6,
-                    f"- {p.name}{qty} — {p.unit_price} € "
-                    f"(гаранция: {_warranty_text(p.warranty_days)})",
+                    f"- {p.name}{qty} — {p.unit_price} €{warranty_suffix}",
                     new_x="LMARGIN", new_y="NEXT")
     else:
         pdf.set_font("DejaVu", "", 10)
         pdf.cell(0, 6, "(няма)", new_x="LMARGIN", new_y="NEXT")
         pdf.set_font("DejaVu", "", 11)
     pdf.ln(3)
+
+    if include_warranty and (
+        data.warranty_standard_term or data.warranty_conditions
+        or data.warranty_text or data.warranty_additional_conditions
+    ):
+        _section("Гаранционни условия")
+        if data.warranty_standard_term:
+            pdf.multi_cell(0, 6, f"Стандартен гаранционен срок: {data.warranty_standard_term}")
+        if data.warranty_conditions:
+            pdf.multi_cell(0, 6, data.warranty_conditions)
+        if data.warranty_text:
+            pdf.multi_cell(0, 6, data.warranty_text)
+        if data.warranty_additional_conditions:
+            pdf.multi_cell(0, 6, data.warranty_additional_conditions)
+        pdf.ln(3)
 
     _section("Обща сума")
     pdf.cell(0, 6, f"{data.total} €", new_x="LMARGIN", new_y="NEXT")

@@ -101,7 +101,7 @@ class OrderOut(BaseModel):
     promised_on: date | None
     warranty_days: int | None
     origin_order_id: uuid.UUID | None
-    delivered_at: datetime | None
+    completed_at: datetime | None
     terminal_reason: str | None
     archived: bool
     row_version: int
@@ -129,7 +129,7 @@ class OrderOut(BaseModel):
             technician_id=o.technician_id, priority=o.priority,
             promised_on=o.promised_on, warranty_days=o.warranty_days,
             delivery_method=o.delivery_method, delivery_address=delivery_address,
-            origin_order_id=o.origin_order_id, delivered_at=o.delivered_at,
+            origin_order_id=o.origin_order_id, completed_at=o.completed_at,
             terminal_reason=o.terminal_reason, archived=o.archived_at is not None,
             row_version=o.row_version, mileage=o.mileage,
             has_completion_snapshot=o.completion_snapshot is not None, warning=warning,
@@ -175,6 +175,27 @@ class DiagnosisIn(BaseModel):
     approval_required: bool = False
 
 
+# Issue 05 (audit correction, 2026-09-25): part-level warranty is
+# months-granularity at the API boundary, unlike order-level (labor)
+# warranty, which stays in days (docs/15's CompletionDialog "Гаранция
+# (дни)" field is untouched — only per-part warranty changes unit).
+# `PartLine.warranty_days` (the DB column, migration 0025) and every
+# internal service_orders/lines.py function keep working in days —
+# unchanged storage, unchanged warranty-return logic (which doesn't do any
+# date math against this value at all, confirmed before choosing this
+# approach over a schema migration). Only this router's request/response
+# models convert at the boundary. 30 days/month exactly (not calendar-
+# accurate 30.44) — round-trips the PO's own whole-month examples (12, 6)
+# without drift, and the precision loss for values nobody entered in exact
+# days anyway is the tradeoff this conversion accepts by design.
+def _days_to_months(days: int | None) -> int | None:
+    return None if days is None else round(days / 30)
+
+
+def _months_to_days(months: int | None) -> int | None:
+    return None if months is None else round(months * 30)
+
+
 class PartLineOut(BaseModel):
     id: uuid.UUID
     name: str
@@ -182,15 +203,14 @@ class PartLineOut(BaseModel):
     unit_cost: float
     unit_price: float
     state: str
-    # Wave 4 PART WARRANTY: NULL = not specified, 0 = explicitly no
-    # warranty, positive = days.
-    warranty_days: int | None = None
+    # NULL = not specified, 0 = explicitly no warranty, positive = months.
+    warranty_months: int | None = None
 
     @staticmethod
     def of(p: PartLine) -> "PartLineOut":
         return PartLineOut(id=p.id, name=p.name, qty=p.qty,
                            unit_cost=float(p.unit_cost), unit_price=float(p.unit_price),
-                           state=p.state, warranty_days=p.warranty_days)
+                           state=p.state, warranty_months=_days_to_months(p.warranty_days))
 
 
 class PartLineIn(BaseModel):
@@ -198,13 +218,13 @@ class PartLineIn(BaseModel):
     qty: int = Field(default=1, ge=1)
     unit_cost: Decimal = Field(default=Decimal("0"), ge=0)
     unit_price: Decimal = Field(default=Decimal("0"), ge=0)
-    warranty_days: int | None = Field(default=None, ge=0)
+    warranty_months: int | None = Field(default=None, ge=0, le=120)
 
 
 class PartLinePatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=300)
     qty: int | None = Field(default=None, ge=1)
-    warranty_days: int | None = Field(default=None, ge=0)
+    warranty_months: int | None = Field(default=None, ge=0, le=120)
     unit_cost: Decimal | None = Field(default=None, ge=0)
     unit_price: Decimal | None = Field(default=None, ge=0)
     state: str | None = None
@@ -584,7 +604,7 @@ def add_part_line(order_id: uuid.UUID, body: PartLineIn, db: TenantDbDep,
     _reject_if_terminal(order)
     line = lines.add_part_line(db, tenant, order, name=body.name, qty=body.qty,
                                unit_cost=body.unit_cost, unit_price=body.unit_price,
-                               warranty_days=body.warranty_days)
+                               warranty_days=_months_to_days(body.warranty_months))
     return PartLineOut.of(line)
 
 
@@ -603,7 +623,14 @@ def patch_part_line(line_id: uuid.UUID, body: PartLinePatch, db: TenantDbDep,
             "code": "invalid_state", "message_key": "errors.part_lines.invalid_state",
             "params": {},
         })
-    line = lines.update_part_line(db, tenant, line, body.model_dump(exclude_unset=True))
+    fields = body.model_dump(exclude_unset=True)
+    if "warranty_months" in fields:
+        # `PartLine.warranty_days` is the model attribute `lines.
+        # update_part_line`'s generic setattr() writes to — translate the
+        # months-at-the-boundary field to it before that call, never pass
+        # "warranty_months" through (no such column/attribute exists).
+        fields["warranty_days"] = _months_to_days(fields.pop("warranty_months"))
+    line = lines.update_part_line(db, tenant, line, fields)
     return PartLineOut.of(line)
 
 
@@ -752,3 +779,21 @@ def order_protocol(order_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep,
         content=pdf_bytes, media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="protokol-{order.number}.pdf"'},
     )
+
+
+class ProtocolEmailRequest(BaseModel):
+    include_warranty: bool = False
+
+
+@router.post("/orders/{order_id}/protocol/email",
+             dependencies=[Depends(require_csrf), Depends(require_subscription_ok)])
+def email_completion_protocol(order_id: uuid.UUID, body: ProtocolEmailRequest,
+                              db: TenantDbDep, tenant: TenantDep) -> dict[str, bool]:
+    order = _get_or_404(db, tenant, order_id)
+    try:
+        service.send_completion_protocol_email(
+            db, tenant, order, include_warranty=body.include_warranty,
+        )
+    except service.OrderError as e:
+        raise _err(e) from e
+    return {"sent": True}

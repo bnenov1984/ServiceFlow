@@ -1,8 +1,11 @@
 /**
- * DeliveryDialog (docs/15 §6.6): Готова → Предадена. Accessories-returned
- * checklist + warranty days + optional payment (docs/01 §Payment: delivery
+ * CompletionDialog (docs/15 §6.6): Готова → Приключена. Accessories-returned
+ * checklist + warranty days + optional payment (docs/01 §Payment: completion
  * needs "плащане(ия)", not full settlement — an open balance is allowed).
  * Invoice stays Etap 4 (noted, not built).
+ *
+ * Renamed from DeliveryDialog 2026-09-25 (Wave 4 audit correction: "delivered"
+ * renamed to "completed" — see order-completion/issues/01 and 02).
  */
 
 import { useEffect, useState } from "react";
@@ -16,7 +19,7 @@ interface AccessoryItem {
   returned: boolean;
 }
 
-export interface DeliveryPaymentInput {
+export interface CompletionPaymentInput {
   amount: number;
   method: "cash" | "card" | "bank";
   note: string;
@@ -24,7 +27,7 @@ export interface DeliveryPaymentInput {
 
 const PAYMENT_METHODS = ["cash", "card", "bank"] as const;
 
-export function DeliveryDialog({
+export function CompletionDialog({
   open,
   onClose,
   onConfirm,
@@ -37,7 +40,7 @@ export function DeliveryDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  onConfirm: (warrantyDays: number | null, payment: DeliveryPaymentInput | null) => void;
+  onConfirm: (warrantyDays: number | null, payment: CompletionPaymentInput | null) => void;
   accessories: AccessoryItem[];
   onToggleReturned: (id: string, returned: boolean) => void;
   submitting: boolean;
@@ -50,7 +53,7 @@ export function DeliveryDialog({
 }) {
   const [warrantyDays, setWarrantyDays] = useState("");
   const [paymentAmount, setPaymentAmount] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<DeliveryPaymentInput["method"]>("cash");
+  const [paymentMethod, setPaymentMethod] = useState<CompletionPaymentInput["method"]>("cash");
   const [paymentNote, setPaymentNote] = useState("");
 
   // Recomputed every time the dialog opens (native <dialog> keeps this
@@ -63,12 +66,12 @@ export function DeliveryDialog({
   }, [open, orderWarrantyDays, laborWarrantyDefault]);
 
   return (
-    <Dialog open={open} onClose={onClose} title={t("order.delivery_title")}>
+    <Dialog open={open} onClose={onClose} title={t("order.completion_title")}>
       <div className="flex flex-col gap-4">
         {accessories.length > 0 && (
           <div>
             <p className="mb-2 text-sm font-medium text-slate-700">
-              {t("order.delivery_accessories")}
+              {t("order.completion_accessories")}
             </p>
             <ul className="flex flex-col gap-1">
               {accessories.map((a) => (
@@ -89,13 +92,13 @@ export function DeliveryDialog({
         )}
         <div>
           <label
-            htmlFor="delivery-warranty-days"
+            htmlFor="completion-warranty-days"
             className="mb-1 block text-sm font-medium text-slate-700"
           >
-            {t("order.delivery_warranty_days")}
+            {t("order.completion_warranty_days")}
           </label>
           <input
-            id="delivery-warranty-days"
+            id="completion-warranty-days"
             type="number"
             min={0}
             value={warrantyDays}
@@ -105,14 +108,14 @@ export function DeliveryDialog({
         </div>
         <div>
           <p className="mb-2 text-sm font-medium text-slate-700">
-            {t("order.delivery_payment")}
+            {t("order.completion_payment")}
           </p>
           <div className="flex flex-col gap-2">
             <input
               type="number"
               min={0}
               step="0.01"
-              placeholder={t("order.delivery_payment_amount")}
+              placeholder={t("order.completion_payment_amount")}
               value={paymentAmount}
               onChange={(e) => setPaymentAmount(e.target.value)}
               className="w-32 rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
@@ -136,7 +139,7 @@ export function DeliveryDialog({
             </div>
             <input
               type="text"
-              placeholder={t("order.delivery_payment_note_placeholder")}
+              placeholder={t("order.completion_payment_note_placeholder")}
               value={paymentNote}
               onChange={(e) => setPaymentNote(e.target.value)}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
@@ -156,7 +159,7 @@ export function DeliveryDialog({
             )}
             className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-50 min-h-touch"
           >
-            {submitting ? t("common.loading") : t("order.delivery_confirm")}
+            {submitting ? t("common.loading") : t("order.completion_confirm")}
           </button>
           <button
             type="button"

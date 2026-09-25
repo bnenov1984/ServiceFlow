@@ -183,37 +183,54 @@ def test_aggregate_members_are_tenant_isolated(client: TestClient) -> None:
                         json={"state": "ordered"}).status_code == 404
 
 
-# --- Wave 4 PART WARRANTY -----------------------------------------------
+# --- Wave 4 PART WARRANTY (issue 05, 2026-09-25: unit changed to months) --
 
-def test_part_line_warranty_days_persistence_and_validation(client: TestClient) -> None:
+def test_part_line_warranty_months_persistence_and_validation(client: TestClient) -> None:
     h = _login(client)
     oid = _order(client, h)
 
     r = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-        "name": "Дисплей", "unit_price": "100.00", "warranty_days": 90,
+        "name": "Дисплей", "unit_price": "100.00", "warranty_months": 3,
     })
     assert r.status_code == 201, r.text
-    assert r.json()["warranty_days"] == 90
+    assert r.json()["warranty_months"] == 3
     line_id = r.json()["id"]
 
     # Explicit 0 — "Без гаранция", distinct from never having been set.
-    r2 = client.patch(f"/api/v1/part-lines/{line_id}", headers=h, json={"warranty_days": 0})
+    r2 = client.patch(f"/api/v1/part-lines/{line_id}", headers=h, json={"warranty_months": 0})
     assert r2.status_code == 200
-    assert r2.json()["warranty_days"] == 0
+    assert r2.json()["warranty_months"] == 0
 
     r3 = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-        "name": "Батерия", "unit_price": "1", "warranty_days": -1,
+        "name": "Батерия", "unit_price": "1", "warranty_months": -1,
     })
     assert r3.status_code == 400
     assert r3.json()["message_key"] == "errors.validation"
 
 
-def test_part_line_warranty_days_defaults_to_none(client: TestClient) -> None:
+def test_part_line_warranty_months_defaults_to_none(client: TestClient) -> None:
     h = _login(client)
     oid = _order(client, h)
     r = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
                     json={"name": "Дисплей", "unit_price": "100.00"})
-    assert r.json()["warranty_days"] is None
+    assert r.json()["warranty_months"] is None
+
+
+def test_part_line_warranty_months_round_trips_whole_months(client: TestClient) -> None:
+    """The PO's own examples (12, 6 месеца) — 30-days/month must round-trip
+    these exactly, not just approximately."""
+    h = _login(client)
+    oid = _order(client, h)
+
+    r = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
+        "name": "Дисплей", "unit_price": "100.00", "warranty_months": 12,
+    })
+    assert r.json()["warranty_months"] == 12
+
+    r2 = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
+        "name": "Батерия", "unit_price": "50.00", "warranty_months": 6,
+    })
+    assert r2.json()["warranty_months"] == 6
 
 
 # --- Wave 4 TERMINAL ORDER IMMUTABILITY ----------------------------------

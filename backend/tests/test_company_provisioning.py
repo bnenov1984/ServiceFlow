@@ -195,6 +195,65 @@ def test_provision_company_stores_the_business_type_label(client: TestClient) ->
     assert detail.json()["business_type_label"] == "Сервиз за велосипеди и тротинетки"
 
 
+def test_provision_company_seeds_optional_warranty_terms(client: TestClient) -> None:
+    """Issue 04 (audit correction, 2026-09-25): Vendor/Admin may seed
+    initial warranty terms at onboarding — a deliberate, PO-confirmed
+    reversal of "Vendor never sets commercial terms"."""
+    _reset_rate_limiter()
+    _seed_admin()
+    me = _vendor_login(client)
+
+    resp = client.post(
+        f"{VENDOR}/companies", headers={"X-CSRF-Token": str(me["csrf_token"])},
+        json=_provision_payload(
+            warranty_standard_term="12 месеца",
+            warranty_conditions="Покрива производствени дефекти.",
+            warranty_text="Пълни гаранционни условия.",
+            warranty_additional_conditions="Без щети от вода.",
+        ),
+    )
+    assert resp.status_code == 200, resp.text
+    company_id = resp.json()["company_id"]
+
+    owner_login = client.post("/api/v1/auth/login",
+                              json={"email": "ivan@new-shop.bg",
+                                    "password": "нова-парола-1234"})
+    owner_me = owner_login.json()
+    terms = client.get("/api/v1/company/warranty-defaults",
+                       headers={"X-CSRF-Token": str(owner_me["csrf_token"])}).json()
+    assert terms["standard_term"] == "12 месеца"
+    assert terms["conditions"] == "Покрива производствени дефекти."
+    assert terms["text"] == "Пълни гаранционни условия."
+    assert terms["additional_conditions"] == "Без щети от вода."
+    assert terms["labor_days"] is None  # never set, provisioning didn't touch it
+    assert company_id
+
+
+def test_provision_company_without_warranty_terms_leaves_them_unset(
+    client: TestClient,
+) -> None:
+    """A company provisioned without any warranty field must look identical
+    to one provisioned before issue 04 existed — no stray empty strings."""
+    _reset_rate_limiter()
+    _seed_admin()
+    me = _vendor_login(client)
+
+    resp = client.post(f"{VENDOR}/companies", headers={"X-CSRF-Token": str(me["csrf_token"])},
+                       json=_provision_payload())
+    assert resp.status_code == 200, resp.text
+
+    owner_login = client.post("/api/v1/auth/login",
+                              json={"email": "ivan@new-shop.bg",
+                                    "password": "нова-парола-1234"})
+    owner_me = owner_login.json()
+    terms = client.get("/api/v1/company/warranty-defaults",
+                       headers={"X-CSRF-Token": str(owner_me["csrf_token"])}).json()
+    assert terms == {
+        "labor_days": None, "parts_days": None, "standard_term": None,
+        "conditions": None, "text": None, "additional_conditions": None,
+    }
+
+
 def test_provision_company_rejects_a_missing_business_type_label(client: TestClient) -> None:
     _reset_rate_limiter()
     _seed_admin()

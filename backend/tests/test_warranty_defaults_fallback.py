@@ -60,7 +60,7 @@ def _deliver(client: TestClient, h: dict[str, str], oid: str,
             warranty_days: int | None = None, skip: bool = True) -> "object":
     for to in ("diagnostics", "repair", "ready"):
         client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": to})
-    body: dict[str, object] = {"to": "delivered"}
+    body: dict[str, object] = {"to": "completed"}
     if warranty_days is not None:
         body["warranty_days"] = warranty_days
     return client.post(f"/api/v1/orders/{oid}/status", headers=h, json=body)
@@ -151,7 +151,10 @@ def test_later_company_default_change_does_not_mutate_already_delivered_warranty
     assert after["warranty_days"] == 30
 
 
-# --- Part warranty -----------------------------------------------------------
+# --- Part warranty (issue 05, 2026-09-25: months at the API boundary; the
+# company-level `parts_days` default itself stays in days — see
+# order-completion/issues/05 — so a 180-day default reads back as 6 months
+# on a part line that inherited it) --------------------------------------
 
 
 def test_omitted_part_warranty_uses_company_parts_default(client: TestClient) -> None:
@@ -164,7 +167,7 @@ def test_omitted_part_warranty_uses_company_parts_default(client: TestClient) ->
         "name": "Дисплей", "qty": 1, "unit_cost": "60", "unit_price": "100",
     })
     assert resp.status_code == 201, resp.text
-    assert resp.json()["warranty_days"] == 180
+    assert resp.json()["warranty_months"] == 6
 
 
 def test_explicit_part_warranty_zero_is_preserved_not_replaced_by_default(
@@ -177,10 +180,10 @@ def test_explicit_part_warranty_zero_is_preserved_not_replaced_by_default(
 
     resp = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
         "name": "Дисплей", "qty": 1, "unit_cost": "60", "unit_price": "100",
-        "warranty_days": 0,
+        "warranty_months": 0,
     })
     assert resp.status_code == 201, resp.text
-    assert resp.json()["warranty_days"] == 0
+    assert resp.json()["warranty_months"] == 0
 
 
 def test_explicit_positive_part_warranty_wins_over_default(client: TestClient) -> None:
@@ -191,10 +194,10 @@ def test_explicit_positive_part_warranty_wins_over_default(client: TestClient) -
 
     resp = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
         "name": "Дисплей", "qty": 1, "unit_cost": "60", "unit_price": "100",
-        "warranty_days": 365,
+        "warranty_months": 13,
     })
     assert resp.status_code == 201, resp.text
-    assert resp.json()["warranty_days"] == 365
+    assert resp.json()["warranty_months"] == 13
 
 
 def test_omitted_part_warranty_stays_null_when_no_company_default(client: TestClient) -> None:
@@ -206,7 +209,7 @@ def test_omitted_part_warranty_stays_null_when_no_company_default(client: TestCl
         "name": "Дисплей", "qty": 1, "unit_cost": "60", "unit_price": "100",
     })
     assert resp.status_code == 201, resp.text
-    assert resp.json()["warranty_days"] is None
+    assert resp.json()["warranty_months"] is None
 
 
 def test_later_company_default_change_does_not_mutate_existing_part_line(
@@ -221,17 +224,17 @@ def test_later_company_default_change_does_not_mutate_existing_part_line(
         "name": "Дисплей", "qty": 1, "unit_cost": "60", "unit_price": "100",
     })
     line_id = resp.json()["id"]
-    assert resp.json()["warranty_days"] == 180
+    assert resp.json()["warranty_months"] == 6
 
-    _set_warranty_defaults(client, h, parts_days=365)
+    _set_warranty_defaults(client, h, parts_days=360)
 
     order_detail = client.get(f"/api/v1/orders/{oid}", headers=h).json()
     line = next(p for p in order_detail["part_lines"] if p["id"] == line_id)
-    assert line["warranty_days"] == 180
+    assert line["warranty_months"] == 6
 
     # A new part line added after the change picks up the new default —
     # proving the earlier line's value wasn't just coincidentally unchanged.
     resp2 = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
         "name": "Батерия", "qty": 1, "unit_cost": "20", "unit_price": "40",
     })
-    assert resp2.json()["warranty_days"] == 365
+    assert resp2.json()["warranty_months"] == 12

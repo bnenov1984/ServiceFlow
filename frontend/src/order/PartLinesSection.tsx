@@ -19,13 +19,19 @@ interface PartLineOut {
   unit_cost: number;
   unit_price: number;
   state: string;
-  warranty_days: number | null;
+  // Issue 05 (audit correction, 2026-09-25): months, not days — the PO's
+  // own examples ("12 месеца", "6 месеца"). Order-level (labor) warranty is
+  // untouched, still days (CompletionDialog's own field).
+  warranty_months: number | null;
 }
 
-// NULL = not specified (render nothing), 0 = explicitly no warranty, N = days.
-function warrantyLabel(days: number | null): string | null {
-  if (days === null) return null;
-  return days === 0 ? t("order.part_warranty_none") : t("order.part_warranty_days", { days });
+// NULL = not specified (render nothing), 0 = explicitly no warranty, N = months.
+function warrantyLabel(months: number | null): string | null {
+  if (months === null) return null;
+  if (months === 0) return t("order.part_warranty_none");
+  return months === 1
+    ? t("order.part_warranty_month_one")
+    : t("order.part_warranty_months", { months });
 }
 
 // The 2 states the domain model accepts (backend/service_orders/lines.py
@@ -41,12 +47,17 @@ export function PartLinesSection({ orderId }: { orderId: string }) {
   const { me } = useAuth();
   // Wave 4 Issue 38: prefill new parts from the company default — never
   // forced, the field stays a plain editable number input either way.
-  const partsDefault = me?.warranty_defaults?.parts_days ?? null;
-  const defaultInput = partsDefault !== null ? String(partsDefault) : "";
+  // Issue 05: the company setting (`parts_days`) is still stored/edited in
+  // days (docs/business-os company-settings screen) — convert to months
+  // here, at the one point a days-shaped value meets this months-shaped
+  // input, same 30-days/month rule as the backend's own conversion.
+  const partsDefaultDays = me?.warranty_defaults?.parts_days ?? null;
+  const partsDefaultMonths = partsDefaultDays !== null ? Math.round(partsDefaultDays / 30) : null;
+  const defaultInput = partsDefaultMonths !== null ? String(partsDefaultMonths) : "";
 
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
-  const [warrantyDays, setWarrantyDays] = useState(defaultInput);
+  const [warrantyMonths, setWarrantyMonths] = useState(defaultInput);
   // Tracked per line-id so one row's in-flight mutation never disables or
   // otherwise affects any other row's selector.
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
@@ -58,7 +69,7 @@ export function PartLinesSection({ orderId }: { orderId: string }) {
   // catch up once it arrives, but only while the field is still untouched
   // ("" and the user hasn't typed anything of their own yet).
   useEffect(() => {
-    setWarrantyDays((prev) => (prev === "" ? defaultInput : prev));
+    setWarrantyMonths((prev) => (prev === "" ? defaultInput : prev));
   }, [defaultInput]);
 
   const { data: lines } = useQuery({
@@ -76,9 +87,9 @@ export function PartLinesSection({ orderId }: { orderId: string }) {
     if (!name.trim()) return;
     await api.post(`/orders/${orderId}/part-lines`, {
       name: name.trim(), unit_price: price.trim() ? Number(price) : 0,
-      warranty_days: warrantyDays.trim() ? Number(warrantyDays) : null,
+      warranty_months: warrantyMonths.trim() ? Number(warrantyMonths) : null,
     });
-    setName(""); setPrice(""); setWarrantyDays(defaultInput);
+    setName(""); setPrice(""); setWarrantyMonths(defaultInput);
     await invalidate();
   };
 
@@ -111,10 +122,10 @@ export function PartLinesSection({ orderId }: { orderId: string }) {
               <span className="font-medium text-slate-800">{line.name}</span>
               {" · "}
               <span className="text-slate-500">{line.unit_price.toFixed(2)} €</span>
-              {warrantyLabel(line.warranty_days) !== null && (
+              {warrantyLabel(line.warranty_months) !== null && (
                 <>
                   {" · "}
-                  <span className="text-slate-500">{warrantyLabel(line.warranty_days)}</span>
+                  <span className="text-slate-500">{warrantyLabel(line.warranty_months)}</span>
                 </>
               )}
             </span>
@@ -144,11 +155,11 @@ export function PartLinesSection({ orderId }: { orderId: string }) {
           placeholder="€" className="w-20 rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-h-touch"
         />
         <input
-          type="number" min={0} value={warrantyDays}
-          onChange={(e) => setWarrantyDays(e.target.value)}
-          aria-label={t("order.part_warranty_days_label")}
-          title={t("order.part_warranty_days_label")}
-          placeholder={t("order.part_warranty_days_label")}
+          type="number" min={0} value={warrantyMonths}
+          onChange={(e) => setWarrantyMonths(e.target.value)}
+          aria-label={t("order.part_warranty_months_label")}
+          title={t("order.part_warranty_months_label")}
+          placeholder={t("order.part_warranty_months_label")}
           className="w-24 rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-h-touch"
         />
         <button

@@ -1,14 +1,14 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { DeliveryDialog } from "./DeliveryDialog";
+import { CompletionDialog } from "./CompletionDialog";
 
 const noop = () => {};
 
-describe("DeliveryDialog", () => {
+describe("CompletionDialog", () => {
   it("renders the payment entry fields (amount, method, note)", () => {
     render(
-      <DeliveryDialog
+      <CompletionDialog
         open
         onClose={noop}
         onConfirm={vi.fn()}
@@ -28,11 +28,11 @@ describe("DeliveryDialog", () => {
     expect(screen.getByPlaceholderText("Бележка…")).toBeInTheDocument();
   });
 
-  it("submits a payment alongside delivery when an amount is entered", async () => {
+  it("submits a payment alongside completion when an amount is entered", async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();
     render(
-      <DeliveryDialog
+      <CompletionDialog
         open
         onClose={noop}
         onConfirm={onConfirm}
@@ -48,18 +48,18 @@ describe("DeliveryDialog", () => {
     await user.type(screen.getByPlaceholderText("Сума (€)"), "50");
     await user.click(screen.getByRole("button", { name: "Карта" }));
     await user.type(screen.getByPlaceholderText("Бележка…"), "депозит");
-    await user.click(screen.getByRole("button", { name: "Предай" }));
+    await user.click(screen.getByRole("button", { name: "Приключи" }));
 
     expect(onConfirm).toHaveBeenCalledWith(null, {
       amount: 50, method: "card", note: "депозит",
     });
   });
 
-  it("allows delivery with no payment entered — an open balance never blocks it", async () => {
+  it("allows completion with no payment entered — an open balance never blocks it", async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();
     render(
-      <DeliveryDialog
+      <CompletionDialog
         open
         onClose={noop}
         onConfirm={onConfirm}
@@ -72,14 +72,14 @@ describe("DeliveryDialog", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Предай" }));
+    await user.click(screen.getByRole("button", { name: "Приключи" }));
 
     expect(onConfirm).toHaveBeenCalledWith(null, null);
   });
 
   it("renders a backend error by its translated message_key text", () => {
     render(
-      <DeliveryDialog
+      <CompletionDialog
         open
         onClose={noop}
         onConfirm={vi.fn()}
@@ -96,11 +96,11 @@ describe("DeliveryDialog", () => {
   });
 });
 
-describe("DeliveryDialog — Wave 4 Issue 38 (labor warranty prefill)", () => {
-  function renderDialog(props: Partial<Parameters<typeof DeliveryDialog>[0]> = {}) {
+describe("CompletionDialog — Wave 4 Issue 38 (labor warranty prefill)", () => {
+  function renderDialog(props: Partial<Parameters<typeof CompletionDialog>[0]> = {}) {
     const onConfirm = vi.fn();
     render(
-      <DeliveryDialog
+      <CompletionDialog
         open
         onClose={noop}
         onConfirm={onConfirm}
@@ -143,7 +143,7 @@ describe("DeliveryDialog — Wave 4 Issue 38 (labor warranty prefill)", () => {
     const input = screen.getByLabelText("Гаранция (дни)");
     await user.clear(input);
     await user.type(input, "45");
-    await user.click(screen.getByRole("button", { name: "Предай" }));
+    await user.click(screen.getByRole("button", { name: "Приключи" }));
 
     expect(onConfirm).toHaveBeenCalledWith(45, null);
   });

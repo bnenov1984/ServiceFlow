@@ -36,7 +36,11 @@ const EVENT_LABEL: Record<string, Parameters<typeof t>[0]> = {
   estimate_approved: "order.event_estimate_approved",
   estimate_rejected: "order.event_estimate_rejected",
   order_unlocked: "order.event_unlocked",
+  // "delivered" renamed to "completed" 2026-09-25 (Wave 4 audit correction).
+  // Both keys stay mapped: existing TimelineEvent rows still carry the old
+  // type (append-only, never rewritten), only new events use the new one.
   order_delivered: "order.event_delivered",
+  order_completed: "order.event_completed",
   order_archived: "order.event_archived",
   warranty_return_opened: "order.event_warranty_return",
   task_created: "order.event_task_created",

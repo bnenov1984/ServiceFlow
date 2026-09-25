@@ -150,7 +150,7 @@ def test_upgrade_through_0021_drops_the_testing_order_status_row(pre_0021_db: st
     assert "testing" not in remaining
     assert set(remaining) == {
         "received", "diagnostics", "waiting_customer", "waiting_parts", "repair",
-        "ready", "delivered", "declined", "unrepairable", "cancelled",
+        "ready", "completed", "declined", "unrepairable", "cancelled",
     }
 
 

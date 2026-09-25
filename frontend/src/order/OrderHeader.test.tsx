@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../components/Toast";
-import { api } from "../lib/api";
+import { ApiError, api } from "../lib/api";
 import { OrderHeader } from "./OrderHeader";
 
 vi.mock("../lib/api", async (importOriginal) => {
@@ -199,7 +199,7 @@ describe("OrderHeader — status transition menu", () => {
   });
 
   it("does not render the trigger once the order is in a terminal state", () => {
-    renderHeader({ statusCode: "delivered" });
+    renderHeader({ statusCode: "completed" });
 
     expect(screen.queryByRole("button", { name: /Промени статус/ })).not.toBeInTheDocument();
   });
@@ -221,7 +221,7 @@ describe("OrderHeader — Wave 4 Issue 7 (delivery protocol action)", () => {
   it("opens the delivery protocol PDF when a snapshot exists", async () => {
     const user = userEvent.setup();
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
-    renderHeader({ statusCode: "delivered", hasCompletionSnapshot: true });
+    renderHeader({ statusCode: "completed", hasCompletionSnapshot: true });
 
     await user.click(screen.getByRole("button", { name: "Протокол за предаване" }));
 
@@ -234,7 +234,7 @@ describe("OrderHeader — Wave 4 Issue 7 (delivery protocol action)", () => {
   it("shows the unavailable message instead of opening a tab when no snapshot exists", async () => {
     const user = userEvent.setup();
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
-    renderHeader({ statusCode: "delivered", hasCompletionSnapshot: false });
+    renderHeader({ statusCode: "completed", hasCompletionSnapshot: false });
 
     await user.click(screen.getByRole("button", { name: "Протокол за предаване" }));
 
@@ -246,9 +246,150 @@ describe("OrderHeader — Wave 4 Issue 7 (delivery protocol action)", () => {
   });
 
   it("still shows the intake protocol action, now distinctly labeled", () => {
-    renderHeader({ statusCode: "delivered", hasCompletionSnapshot: true });
+    renderHeader({ statusCode: "completed", hasCompletionSnapshot: true });
 
     expect(screen.getByRole("button", { name: "Печат протокол (приемане)" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Протокол за предаване" })).toBeInTheDocument();
+  });
+});
+
+describe("OrderHeader — protocol email actions (issue 03, audit correction)", () => {
+  it("does not render the email actions before the order is completed", () => {
+    renderHeader({ statusCode: "ready" });
+
+    expect(screen.queryByRole("button", { name: "Изпрати протокол по имейл" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Изпрати протокол и гаранция по имейл" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("sends the plain protocol email with include_warranty: false", async () => {
+    const user = userEvent.setup();
+    renderHeader({ statusCode: "completed", hasCompletionSnapshot: true });
+
+    await user.click(screen.getByRole("button", { name: "Изпрати протокол по имейл" }));
+
+    expect(api.post).toHaveBeenCalledWith(
+      "/orders/order-1/protocol/email", { include_warranty: false },
+    );
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Протоколът е изпратен по имейл.",
+    );
+  });
+
+  it("sends the protocol+warranty email with include_warranty: true", async () => {
+    const user = userEvent.setup();
+    renderHeader({ statusCode: "completed", hasCompletionSnapshot: true });
+
+    await user.click(screen.getByRole("button", { name: "Изпрати протокол и гаранция по имейл" }));
+
+    expect(api.post).toHaveBeenCalledWith(
+      "/orders/order-1/protocol/email", { include_warranty: true },
+    );
+  });
+
+  it("shows the unavailable message instead of calling the API when no snapshot exists", async () => {
+    const user = userEvent.setup();
+    renderHeader({ statusCode: "completed", hasCompletionSnapshot: false });
+
+    await user.click(screen.getByRole("button", { name: "Изпрати протокол по имейл" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Протокол за предаване не е наличен за тази поръчка.",
+    );
+    expect(api.post).not.toHaveBeenCalledWith(
+      "/orders/order-1/protocol/email", expect.anything(),
+    );
+  });
+
+  it("surfaces a backend error by its translated message_key text", async () => {
+    const user = userEvent.setup();
+    renderHeader({ statusCode: "completed", hasCompletionSnapshot: true });
+    vi.mocked(api.post).mockImplementation((url: string) => {
+      if (url === "/orders/order-1/protocol/email") {
+        return Promise.reject(new ApiError(
+          400, "order_error", "errors.protocol.email_missing_customer_email",
+        ));
+      }
+      return Promise.resolve({ warning: null });
+    });
+
+    await user.click(screen.getByRole("button", { name: "Изпрати протокол по имейл" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Клиентът няма въведен имейл адрес.",
+    );
+  });
+
+  it("disables both email buttons while a send is in flight", async () => {
+    const user = userEvent.setup();
+    renderHeader({ statusCode: "completed", hasCompletionSnapshot: true });
+    let resolveSend: (value?: unknown) => void = () => {};
+    vi.mocked(api.post).mockImplementation((url: string) => {
+      if (url === "/orders/order-1/protocol/email") {
+        return new Promise((resolve) => { resolveSend = resolve; }) as never;
+      }
+      return Promise.resolve({ warning: null });
+    });
+
+    await user.click(screen.getByRole("button", { name: "Изпрати протокол по имейл" }));
+
+    expect(screen.getByRole("button", { name: "Зареждане…" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Изпрати протокол и гаранция по имейл" }),
+    ).toBeDisabled();
+
+    resolveSend();
+  });
+});
+
+describe("OrderHeader — dedicated completion button (audit correction, 2026-09-25)", () => {
+  it("shows the dedicated 'Приключи поръчката' button only on a ready order", () => {
+    renderHeader({ statusCode: "ready" });
+
+    expect(screen.getByRole("button", { name: "Приключи поръчката" })).toBeInTheDocument();
+  });
+
+  it("does not show the dedicated button for any other status", () => {
+    renderHeader({ statusCode: "received" });
+
+    expect(screen.queryByRole("button", { name: "Приключи поръчката" })).not.toBeInTheDocument();
+  });
+
+  it("does not show the dedicated button once archived", () => {
+    renderHeader({ statusCode: "ready", archived: true });
+
+    expect(screen.queryByRole("button", { name: "Приключи поръчката" })).not.toBeInTheDocument();
+  });
+
+  it("never offers 'Приключена' as a generic status-dropdown option, even on a ready order", async () => {
+    const user = userEvent.setup();
+    renderHeader({ statusCode: "ready" });
+
+    await user.click(screen.getByRole("button", { name: /Промени статус/ }));
+
+    expect(screen.queryByRole("menuitem", { name: "Приключена" })).not.toBeInTheDocument();
+  });
+
+  it("opens the completion dialog when the dedicated button is clicked", async () => {
+    const user = userEvent.setup();
+    renderHeader({ statusCode: "ready" });
+
+    await user.click(screen.getByRole("button", { name: "Приключи поръчката" }));
+
+    expect(await screen.findByText("Приключване на поръчката")).toBeInTheDocument();
+  });
+
+  it("submits the completion transition with to: 'completed' on confirm", async () => {
+    const user = userEvent.setup();
+    renderHeader({ statusCode: "ready" });
+
+    await user.click(screen.getByRole("button", { name: "Приключи поръчката" }));
+    await screen.findByText("Приключване на поръчката");
+    await user.click(screen.getByRole("button", { name: "Приключи" }));
+
+    expect(api.post).toHaveBeenCalledWith(
+      "/orders/order-1/status", { to: "completed", warranty_days: null },
+    );
   });
 });

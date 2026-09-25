@@ -12,12 +12,12 @@ import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
 import { allowedTransitions, isTerminal, statusName } from "../lib/statusMatrix";
 import { ApprovalDialog } from "../order/dialogs/ApprovalDialog";
-import { DeliveryDialog } from "../order/dialogs/DeliveryDialog";
+import { CompletionDialog } from "../order/dialogs/CompletionDialog";
 import { ReasonDialog } from "../order/dialogs/ReasonDialog";
 
 const TERMINAL_FAILURE_CODES = new Set(["declined", "unrepairable", "cancelled"]);
 
-type PendingAction = { kind: "reason" | "approval" | "delivery"; to: string } | null;
+type PendingAction = { kind: "reason" | "approval" | "completion"; to: string } | null;
 
 interface AccessoryItem {
   id: string;
@@ -35,7 +35,7 @@ export function OrderStatusActions({
   orderId: string;
   statusCode: string;
   // Wave 4 Issue 38: this order's own already-persisted warranty (if any) —
-  // same DeliveryDialog prefill precedence as OrderHeader's own instance.
+  // same CompletionDialog prefill precedence as OrderHeader's own instance.
   warrantyDays: number | null;
   onChanged: () => void;
 }) {
@@ -70,11 +70,11 @@ export function OrderStatusActions({
       setPending({ kind: "reason", to });
     } else if (statusCode === "waiting_customer" && !isTerminal(to)) {
       setPending({ kind: "approval", to });
-    } else if (to === "delivered") {
+    } else if (to === "completed") {
       api.get<AccessoryItem[]>(`/orders/${orderId}/accessories`)
         .then(setAccessories)
         .catch(() => setAccessories([]));
-      setPending({ kind: "delivery", to });
+      setPending({ kind: "completion", to });
     } else {
       void runStatusChange({ to });
     }
@@ -121,10 +121,10 @@ export function OrderStatusActions({
         submitting={submitting}
         error={error}
       />
-      <DeliveryDialog
-        open={pending?.kind === "delivery"}
+      <CompletionDialog
+        open={pending?.kind === "completion"}
         onClose={close}
-        onConfirm={(days) => void runStatusChange({ to: "delivered", warranty_days: days })}
+        onConfirm={(days) => void runStatusChange({ to: "completed", warranty_days: days })}
         accessories={accessories}
         onToggleReturned={toggleAccessoryReturned}
         submitting={submitting}

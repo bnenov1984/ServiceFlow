@@ -181,6 +181,13 @@ class ProvisionCompanyRequest(BaseModel):
     business_profile: str = Field(default=service.DEFAULT_BUSINESS_PROFILE)
     business_type_label: str = Field(min_length=1, max_length=200)
     modules: list[str] = Field(default_factory=list)
+    # Audit correction (issue 04, 2026-09-25): optional initial warranty
+    # terms, seeded at onboarding — the Owner can freely edit or leave blank
+    # every one of these afterward via PATCH /company/warranty-defaults.
+    warranty_standard_term: str | None = Field(default=None, max_length=200)
+    warranty_conditions: str | None = Field(default=None, max_length=2000)
+    warranty_text: str | None = Field(default=None, max_length=4000)
+    warranty_additional_conditions: str | None = Field(default=None, max_length=2000)
 
 
 class ProvisionCompanyResponse(BaseModel):
@@ -211,6 +218,12 @@ def provision_company(
             db, admin.id, body.company_name, body.owner_name, body.owner_email,
             body.owner_password, business_profile=body.business_profile,
             business_type_label=body.business_type_label, modules=body.modules,
+            warranty_terms={
+                "standard_term": body.warranty_standard_term,
+                "conditions": body.warranty_conditions,
+                "text": body.warranty_text,
+                "additional_conditions": body.warranty_additional_conditions,
+            },
         )
     except service.ProvisioningError as e:
         raise HTTPException(status_code=e.status, detail={

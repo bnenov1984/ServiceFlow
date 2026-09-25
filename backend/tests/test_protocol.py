@@ -135,7 +135,7 @@ def _deliver(client: TestClient, h: dict[str, str], oid: str,
     r1 = client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "ready"})
     assert r1.status_code == 200, r1.text
     r2 = client.post(f"/api/v1/orders/{oid}/status", headers=h,
-                     json={"to": "delivered", "warranty_days": warranty_days})
+                     json={"to": "completed", "warranty_days": warranty_days})
     assert r2.status_code == 200, r2.text
 
 
@@ -155,7 +155,7 @@ def test_delivery_protocol_renders_after_delivery(client: TestClient) -> None:
         "recommendation": "Смяна на дисплей",
     })
     client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-        "name": "Дисплей Samsung", "unit_price": "120.00", "warranty_days": 90,
+        "name": "Дисплей Samsung", "unit_price": "120.00", "warranty_months": 3,
     })
     client.post(f"/api/v1/orders/{oid}/labor-lines", headers=h, json={
         "description": "Смяна на дисплей", "unit_price": "30.00",
@@ -171,8 +171,8 @@ def test_delivery_protocol_renders_after_delivery(client: TestClient) -> None:
     assert "Иван Петров" in text
     assert "Протокол за предаване" in text
     assert "Дисплей Samsung" in text
-    assert "90 дни" in text  # part warranty
-    assert "180 дни" in text  # labor warranty
+    assert "3 месеца" in text  # part warranty (issue 05: months, not days)
+    assert "180 дни" in text  # labor warranty (unchanged: days)
     assert "Смяна на дисплей" in text
     assert "Падане" in text  # diagnosis cause
     assert "150.00" in text or "150" in text  # 120 part + 30 labor
@@ -266,7 +266,7 @@ def test_delivery_protocol_snapshot_is_never_rebuilt_on_redelivery(client: TestC
     # Already back at "ready" (BR-2 unlock's revert target) — redeliver
     # directly, no second ready-hop needed.
     r_redeliver = client.post(f"/api/v1/orders/{oid}/status", headers=h,
-                              json={"to": "delivered", "warranty_days": 999})
+                              json={"to": "completed", "warranty_days": 999})
     assert r_redeliver.status_code == 200, r_redeliver.text
 
     text = _extract_pdf_text(
@@ -282,7 +282,7 @@ def test_warranty_rendering_null_zero_and_positive(client: TestClient) -> None:
     h = _login(client)
     oid = _order_with_accessories(client, h)
     client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-        "name": "Част без гаранция", "unit_price": "5.00", "warranty_days": 0,
+        "name": "Част без гаранция", "unit_price": "5.00", "warranty_months": 0,
     })
     client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
         "name": "Част неопределена", "unit_price": "5.00",
@@ -296,6 +296,71 @@ def test_warranty_rendering_null_zero_and_positive(client: TestClient) -> None:
     assert "Не е посочена" in text  # the unspecified part
 
 
+@pytest.mark.xfail(
+    reason="Same tracked P0 protocol PDF render bug as "
+    "test_delivery_protocol_renders_after_delivery (fpdf.errors.FPDFException "
+    "'Not enough horizontal space to render a single character') — this "
+    "section's multi_cell() calls hit it too, not a new/separate issue. "
+    "strict=True so this stops silently passing the moment someone actually "
+    "fixes it.",
+    strict=True,
+)
+def test_delivery_protocol_renders_company_warranty_terms_when_configured(
+    client: TestClient,
+) -> None:
+    """Issue 04: company-level terms render in the "Гаранционни условия"
+    section when include_warranty is true and at least one field is set."""
+    h = _login(client)
+    client.patch("/api/v1/company/warranty-defaults", headers=h, json={
+        "standard_term": "12 месеца",
+        "conditions": "Покрива производствени дефекти.",
+    })
+    oid = _order_with_accessories(client, h)
+    _deliver(client, h, oid)
+
+    text = _extract_pdf_text(
+        client.get(f"/api/v1/orders/{oid}/protocol.pdf?type=delivery").content
+    )
+    assert "Гаранционни условия" in text
+    assert "12 месеца" in text
+    assert "Покрива производствени дефекти." in text
+
+
+def test_delivery_protocol_omits_warranty_terms_section_when_none_configured(
+    client: TestClient,
+) -> None:
+    h = _login(client)
+    oid = _order_with_accessories(client, h)
+    _deliver(client, h, oid)
+
+    text = _extract_pdf_text(
+        client.get(f"/api/v1/orders/{oid}/protocol.pdf?type=delivery").content
+    )
+    assert "Гаранционни условия" not in text
+
+
+def test_delivery_protocol_freezes_warranty_terms_at_completion_time(
+    client: TestClient,
+) -> None:
+    """Same discipline as every other snapshot field: a later edit to the
+    company's warranty terms must never retroactively change what an
+    already-completed order's protocol shows."""
+    h = _login(client)
+    client.patch("/api/v1/company/warranty-defaults", headers=h,
+                json={"standard_term": "Оригинален срок"})
+    oid = _order_with_accessories(client, h)
+    _deliver(client, h, oid)
+
+    client.patch("/api/v1/company/warranty-defaults", headers=h,
+                json={"standard_term": "Променен срок"})
+
+    text = _extract_pdf_text(
+        client.get(f"/api/v1/orders/{oid}/protocol.pdf?type=delivery").content
+    )
+    assert "Оригинален срок" in text
+    assert "Променен срок" not in text
+
+
 def test_delivery_protocol_is_tenant_isolated(client: TestClient) -> None:
     h_a = _login(client, "Сервиз А", "a@a.bg")
     oid = _order_with_accessories(client, h_a)
@@ -304,6 +369,124 @@ def test_delivery_protocol_is_tenant_isolated(client: TestClient) -> None:
 
     _login(client, "Сервиз Б", "b@b.bg")
     assert client.get(f"/api/v1/orders/{oid}/protocol.pdf?type=delivery").status_code == 404
+
+
+# --- Email the completion protocol (issue 03: audit correction) ------------
+# Monkeypatches business_os.identity.mail.send_email_with_attachment — never
+# a real SMTP server (test_identity_mail.py already covers the adapter
+# itself in full isolation).
+
+
+def _order_with_customer_email(client: TestClient, h: dict[str, str],
+                               email: str | None = "ivan@example.bg") -> str:
+    cid = client.post("/api/v1/customers", headers=h, json={
+        "name": "Иван Петров", "phone": "0888111222", "email": email,
+    }).json()["id"]
+    aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
+        "asset_type_code": "phone",
+        "field_values": {"brand": "Samsung", "model": "Galaxy S22"},
+    }).json()["id"]
+    return str(client.post("/api/v1/orders", headers=h, json={
+        "customer_id": cid, "asset_id": aid, "complaint": "Не се включва",
+    }).json()["id"])
+
+
+def test_email_protocol_sends_pdf_to_customer_email(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from business_os.identity import mail
+
+    calls: list[tuple[str, str, bytes]] = []
+    monkeypatch.setattr(
+        mail, "send_email_with_attachment",
+        lambda to, subject, body, filename, pdf_bytes: (
+            calls.append((to, filename, pdf_bytes)) or True
+        ),
+    )
+    h = _login(client)
+    oid = _order_with_customer_email(client, h)
+    _deliver(client, h, oid, warranty_days=90)
+
+    r = client.post(f"/api/v1/orders/{oid}/protocol/email", headers=h,
+                    json={"include_warranty": True})
+
+    assert r.status_code == 200, r.text
+    assert r.json() == {"sent": True}
+    assert len(calls) == 1
+    to, filename, pdf_bytes = calls[0]
+    assert to == "ivan@example.bg"
+    assert filename.endswith(".pdf")
+    assert pdf_bytes.startswith(b"%PDF")
+
+
+def test_email_protocol_include_warranty_toggles_warranty_lines(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from business_os.identity import mail
+
+    captured: dict[str, bytes] = {}
+
+    def _capture(to: str, subject: str, body: str, filename: str, pdf_bytes: bytes) -> bool:
+        captured["pdf"] = pdf_bytes
+        return True
+
+    monkeypatch.setattr(mail, "send_email_with_attachment", _capture)
+    h = _login(client)
+    oid = _order_with_customer_email(client, h)
+    _deliver(client, h, oid, warranty_days=90)
+
+    client.post(f"/api/v1/orders/{oid}/protocol/email", headers=h,
+               json={"include_warranty": False})
+    text_without = _extract_pdf_text(captured["pdf"])
+    assert "Гаранция за труд" not in text_without
+
+    client.post(f"/api/v1/orders/{oid}/protocol/email", headers=h,
+               json={"include_warranty": True})
+    text_with = _extract_pdf_text(captured["pdf"])
+    assert "Гаранция за труд" in text_with
+
+
+def test_email_protocol_requires_a_completed_order(client: TestClient) -> None:
+    h = _login(client)
+    oid = _order_with_customer_email(client, h)  # still "received"
+
+    r = client.post(f"/api/v1/orders/{oid}/protocol/email", headers=h,
+                    json={"include_warranty": False})
+
+    assert r.status_code == 404
+    assert r.json()["detail"]["message_key"] == "errors.protocol.delivery_unavailable"
+
+
+def test_email_protocol_requires_customer_email_on_file(client: TestClient) -> None:
+    h = _login(client)
+    oid = _order_with_customer_email(client, h, email=None)
+    _deliver(client, h, oid)
+
+    r = client.post(f"/api/v1/orders/{oid}/protocol/email", headers=h,
+                    json={"include_warranty": False})
+
+    assert r.status_code == 400
+    assert r.json()["detail"]["message_key"] == "errors.protocol.email_missing_customer_email"
+
+
+def test_email_protocol_surfaces_smtp_failure_to_the_caller(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from business_os.identity import mail
+
+    monkeypatch.setattr(
+        mail, "send_email_with_attachment",
+        lambda to, subject, body, filename, pdf_bytes: False,
+    )
+    h = _login(client)
+    oid = _order_with_customer_email(client, h)
+    _deliver(client, h, oid)
+
+    r = client.post(f"/api/v1/orders/{oid}/protocol/email", headers=h,
+                    json={"include_warranty": False})
+
+    assert r.status_code == 502
+    assert r.json()["detail"]["message_key"] == "errors.protocol.email_send_failed"
 
 
 def _extract_pdf_text(pdf_bytes: bytes) -> str:

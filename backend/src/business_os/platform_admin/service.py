@@ -265,6 +265,7 @@ def provision_company(
     business_profile: str = DEFAULT_BUSINESS_PROFILE,
     business_type_label: str = "",
     modules: Sequence[str] = (),
+    warranty_terms: dict[str, str | None] | None = None,
 ) -> ProvisionResult:
     """The single atomic command that creates a new customer company: the
     company itself, its first Tenant Owner, the initial RepairFlow business
@@ -272,8 +273,9 @@ def provision_company(
     and exactly one platform_audit_log row — all in one transaction.
 
     Every step below is non-committing (`identity.contracts.provision_company`
-    /`grant_module`/`set_business_profile`/`set_subscription_trial`, plus this
-    module's own `audit.record`); this function commits exactly once, at the
+    /`grant_module`/`set_business_profile`/`set_subscription_trial`/
+    `set_warranty_defaults`, plus this module's own `audit.record`); this
+    function commits exactly once, at the
     very end, right after the audit row is added. A failure at *any* step —
     a duplicate owner email, an invalid business profile, or a failure
     writing the audit row itself — propagates before that commit is reached,
@@ -323,6 +325,14 @@ def provision_company(
 
     identity_contracts.set_business_profile(db, provisioned.company_id, business_profile)
     identity_contracts.set_business_type_label(db, provisioned.company_id, business_type_label)
+    if warranty_terms:
+        # Issue 04: entirely optional. Drop None/empty-string fields the
+        # vendor left blank rather than writing them as explicit empty
+        # strings — a company provisioned with none of these set must look
+        # identical to one provisioned before this issue existed.
+        non_empty_terms = {k: v for k, v in warranty_terms.items() if v}
+        if non_empty_terms:
+            identity_contracts.set_warranty_defaults(db, provisioned.company_id, non_empty_terms)
     publish(db, DomainEvent(
         type="company_provisioned", company_id=provisioned.company_id,
         actor_user_id=None, data={"business_profile": business_profile},

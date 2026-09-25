@@ -161,6 +161,57 @@ def test_send_email_delivery_failure_returns_false_without_raising(
     assert result is False  # never raises, never surfaces as a 500
 
 
+# --- send_email_with_attachment (issue 03: completion protocol email) ------
+
+
+def test_send_email_with_attachment_returns_false_when_smtp_not_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(mail, "get_settings", lambda: _FakeSettings(smtp_host=None))
+    monkeypatch.setattr(mail.smtplib, "SMTP", _FakeSMTP)
+
+    result = mail.send_email_with_attachment(
+        "someone@a.bg", "Тема", "Тяло", "protokol.pdf", b"%PDF-fake-bytes",
+    )
+    assert result is False
+    assert _FakeSMTP.instances == []
+
+
+def test_send_email_with_attachment_sends_pdf_via_configured_smtp(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(mail, "get_settings", lambda: _FakeSettings())
+    monkeypatch.setattr(mail.smtplib, "SMTP", _FakeSMTP)
+
+    result = mail.send_email_with_attachment(
+        "someone@a.bg", "Протокол", "Прилагаме протокола.",
+        "protokol-2026-00001.pdf", b"%PDF-fake-bytes-here",
+    )
+
+    assert result is True
+    sent = _FakeSMTP.instances[0].sent_messages[0]
+    assert sent["To"] == "someone@a.bg"
+    assert sent["Subject"] == "Протокол"
+    attachments = list(sent.iter_attachments())
+    assert len(attachments) == 1
+    attachment = attachments[0]
+    assert attachment.get_filename() == "protokol-2026-00001.pdf"
+    assert attachment.get_content_type() == "application/pdf"
+    assert attachment.get_payload(decode=True) == b"%PDF-fake-bytes-here"
+
+
+def test_send_email_with_attachment_delivery_failure_returns_false_without_raising(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(mail, "get_settings", lambda: _FakeSettings())
+    monkeypatch.setattr(mail.smtplib, "SMTP", _RaisingSMTP)
+
+    result = mail.send_email_with_attachment(
+        "someone@a.bg", "Тема", "Тяло", "protokol.pdf", b"%PDF",
+    )
+    assert result is False
+
+
 # --- send_password_reset_email -----------------------------------------------
 
 

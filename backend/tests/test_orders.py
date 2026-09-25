@@ -149,12 +149,12 @@ def test_delivery_flow_with_warranty(client: TestClient) -> None:
     client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "ready"})
 
     r = client.post(f"/api/v1/orders/{oid}/status", headers=h,
-                    json={"to": "delivered", "warranty_days": 90})
+                    json={"to": "completed", "warranty_days": 90})
     assert r.status_code == 200
     body = r.json()
-    assert body["status_code"] == "delivered"
+    assert body["status_code"] == "completed"
     assert body["warranty_days"] == 90
-    assert body["delivered_at"] is not None
+    assert body["completed_at"] is not None
 
 
 def test_cancelled_is_owner_only(client: TestClient) -> None:
@@ -221,7 +221,7 @@ def test_reopen_via_ui_button_is_a_new_linked_order_not_a_status_change(
     oid = _order(client, h, cid, aid)["id"]
     for to in ("diagnostics", "repair", "ready"):
         client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": to})
-    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "delivered"})
+    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "completed"})
 
     r = client.post(f"/api/v1/orders/{oid}/warranty-return", headers=h,
                     json={"complaint": "Отново не се включва"})
@@ -233,10 +233,10 @@ def test_reopen_via_ui_button_is_a_new_linked_order_not_a_status_change(
 
     # The original stays terminal and untouched.
     original = client.get(f"/api/v1/orders/{oid}").json()
-    assert original["status_code"] == "delivered"
+    assert original["status_code"] == "completed"
 
 
-def test_warranty_return_requires_delivered_source(client: TestClient) -> None:
+def test_warranty_return_requires_completed_source(client: TestClient) -> None:
     h = _login(client)
     cid, aid = _customer_and_asset(client, h)
     oid = _order(client, h, cid, aid)["id"]

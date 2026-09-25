@@ -42,7 +42,7 @@ function renderDetailPage(isOwner = true, client?: QueryClient) {
   return { ...view, client: queryClient };
 }
 
-const orderSummary = { id: orderId, number: "2026-00002", delivered_at: null };
+const orderSummary = { id: orderId, number: "2026-00002", completed_at: null };
 
 const draftDetail = {
   id: invoiceId, order_id: orderId, status: "draft", number: null, currency: "EUR", row_version: 1,

@@ -1,6 +1,6 @@
 /** AccessoriesList (docs/15 §6.5): persistent view of the intake checklist,
  * with returned-checkbox — shares its query cache with OrderHeader's
- * DeliveryDialog (queryKeys.orderAccessories). */
+ * CompletionDialog (queryKeys.orderAccessories). */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";

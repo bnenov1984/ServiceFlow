@@ -17,7 +17,7 @@ import { apiUrl } from "../lib/apiUrl";
 import { queryKeys } from "../lib/queryKeys";
 import { allowedTransitions, isTerminal, kindOf, statusName } from "../lib/statusMatrix";
 import { ApprovalDialog } from "./dialogs/ApprovalDialog";
-import { DeliveryDialog, type DeliveryPaymentInput } from "./dialogs/DeliveryDialog";
+import { CompletionDialog, type CompletionPaymentInput } from "./dialogs/CompletionDialog";
 import { ReasonDialog } from "./dialogs/ReasonDialog";
 
 interface AccessoryItem {
@@ -33,7 +33,7 @@ interface OrderHeaderProps {
   statusCode: string;
   archived: boolean;
   // Wave 4 Issue 38: this order's own already-persisted warranty (if any),
-  // used only to decide DeliveryDialog's prefill precedence.
+  // used only to decide CompletionDialog's prefill precedence.
   warrantyDays: number | null;
   // Wave 4 Issue 7: whether a frozen delivery snapshot exists — lets the
   // print action short-circuit to a clear message instead of opening a
@@ -46,7 +46,7 @@ const TERMINAL_FAILURE_CODES = new Set(["declined", "unrepairable", "cancelled"]
 type PendingAction =
   | { kind: "reason"; to: string }
   | { kind: "approval"; to: string }
-  | { kind: "delivery" }
+  | { kind: "completion" }
   | { kind: "unlock" }
   | { kind: "warranty_return" }
   | { kind: "archive" }
@@ -146,6 +146,9 @@ export function OrderHeader({
   const [pending, setPending] = useState<PendingAction>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Issue 03: not part of the `pending`/dialog state machine above — these
+  // two actions fire directly from their own buttons, no confirmation step.
+  const [emailingAction, setEmailingAction] = useState<"plain" | "warranty" | null>(null);
   // Confirmed bug: a no-dialog transition (requestTransition's plain "ok"
   // branch) awaits POST -> refreshOrder() -> close() with nothing to stop a
   // user from starting a second action while the first is still in flight -
@@ -176,7 +179,7 @@ export function OrderHeader({
   const { data: accessories } = useQuery({
     queryKey: queryKeys.orderAccessories(orderId),
     queryFn: () => api.get<AccessoryItem[]>(`/orders/${orderId}/accessories`),
-    enabled: pending?.kind === "delivery",
+    enabled: pending?.kind === "completion",
   });
 
   const refreshOrder = () =>
@@ -214,8 +217,8 @@ export function OrderHeader({
     }
   };
 
-  const runDelivery = async (
-    warrantyDays: number | null, payment: DeliveryPaymentInput | null,
+  const runComplete = async (
+    warrantyDays: number | null, payment: CompletionPaymentInput | null,
   ) => {
     const token = ++actionTokenRef.current;
     setSubmitting(true);
@@ -228,7 +231,7 @@ export function OrderHeader({
         await api.post(`/orders/${orderId}/payments`, payment);
       }
       const result = await api.post<{ warning: string | null }>(
-        `/orders/${orderId}/status`, { to: "delivered", warranty_days: warrantyDays },
+        `/orders/${orderId}/status`, { to: "completed", warranty_days: warrantyDays },
       );
       await refreshOrder();
       if (result.warning === "skip") {
@@ -246,13 +249,30 @@ export function OrderHeader({
     }
   };
 
+  const emailProtocol = async (includeWarranty: boolean) => {
+    if (!hasCompletionSnapshot) {
+      pushToast("error", t("errors.protocol.delivery_unavailable"));
+      return;
+    }
+    setEmailingAction(includeWarranty ? "warranty" : "plain");
+    try {
+      await api.post(`/orders/${orderId}/protocol/email`, { include_warranty: includeWarranty });
+      pushToast("success", t("order.protocol_emailed"));
+    } catch (err) {
+      pushToast("error", err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
+    } finally {
+      setEmailingAction(null);
+    }
+  };
+
+  // "completed" is deliberately excluded from `buttons` below (it has its
+  // own dedicated primary button, not the generic dropdown), so this never
+  // sees `to === "completed"`.
   const requestTransition = (to: string) => {
     if (TERMINAL_FAILURE_CODES.has(to)) {
       openPending({ kind: "reason", to });
     } else if (statusCode === "waiting_customer" && !isTerminal(to)) {
       openPending({ kind: "approval", to });
-    } else if (to === "delivered") {
-      openPending({ kind: "delivery" });
     } else {
       void runStatusChange({ to });
     }
@@ -313,11 +333,15 @@ export function OrderHeader({
     }
   };
 
+  // "completed" always has its own dedicated primary button below (PO
+  // decision, 2026-09-25 audit) — never offered through the generic
+  // dropdown, unlike every other transition.
   const buttons = allowedTransitions(statusCode).filter(
-    ({ code }) => code !== "cancelled" || me?.is_owner,
+    ({ code }) => (code !== "cancelled" || me?.is_owner) && code !== "completed",
   );
   const orderIsTerminal = isTerminal(statusCode);
-  const orderIsDelivered = kindOf(statusCode) === "terminal_success";
+  const orderIsCompleted = kindOf(statusCode) === "terminal_success";
+  const orderIsReady = statusCode === "ready";
 
   return (
     <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -331,6 +355,16 @@ export function OrderHeader({
         <StatusTransitionMenu transitions={buttons} onSelect={requestTransition} />
       )}
 
+      {!archived && orderIsReady && (
+        <button
+          type="button"
+          onClick={() => openPending({ kind: "completion" })}
+          className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 min-h-touch"
+        >
+          {t("order.complete_order")}
+        </button>
+      )}
+
       <button
         type="button"
         onClick={() => window.open(apiUrl(`/api/v1/orders/${orderId}/protocol.pdf?type=intake`), "_blank")}
@@ -339,23 +373,43 @@ export function OrderHeader({
         {t("order.print_protocol")}
       </button>
 
-      {orderIsDelivered && (
-        <button
-          type="button"
-          onClick={() => {
-            if (hasCompletionSnapshot) {
-              window.open(apiUrl(`/api/v1/orders/${orderId}/protocol.pdf?type=delivery`), "_blank");
-            } else {
-              pushToast("error", t("errors.protocol.delivery_unavailable"));
-            }
-          }}
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 min-h-touch"
-        >
-          {t("order.print_delivery_protocol")}
-        </button>
+      {orderIsCompleted && (
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              if (hasCompletionSnapshot) {
+                window.open(apiUrl(`/api/v1/orders/${orderId}/protocol.pdf?type=delivery`), "_blank");
+              } else {
+                pushToast("error", t("errors.protocol.delivery_unavailable"));
+              }
+            }}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 min-h-touch"
+          >
+            {t("order.print_delivery_protocol")}
+          </button>
+          <button
+            type="button"
+            disabled={emailingAction !== null}
+            onClick={() => void emailProtocol(false)}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-50 min-h-touch"
+          >
+            {emailingAction === "plain" ? t("common.loading") : t("order.email_protocol")}
+          </button>
+          <button
+            type="button"
+            disabled={emailingAction !== null}
+            onClick={() => void emailProtocol(true)}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-50 min-h-touch"
+          >
+            {emailingAction === "warranty"
+              ? t("common.loading")
+              : t("order.email_protocol_with_warranty")}
+          </button>
+        </>
       )}
 
-      {me?.is_owner && (orderIsTerminal || orderIsDelivered) && !archived && (
+      {me?.is_owner && (orderIsTerminal || orderIsCompleted) && !archived && (
         <div className="ml-auto flex gap-2">
           {orderIsTerminal && (
             <button
@@ -366,7 +420,7 @@ export function OrderHeader({
               {t("order.unlock")}
             </button>
           )}
-          {orderIsDelivered && (
+          {orderIsCompleted && (
             <button
               type="button"
               onClick={() => openPending({ kind: "warranty_return" })}
@@ -408,10 +462,10 @@ export function OrderHeader({
         submitting={submitting}
         error={error}
       />
-      <DeliveryDialog
-        open={pending?.kind === "delivery"}
+      <CompletionDialog
+        open={pending?.kind === "completion"}
         onClose={close}
-        onConfirm={(days, payment) => void runDelivery(days, payment)}
+        onConfirm={(days, payment) => void runComplete(days, payment)}
         accessories={accessories ?? []}
         onToggleReturned={(id, returned) => void toggleAccessoryReturned(id, returned)}
         submitting={submitting}

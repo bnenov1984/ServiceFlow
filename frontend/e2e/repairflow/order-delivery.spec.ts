@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { getOwnerCredentials, loginAsOwner } from '../support/login';
+import { enterRepairFlow, getOwnerCredentials, loginAsOwner } from '../support/login';
 
 test('owner delivers an order through the full status lifecycle', async ({ page }) => {
   const { email, password } = getOwnerCredentials();
@@ -11,14 +11,7 @@ test('owner delivers an order through the full status lifecycle', async ({ page 
 
   await loginAsOwner(page, email, password);
 
-  await page
-    .getByRole('button', { name: 'RepairFlow' })
-    .click();
-
-  // Not '/' — IndexRoute (App.tsx) immediately re-navigates "/" -> "/orders"
-  // once the chooser sets a last-app preference (dual-module company), so
-  // '/' never actually settles; asserting it races the app's own redirect.
-  await expect(page).toHaveURL('/orders');
+  await enterRepairFlow(page);
 
   // Get a real order onto the board first (same flow as order-intake.spec.ts
   // / order-status.spec.ts) — nothing to deliver until one exists.
@@ -96,19 +89,17 @@ test('owner delivers an order through the full status lifecycle', async ({ page 
     await page.waitForLoadState('networkidle');
   }
 
-  // ready -> delivered opens DeliveryDialog instead of transitioning
-  // directly (requestTransition's `to === "delivered"` branch) — accessories
-  // is empty for this order (none added at intake) so only warranty/payment
-  // show; payment is optional and left blank on purpose. Deliberately never
-  // clicks "Печат на протокол" — that path hits a known, separately-tracked
-  // fpdf crash (backend/tests/test_protocol.py, xfail(strict=True)) unrelated
-  // to the status transition this test verifies.
+  // ready -> completed is no longer offered through the "Промени статус"
+  // dropdown (audit correction, 2026-09-25) — it has its own dedicated
+  // primary button, which opens CompletionDialog (renamed from
+  // DeliveryDialog). Accessories is empty for this order (none added at
+  // intake) so only warranty/payment show; payment is optional and left
+  // blank on purpose. Deliberately never clicks "Печат на протокол" — that
+  // path hits a known, separately-tracked fpdf crash
+  // (backend/tests/test_protocol.py, xfail(strict=True)) unrelated to the
+  // status transition this test verifies.
   await page
-    .getByRole('button', { name: 'Промени статус' })
-    .click();
-
-  await page
-    .getByRole('menuitem', { name: 'Предадена' })
+    .getByRole('button', { name: 'Приключи поръчката' })
     .click();
 
   // Dialog.tsx's <h2> title isn't aria-labelledby'd to the <dialog> element
@@ -116,16 +107,16 @@ test('owner delivers an order through the full status lifecycle', async ({ page 
   // textarea), so the dialog carries no accessible name for getByRole to
   // match against — check the role and the visible title text separately.
   await expect(page.getByRole('dialog')).toBeVisible();
-  await expect(page.getByText('Предаване на клиента')).toBeVisible();
+  await expect(page.getByText('Приключване на поръчката')).toBeVisible();
 
   await page
     .getByRole('spinbutton', { name: 'Гаранция (дни)' })
     .fill('180');
 
   await page
-    .getByRole('button', { name: 'Предай' })
+    .getByRole('button', { name: 'Приключи', exact: true })
     .click();
 
-  await expect(page.getByText('Предадена', { exact: true })).toBeVisible();
+  await expect(page.getByText('Приключена', { exact: true })).toBeVisible();
   await expect(page.getByText('Готова', { exact: true })).not.toBeVisible();
 });

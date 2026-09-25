@@ -4,7 +4,11 @@ discipline as company requisites (test_company_requisites.py), no new table,
 no migration. `labor_days`/`parts_days`: NULL/missing = no default
 configured, 0 = explicitly "Без гаранция", positive = days, negative
 rejected. Also exposed (read-only) on /auth/me for any authenticated user —
-DeliveryDialog/PartLinesSection prefill needs it without an owner-only gate.
+CompletionDialog/PartLinesSection prefill needs it without an owner-only gate.
+
+Audit correction (issue 04, 2026-09-25) added four free-text fields
+(standard_term/conditions/text/additional_conditions) to the same shape —
+every response below now carries all six keys, not just the original two.
 """
 
 import os
@@ -21,6 +25,12 @@ pytestmark = pytest.mark.skipif(
 
 OWNER_EMAIL = "maria@a.bg"
 OWNER_PASSWORD = "парола-123"
+
+# The four text fields added by issue 04 — every response carries these
+# alongside labor_days/parts_days; tests that don't touch them assert None.
+_BLANK_TERMS = {
+    "standard_term": None, "conditions": None, "text": None, "additional_conditions": None,
+}
 
 
 def _db() -> Iterator[object]:
@@ -52,7 +62,7 @@ def test_defaults_read_as_null_when_unconfigured(client: TestClient) -> None:
     resp = client.get("/api/v1/company/warranty-defaults",
                       headers={"X-CSRF-Token": str(me["csrf_token"])})
     assert resp.status_code == 200
-    assert resp.json() == {"labor_days": None, "parts_days": None}
+    assert resp.json() == {"labor_days": None, "parts_days": None, **_BLANK_TERMS}
 
 
 def test_owner_can_set_positive_defaults(client: TestClient) -> None:
@@ -63,10 +73,10 @@ def test_owner_can_set_positive_defaults(client: TestClient) -> None:
     resp = client.patch("/api/v1/company/warranty-defaults", headers=headers,
                         json={"labor_days": 90, "parts_days": 30})
     assert resp.status_code == 200
-    assert resp.json() == {"labor_days": 90, "parts_days": 30}
+    assert resp.json() == {"labor_days": 90, "parts_days": 30, **_BLANK_TERMS}
 
     resp2 = client.get("/api/v1/company/warranty-defaults", headers=headers)
-    assert resp2.json() == {"labor_days": 90, "parts_days": 30}
+    assert resp2.json() == {"labor_days": 90, "parts_days": 30, **_BLANK_TERMS}
 
 
 def test_zero_means_explicitly_no_warranty(client: TestClient) -> None:
@@ -102,7 +112,60 @@ def test_partial_update_leaves_the_other_field_untouched(client: TestClient) -> 
     resp = client.patch("/api/v1/company/warranty-defaults", headers=headers,
                         json={"labor_days": 60})
     assert resp.status_code == 200
-    assert resp.json() == {"labor_days": 60, "parts_days": 30}
+    assert resp.json() == {"labor_days": 60, "parts_days": 30, **_BLANK_TERMS}
+
+
+def test_owner_can_set_warranty_terms_text_fields(client: TestClient) -> None:
+    _seed_owner()
+    me = _login(client)
+    headers = {"X-CSRF-Token": str(me["csrf_token"])}
+
+    resp = client.patch("/api/v1/company/warranty-defaults", headers=headers, json={
+        "standard_term": "12 месеца",
+        "conditions": "Гаранцията покрива производствени дефекти.",
+        "text": "Пълен текст на гаранционните условия на сервиза.",
+        "additional_conditions": "Не се покриват щети от вода.",
+    })
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "labor_days": None, "parts_days": None,
+        "standard_term": "12 месеца",
+        "conditions": "Гаранцията покрива производствени дефекти.",
+        "text": "Пълен текст на гаранционните условия на сервиза.",
+        "additional_conditions": "Не се покриват щети от вода.",
+    }
+
+    resp2 = client.get("/api/v1/company/warranty-defaults", headers=headers)
+    assert resp2.json() == resp.json()
+
+
+def test_setting_one_text_field_leaves_others_untouched(client: TestClient) -> None:
+    _seed_owner()
+    me = _login(client)
+    headers = {"X-CSRF-Token": str(me["csrf_token"])}
+
+    client.patch("/api/v1/company/warranty-defaults", headers=headers,
+                json={"standard_term": "12 месеца", "conditions": "Условие А"})
+    resp = client.patch("/api/v1/company/warranty-defaults", headers=headers,
+                        json={"conditions": "Условие Б"})
+    assert resp.status_code == 200
+    assert resp.json()["standard_term"] == "12 месеца"
+    assert resp.json()["conditions"] == "Условие Б"
+
+
+@pytest.mark.parametrize(("field", "limit"), [
+    ("standard_term", 200), ("conditions", 2000), ("text", 4000), ("additional_conditions", 2000),
+])
+def test_warranty_terms_text_field_over_max_length_is_rejected(
+    client: TestClient, field: str, limit: int,
+) -> None:
+    _seed_owner()
+    me = _login(client)
+    resp = client.patch("/api/v1/company/warranty-defaults",
+                        headers={"X-CSRF-Token": str(me["csrf_token"])},
+                        json={field: "x" * (limit + 1)})
+    assert resp.status_code == 400
+    assert resp.json()["message_key"] == "errors.validation"
 
 
 @pytest.mark.parametrize("field", ["labor_days", "parts_days"])
@@ -155,7 +218,7 @@ def test_warranty_defaults_are_tenant_isolated(client: TestClient) -> None:
     owner_b = _login(client, email="petar@b.bg")
     resp = client.get("/api/v1/company/warranty-defaults",
                       headers={"X-CSRF-Token": str(owner_b["csrf_token"])})
-    assert resp.json() == {"labor_days": None, "parts_days": None}
+    assert resp.json() == {"labor_days": None, "parts_days": None, **_BLANK_TERMS}
 
 
 def test_me_exposes_warranty_defaults_to_any_authenticated_user(client: TestClient) -> None:
@@ -172,5 +235,5 @@ def test_me_exposes_warranty_defaults_to_any_authenticated_user(client: TestClie
     client.post("/api/v1/auth/logout", headers={"X-CSRF-Token": str(owner_me["csrf_token"])})
 
     worker_me = _login(client, email="ivo@a.bg", password="парола-за-иво-123")
-    assert worker_me["warranty_defaults"] == {"labor_days": 90, "parts_days": 30}
+    assert worker_me["warranty_defaults"] == {"labor_days": 90, "parts_days": 30, **_BLANK_TERMS}
     assert company_id

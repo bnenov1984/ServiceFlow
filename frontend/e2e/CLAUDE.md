@@ -29,6 +29,28 @@ user would, as opposed to the unit tests under `frontend/src/`.
 - Credentials/secrets must come from environment variables and must never be
   hardcoded in a spec. CI supplies these from GitHub Actions secrets.
 
+## Shared helpers (`support/login.ts`)
+
+- `getOwnerCredentials()` — reads `E2E_OWNER_EMAIL`/`E2E_OWNER_PASSWORD` and
+  throws early if either is unset, rather than failing later on a blank field.
+- `loginAsOwner(page, email, password)` — fills the Bulgarian-labeled login
+  form at `/` and submits it.
+- `enterRepairFlow(page)` — **every spec's entry point after login.** Clicks the
+  app chooser's RepairFlow button only if the chooser is actually showing, then
+  waits for `/orders`. This is deliberately tolerant of two tenant shapes:
+  IndexRoute (`frontend/src/App.tsx`) sends a RepairFlow-only company straight
+  to `/orders` and reaches `/choose-app` only when both applications are active.
+  Since the 11.09.2026 one-application-per-company decision
+  (`platform_admin.service.grant_entitlement`) a co-entitled company can no
+  longer be provisioned, and `serviceflow.seed` seeds RepairFlow only to match
+  (20.09.2026) — but the long-lived deployed tenant the `e2e` job targets may
+  still be co-entitled from before that change. One helper covers both instead
+  of forking the specs on their target environment. Don't re-add a
+  `toHaveURL('/choose-app')` assertion to a spec: it pins the suite to a tenant
+  shape production forbids. The chooser's own five routing branches are
+  unit-tested in `frontend/src/App.routing.test.tsx`, which is where that
+  behavior belongs.
+
 ## Existing tests
 
 ### `auth.spec.ts`
@@ -40,8 +62,10 @@ Covers login at `/`:
 
 - **owner can login** — fills the Bulgarian-labeled email/password fields
   (`Имейл` / `Парола`) with `E2E_OWNER_EMAIL` / `E2E_OWNER_PASSWORD`, submits
-  (`Влез`), and asserts navigation to `/choose-app` with the `RepairFlow` app
-  button visible.
+  (`Влез`), then reaches the app through `enterRepairFlow()` and asserts
+  RepairFlow's own toolbar action ("+ Нова поръчка") is visible. It asserts no
+  specific landing URL — that would pin the test to one tenant's module shape
+  (see **Shared helpers** above).
 - **owner cannot login with invalid password** — same flow with a wrong
   password, asserts redirect to `/login?next=%2F` and a Bulgarian error alert
   (`Грешен имейл или парола.`).
@@ -76,34 +100,43 @@ Repeats `order-intake.spec.ts`'s setup to get a real order onto the board
 docs/01 BR-1), then drives the "Промени статус" menu (`OrderHeader.tsx`'s
 `StatusTransitionMenu`, `role="menu"`/`role="menuitem"`) to advance it to
 "Диагностика" — the matrix's plain "ok" next step from "received", the one
-transition with no reason/approval/delivery dialog attached
+transition with no reason/approval/completion dialog attached
 (`OrderHeader.tsx`'s `requestTransition`). Asserts the new status is visible
 and the old one no longer is. Deliberately doesn't touch the Kanban board's
 drag-and-drop path (same underlying transition, a separate and more brittle
 interaction surface) or any transition that opens a dialog (skip-ahead
-"warn" transitions, the terminal-failure reason dialog, delivery) — those are
-each their own future test, not bundled into this one.
+"warn" transitions, the terminal-failure reason dialog, completion — the
+last of which, since 2026-09-25, is its own dedicated button on
+`OrderHeader.tsx`, not a dropdown transition at all) — those are each their
+own future test, not bundled into this one.
 
 ### `repairflow/order-delivery.spec.ts`
 
 Same intake setup, then drives the *entire* clean lifecycle in one pass:
 received → diagnostics → repair → ready (three no-dialog "ok" transitions,
-same menu as `order-status.spec.ts`) → delivered, which opens
-`DeliveryDialog` (fills warranty days, leaves payment blank since it's
-optional, confirms). Deliberately never clicks "Печат на протокол" — that
-path hits a known, separately-tracked fpdf crash
+same menu as `order-status.spec.ts`) → completed. **Since the 2026-09-25
+audit correction, "completed" ("Приключена", renamed from "delivered"/
+"Предадена") is no longer offered through the "Промени статус" dropdown at
+all** — it has its own dedicated primary button, "Приключи поръчката",
+shown only on a `ready` order (`OrderHeader.tsx`). Clicking it opens
+`CompletionDialog` (renamed from `DeliveryDialog`; fills warranty days,
+leaves payment blank since it's optional, confirms via the "Приключи"
+button — scope that locator with `{ exact: true }`, since the header's own
+"Приключи поръчката" button is still in the DOM behind the open dialog and
+would otherwise substring-match too). Deliberately never clicks "Печат на
+протокол" — that path hits a known, separately-tracked fpdf crash
 (`backend/tests/test_protocol.py`, `xfail(strict=True)`) unrelated to the
-status transition this test verifies. Two things worth knowing if this file
+status transition this test verifies. Things worth knowing if this file
 needs touching again:
 
 - **Real bug found and fixed here, not a test workaround**:
-  `OrderHeader.tsx`'s `runStatusChange`/`runDelivery`/etc. all await
+  `OrderHeader.tsx`'s `runStatusChange`/`runComplete`/etc. all await
   `POST → refreshOrder() → close()`. Clicking through consecutive
   transitions fast enough that a *previous* transition's async chain is
   still in flight let its stale `close()` call clear the pending state a
-  *newer* action had just set — a delivery dialog opened by transition N+1
-  could close itself ~1s later from transition N's trailing cleanup. Fixed
-  with an operation-token guard (`actionTokenRef`/`openPending` in
+  *newer* action had just set — a completion dialog opened by transition
+  N+1 could close itself ~1s later from transition N's trailing cleanup.
+  Fixed with an operation-token guard (`actionTokenRef`/`openPending` in
   `OrderHeader.tsx`) so a superseded action's completion can't touch shared
   `pending`/`submitting`/`error` state anymore. This test is what surfaced
   it — root-caused by instrumenting `setPending`/`HTMLDialogElement.close`
@@ -158,13 +191,30 @@ Other things worth knowing:
   it explicitly ("Отвори") rather than assuming `InvoiceEntry`'s
   `defaultOpen` took effect.
 
+### `repairflow/order-rejection.spec.ts`
+
+Journey 2's first half (docs/12 §3 «оценка → отказ»): intake (same setup as
+`order-intake.spec.ts`) → received → **диагностика** → **отказана**.
+`"declined"` is a `TERMINAL_FAILURE_CODES` entry (`OrderHeader.tsx`), rendered
+in the status menu's separate red failure section below a divider — still a
+plain `role="menuitem"`. It opens `ReasonDialog`, and the spec asserts the
+confirm button is *disabled until a reason is typed*, mirroring the backend's
+own `reason_required` rule before any round-trip happens. Ends on the terminal
+state's own invariants: the status-change menu disappears
+(`!archived && !orderIsTerminal`) while the intake protocol button stays
+visible — asserted visible only, never clicked, for the same fpdf reason as
+`order-delivery.spec.ts`.
+
+**Not yet covered:** the journey's second half — такса диагностика invoice →
+плащане against the declined order. That's the natural next spec here.
+
 ## Domain ownership and growth rules
 
 **`repairflow/` is now a real directory** (materialized 2026-09-12): it holds
 `order-intake-customer.spec.ts`, `order-intake.spec.ts`, `order-status.spec.ts`,
-`order-delivery.spec.ts`, `order-invoice.spec.ts` — five specs, all importing
-the shared `../support/login` helper (note the `../`, not `./`, from inside
-the subdirectory). `auth.spec.ts` stays flat at the E2E root for now — it's
+`order-delivery.spec.ts`, `order-invoice.spec.ts`, `order-rejection.spec.ts` —
+six specs, all importing the shared `../support/login` helpers (note the `../`,
+not `./`, from inside the subdirectory). `auth.spec.ts` stays flat at the E2E root for now — it's
 the only spec conceptually belonging to `platform/`, and the materialization
 rule below says one file isn't yet enough to justify a directory.
 
