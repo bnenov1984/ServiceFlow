@@ -2,8 +2,25 @@
 
 Usage:
     uv run python -m serviceflow.seed "Сервиз Демо" "Мария" maria@demo.bg парола123 [PIN]
+        [--modules repairflow,professional-services]
+
+Seeds a **single-application** company (`repairflow`) by default — the shape the
+Vendor Control Plane enforces for real tenants (PO decision, 11.09.2026:
+RepairFlow and PropertyFlow are mutually exclusive, never co-entitled — see
+`platform_admin.service.provision_company` / `grant_entitlement`). Until
+20.09.2026 this script unconditionally added `professional-services` on top,
+so every dev/staging/CI tenant was co-entitled in a way provisioning forbids.
+
+`--modules` opts a dev tenant back into that co-entitled shape deliberately —
+useful for manual PropertyFlow work and for exercising the app chooser, which
+IndexRoute (frontend/src/App.tsx) only reaches when both apps are active. Such
+a company is **not representable in production**; don't treat it as a realistic
+fixture. `repairflow` must stay in the list: `seed_company` grants it
+unconditionally and revoking an entitlement is a Vendor Control Plane action by
+design (ADR-BOS-010 §Decision 1), so this script cannot take it back.
 """
 
+import argparse
 import sys
 
 # Registers the company_provisioned -> seed_default_types subscriber (import-
@@ -20,20 +37,54 @@ from serviceflow.config import get_settings
 # print after a successful seed. Force UTF-8 for our own output.
 sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 
+BASE_MODULE = "repairflow"
+
+
+def _parse_modules(raw: str) -> list[str]:
+    modules = [m.strip() for m in raw.split(",") if m.strip()]
+    if BASE_MODULE not in modules:
+        raise SystemExit(
+            f"--modules must include '{BASE_MODULE}': seed_company() grants it "
+            "unconditionally and only the Vendor Control Plane can revoke an "
+            "entitlement (ADR-BOS-010, Decision 1)."  # ASCII: this reaches
+            # stderr, which stays cp1252 on a Windows console (only stdout is
+            # reconfigured above), so a section sign would print as mojibake.
+        )
+    return modules
+
 
 def main() -> None:
-    if len(sys.argv) < 5:
-        print(__doc__)
-        raise SystemExit(2)
+    parser = argparse.ArgumentParser(
+        prog="python -m serviceflow.seed",
+        description="Seed a dev/staging company with one Owner user.",
+    )
+    parser.add_argument("company_name")
+    parser.add_argument("owner_name")
+    parser.add_argument("email")
+    parser.add_argument("password")
+    parser.add_argument("pin", nargs="?", default=None)
+    parser.add_argument(
+        "--modules",
+        default=BASE_MODULE,
+        metavar="repairflow[,professional-services]",
+        help="Comma-separated modules to activate. Defaults to repairflow only "
+        "(production-realistic); adding professional-services produces a "
+        "co-entitled company that provisioning would reject.",
+    )
+    args = parser.parse_args()
+    modules = _parse_modules(args.modules)
+
     settings = get_settings()
     if settings.database_url is None:
         raise SystemExit("SERVICEFLOW_DATABASE_URL is not set")
-    company_name, owner_name, email, password = sys.argv[1:5]
-    pin = sys.argv[5] if len(sys.argv) > 5 else None
     for db in open_session(settings.database_url):
-        company = seed_company(db, company_name, owner_name, email, password, pin)
-        activate_module(db, company.id, "professional-services")
-        print(f"OK: company '{company.name}' ({company.id})")
+        company = seed_company(
+            db, args.company_name, args.owner_name, args.email, args.password, args.pin
+        )
+        for module_key in modules:
+            if module_key != BASE_MODULE:  # seed_company already granted it
+                activate_module(db, company.id, module_key)
+        print(f"OK: company '{company.name}' ({company.id}) modules={modules}")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { getOwnerCredentials, loginAsOwner } from '../support/login';
+import { enterRepairFlow, getOwnerCredentials, loginAsOwner } from '../support/login';
 
 test('owner declines an order with a required reason, reaching a terminal state', async ({ page }) => {
   const { email, password } = getOwnerCredentials();
@@ -12,14 +12,7 @@ test('owner declines an order with a required reason, reaching a terminal state'
 
   await loginAsOwner(page, email, password);
 
-  await page
-    .getByRole('button', { name: 'RepairFlow' })
-    .click();
-
-  // Not '/' — IndexRoute (App.tsx) immediately re-navigates "/" -> "/orders"
-  // once the chooser sets a last-app preference (dual-module company), so
-  // '/' never actually settles; asserting it races the app's own redirect.
-  await expect(page).toHaveURL('/orders');
+  await enterRepairFlow(page);
 
   // Get a real order onto the board first (same flow as order-intake.spec.ts).
   await page

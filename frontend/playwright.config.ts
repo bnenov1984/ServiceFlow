@@ -3,13 +3,13 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: './e2e',
   timeout: 60_000,
-  // Several specs assert `toHaveURL('/')` right after choosing RepairFlow
-  // from the app chooser — IndexRoute (App.tsx) immediately re-navigates
-  // "/" -> "/orders" client-side once a last-app preference is set, so that
-  // assertion is racing the app's own redirect and fails intermittently
-  // (observed ~1-in-4 locally). Not a test bug introduced here; a CI retry
-  // lets a transient loss of that race resolve without masking a real
-  // failure (a genuine bug still fails twice in a row).
+  // Historically this absorbed a `toHaveURL('/')` race against IndexRoute's
+  // own "/" -> "/orders" redirect (observed ~1-in-4 locally). That race is
+  // gone: every spec now enters through `support/login.ts`'s
+  // enterRepairFlow(), which waits for '/orders' directly. Retries stay for
+  // ordinary cloud-environment flake against the deployed tenant — a genuine
+  // bug still fails twice in a row. Revisit if a spec starts passing only on
+  // retry: that is a signal, not a success.
   retries: process.env.CI ? 2 : 0,
   // HTML report for CI failure artifacts; 'list' keeps the existing console
   // output unchanged for local/interactive runs.
@@ -17,9 +17,10 @@ export default defineConfig({
   use: {
     baseURL: process.env.E2E_BASE_URL,
 
-    // 'on-first-retry' never actually captures anything here since `retries`
-    // is unset (stays 0) — 'retain-on-failure' captures on any failed test,
-    // retries or not, which is what a CI failure artifact needs.
+    // 'retain-on-failure', not 'on-first-retry': it captures on any failed
+    // test, retries or not, which is what a CI failure artifact needs. (The
+    // comment here used to claim `retries` was unset — it has been 2 under CI
+    // since the artifact-upload work; corrected 20.09.2026.)
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },

@@ -149,7 +149,7 @@ jobs:
           GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO sf_app;
           SQL
 
-      - name: Seed one throwaway E2E owner (repairflow + professional-services, matching every existing e2e test's expectations)
+      - name: Seed one throwaway E2E owner (repairflow only, the single-application shape provisioning enforces — specs enter via support/login.ts's enterRepairFlow())
         working-directory: backend
         env:
           SERVICEFLOW_DATABASE_URL: ${{ env.DB_APP_URL }}
