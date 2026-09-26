@@ -34,7 +34,5 @@ test('owner cannot login with invalid password', async ({ page }) => {
   await expect(page).toHaveURL('/login?next=%2F');
 
   // Authenticated UI check
-  await expect(
-      await expect(page.getByRole('alert'))
-    .toHaveText('Грешен имейл или парола.'));
+  await expect(page.getByRole('alert')).toHaveText('Грешен имейл или парола.');
 });
