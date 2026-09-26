@@ -4,7 +4,10 @@
 shops; a local edition is parked as a future option (11.07.2026 pivot, docs/14).
 **Product/architecture decisions live in `docs/`, spanning both frozen and
 active areas** — see [docs/INDEX.md](docs/INDEX.md) for the documentation map,
-freeze/change process, and current status. Business OS platform-core work
+[docs/07_ADR_INDEX.md](docs/07_ADR_INDEX.md) for what the freeze covers and the
+change process after it, and
+[docs/13_IMPLEMENTATION_PLAN.md](docs/13_IMPLEMENTATION_PLAN.md) for current
+status. Business OS platform-core work
 (identity, tenancy, module entitlement, Vendor Control Plane, RepairFlow/
 PropertyFlow as sibling applications) has its own router at
 [docs/business-os/CLAUDE.md](docs/business-os/CLAUDE.md) — start there for
@@ -19,11 +22,13 @@ anything touching the platform/application boundary.
    chokepoint; RLS policies on every tenant table (`FORCE`, fail-closed GUC);
    the app's DB role is **never a superuser** (superusers bypass RLS); isolation
    tests are P0.
-3. Every table: UUIDv7 `id` (`shared_kernel.ids.new_id`) + `company_id` (ADR-013).
+3. Every table: UUIDv7 `id` (`business_os.shared_kernel.ids.new_id`) + `company_id` (ADR-013).
 4. No user-facing literal strings in components — `frontend/src/i18n/bg.ts` keys
    only; backend returns `message_key`, never prose (ADR-015, 09 §1).
 5. Module boundaries enforced by `backend/.importlinter` (ADR-001): domain modules
-   never import `serviceflow.platform`; `shared_kernel` imports nothing above it.
+   never import `business_os.platform`; `business_os.shared_kernel` imports nothing
+   above it. (Core was renamed `serviceflow.*` → `business_os.*` at BusinessOS
+   Phase 3 — `serviceflow.platform`/`.identity`/`.shared_kernel` no longer exist.)
 6. Status changes only via the transition endpoint; issued invoices immutable;
    timeline append-only (BR-1…BR-10 in docs/01).
 7. No PII in logs (11 §3). Money is `numeric`, totals always derived (BR-3).

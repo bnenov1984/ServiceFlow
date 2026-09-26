@@ -22,11 +22,11 @@ this block.
 | Platform/repository stage | Етап 3 (SaaS Shell & Administration) — core administration/onboarding/Vendor Control Plane implemented, billing still V1 manual-vendor-driven; Етап 4 (Commercial Documents) — draft/issue/annul/PDF/VAT-modes all landed, reissue and credit/debit notes explicitly deferred. Neither stage's exit checklist has been formally closed; Етап 5 (Hardening & Pilot) is the realistic next stage of new work. |
 | BusinessOS phase | Phase 4.5 — Vendor Control Plane & RepairFlow business profiles (docs/business-os/08_EVOLUTION_ROADMAP.md, amended 26.07.2026) |
 | Active vertical/module | RepairFlow (core) — active development, frontend built out well past the original Etap 2 gate (intake, Kanban board, delivery, invoices, vehicle/service history, warranty settings, employee admin, password reset); Professional Services — implemented; Construction Supervision — planned only, no backend |
-| Current focus | Closing out Etap 4 loose ends (accountant sign-off reconciliation — see note below) and broadening E2E coverage before moving into Etap 5 hardening |
+| Current focus | Closing out Etap 4 loose ends (the accountant sign-off gate — see the row below; it needs a human accountant, not more engineering) and broadening E2E coverage before moving into Etap 5 hardening |
 | Deployment state | Live on Render (frontend + backend), backed by Neon PostgreSQL; cross-origin CORS and session-cookie configuration in place for the split-origin setup |
-| Test suite (2026-09-12 snapshot) | Backend: 750 tests collected (`uv run pytest --collect-only`), up from 364 on 2026-08-02. Frontend: 506 vitest cases, up from 162. `uv run lint-imports`: 9/9 contracts kept, 0 broken. CI green on `main`. |
-| **Open risk — accountant sign-off reconciliation** | `docs/ACCOUNTANT_REVIEW.md` (consolidated 08.08.2026) still lists open `PROFESSIONAL REVIEW REQUIRED` items (B2/individual buyer field completeness, VAT rounding rule) and, as of its own 09.08.2026 note, expected company (B2B) buyers to be unconditionally rejected by `commercial/service.py`. As of this review, that file's own top comment says issuance "covers individuals and domestic company buyers" — broader than what the accountant-review doc last recorded. **Needs a definitive check of which buyer types are actually issuable in production today against what has genuinely been signed off**, before Etap 4 is called done (docs/12 §4 names accountant sign-off as an explicit release gate for `commercial`). |
-| Last reviewed | 2026-09-12 |
+| Test suite (re-verified 2026-09-20) | Backend: 750 tests collected (`uv run pytest --collect-only`), up from 364 on 2026-08-02. Frontend: **506/506 vitest cases green** (50 files), up from 162. `uv run ruff check .` clean · `uv run mypy` clean (101 files) · `uv run lint-imports`: 9/9 contracts kept, 0 broken. The DB-backed pytest run was **not** repeated on 09-20 (no local Postgres); last known green in CI on `main` at cf6cb13, with no source commits since. |
+| **Open release gate — accountant sign-off** | Reconciled 20.09.2026: the code and `docs/ACCOUNTANT_REVIEW.md` **do** agree — §4 records the B2B/company-buyer Issue slice landing 09.08.2026, and its Phase-A scope table matches `commercial/service.py`'s `_buyer_snapshot()` (individuals; domestic companies with a known `vat_registered` state; `buyer_vat_status_unknown` rejected before number allocation). The earlier framing of this row — that the doc lagged the code — was wrong. What remains is not an engineering reconciliation but the gate itself: no qualified Bulgarian accountant has recorded a dated answer to the open `PROFESSIONAL REVIEW REQUIRED` items (B2 individual-buyer field completeness incl. the national-ID question, T1 seller-field completeness, VAT rounding, control adequacy). docs/12 §4 makes that sign-off a release gate for anything touching `commercial`, so Etap 4 cannot be called done until a human accountant signs. |
+| Last reviewed | 2026-09-20 |
 
 ## Етап 0 — Foundation ✅ (revalidated for SaaS)
 
@@ -63,9 +63,17 @@ phrasing here is historical, not current.
   append-only на ниво база (trigger) · **минимален приемо-предавателен протокол**
   (server-side PDF, fpdf2 + DejaVu Sans за кирилица) · BR-2 unlock изключението.
   81/81 backend tests green; ruff/mypy/import-linter clean throughout.
-- **Not yet built (backend):** global search (P0-7) — still no cross-entity
-  search endpoint or frontend `GlobalSearch` component as of 2026-09-12;
-  postponed, no consumer forcing it yet.
+- **Global search (P0-7) — ✅ built, correcting this file (20.09.2026).** The
+  2026-09-12 refresh claimed it was "not yet built"; that was wrong, and this
+  bullet is the correction. `serviceflow/search/` (`service.py` + `router.py`,
+  grouped customers/orders/assets hits, normalization symmetric with the write
+  path per ADR-010) is mounted at `GET /api/v1/search` in `main.py`, and the
+  frontend consumes it from `shell/SearchBox.tsx` (debounced, keyboard-
+  navigable, highlighted) inside RepairFlow's toolbar in `AppShell.tsx`. It
+  shipped in 6ecb4a0 alongside `GET /users` and `/dashboard`. P0-7 coverage
+  lives in `backend/tests/test_frontend_prerequisites.py` (both alphabets,
+  phone/identifier/order-number forms, short-query floor, tenant isolation).
+  Remaining gaps, both small: no `SearchBox.tsx` unit test and no E2E.
 - **Frontend gate (PO директива, 11.07.2026) — cleared.** The Frontend Design
   Document gate was passed some time before this review; the frontend has
   since been built well past the original four-screen scope (order intake,
@@ -73,18 +81,19 @@ phrasing here is historical, not current.
   draft/issue/annul views, vehicle identity/service history, warranty
   settings, employee admin, password reset/forgot-password). This bullet is
   kept only as a historical note — do not treat it as a live blocker.
-- Exit checklist, actual state (2026-09-12): four+ screens built and shipped ·
-  Kanban wired in · search (P0-7) still **not** wired in (see above) · E2E
-  coverage exists for journeys 1 (intake→delivery, via
-  `e2e/repairflow/order-intake.spec.ts` + `order-delivery.spec.ts`) and 3
-  (invoice lifecycle, via `order-invoice.spec.ts`) plus `e2e/auth.spec.ts`/
+- Exit checklist, actual state (20.09.2026): four+ screens built and shipped ·
+  Kanban wired in · search (P0-7) **is** wired in, backend and frontend (the
+  09-12 entry said otherwise; corrected above) · E2E coverage exists for
+  journeys 1 (intake→delivery, via `e2e/repairflow/order-intake.spec.ts` +
+  `order-delivery.spec.ts`), 3 (invoice lifecycle, draft→issue only, via
+  `order-invoice.spec.ts`) and 2's first half (rejection to a terminal state,
+  via `order-rejection.spec.ts`, cf6cb13 — the такса диагностика invoice +
+  плащане leg is still uncovered), plus `e2e/auth.spec.ts`/
   `e2e/repairflow/order-intake-customer.spec.ts`/`order-status.spec.ts`
   (`repairflow/` materialized 2026-09-12, per `frontend/e2e/CLAUDE.md`);
-  journey 2 (rejection path) and journey 4 (Kanban
-  concurrency — though a same-day race-condition fix, d02e051, suggests this
-  has been hardened ad hoc rather than via a dedicated spec) have no
-  dedicated E2E coverage yet · non-developer unassisted staging walkthrough
-  not confirmed in this review. This checklist was never formally closed out
+  journey 4 (Kanban concurrency — though the race-condition fix d02e051
+  hardened this ad hoc) still has no dedicated spec · non-developer unassisted
+  staging walkthrough not confirmed in this review. This checklist was never formally closed out
   when the gate was passed — worth a deliberate close rather than leaving it
   implicitly done.
 
@@ -222,6 +231,20 @@ launch**).
 
 - P0-9 tenant isolation suite (ADR-016)
 - P0-10 billing webhook idempotency (ADR-018)
+
+**Unreconciled (flagged 20.09.2026, PO decision needed — not actioned here):**
+Етап 5 above counts "P0 green (сега 10 позиции)" as the frozen doc 12 §1 list
+of 8 plus these two. But doc 12 §1's **P0-5 (updater kill-the-process drills on
+a Windows reference VM)** describes machinery the pivot parked: ADR-014
+(owner-triggered updates) is superseded by ADR-017's vendor-operated CD, so
+there is no updater to drill. **P0-4 (backup → verify → restore drills)**
+survives in substance but has moved target — Етап 5 already restates it as a
+host-level restore drill (<2 h, ADR-017), not the 05 §7 local-instance drill.
+Doc 14 §"What is superseded / parked" never touched the P0 list (it says only
+that "all P0 tests survive"), and doc 12 is frozen, so the release gate as
+written today counts at least one item nobody can satisfy. Either amend doc 12
+§1 through the change process (doc 07 §"Change process after freeze") or
+restate the web-first P0 list here as the authoritative one.
 
 ## Reconciliation notes (v2.1 → v3.0)
 

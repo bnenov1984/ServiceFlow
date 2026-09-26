@@ -3,8 +3,15 @@
 **Business OS vertical module #3** — operational control for small Bulgarian
 professional-service firms: construction supervisors, valuers, court experts,
 engineers, architects, surveyors, accountants, legal/administrative service
-providers. Status: **Phase 0 — product & architecture documentation. No
-application code exists yet.**
+providers. Status: **Implemented** (status corrected 20.09.2026 — this line
+still read "Phase 0 … no application code exists yet", which
+[docs/INDEX.md](../../docs/INDEX.md) has contradicted for some time). The
+module ships as `backend/src/professional_services/` (assignments, clients,
+catalog, actions), migrations `0007_professional_services`,
+`0010_ps_workflow`, `0011_ps_deadline_engine`, the `test_ps_*.py` suites, and
+the PropertyFlow frontend under `frontend/src/ps/`. The documents below remain
+the product/architecture reference for it; where a doc and the code disagree,
+the code is current.
 
 Module identifier: `professional-services` (future Python package:
 `professional_services`; table prefix `ps_`; i18n namespace `ps.`).
