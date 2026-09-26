@@ -13,8 +13,15 @@ from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 
 TEST_DB_URL = os.environ.get("SERVICEFLOW_TEST_DATABASE_URL")
+
+# An ambient (e.g. shell-profile) SERVICEFLOW_TEST_DATABASE_URL pointing at a
+# real remote database is a real incident that has actually happened on a dev
+# machine here — this fixture migrates AND truncates, so a stray non-local
+# value must never be allowed to reach create_engine/command.upgrade below.
+_SAFE_TEST_DB_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
 @pytest.fixture(scope="session")
@@ -25,9 +32,17 @@ def migrated_db() -> str:
     a deployment requirement (ADR-016/017), and the tests enforce it by mirroring it.
     """
     from sqlalchemy import create_engine
-    from sqlalchemy.engine import make_url
 
     assert TEST_DB_URL is not None
+    host = make_url(TEST_DB_URL).host
+    if host not in _SAFE_TEST_DB_HOSTS:
+        pytest.exit(
+            f"SERVICEFLOW_TEST_DATABASE_URL points at host {host!r}, not a "
+            f"local one ({sorted(_SAFE_TEST_DB_HOSTS)}) — refusing to migrate "
+            "or truncate a non-local database. Use docker-compose.dev.yml's "
+            "local Postgres for tests.",
+            returncode=1,
+        )
     os.environ["SERVICEFLOW_DATABASE_URL"] = TEST_DB_URL
     command.upgrade(Config("alembic.ini"), "head")
 
