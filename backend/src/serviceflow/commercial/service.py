@@ -150,6 +150,49 @@ def create_manual_draft(db: Session, ctx: TenantContext, customer_id: uuid.UUID)
     return invoice
 
 
+def link_to_order(db: Session, ctx: TenantContext, invoice_id: uuid.UUID,
+                  order_id: uuid.UUID) -> Invoice:
+    """invoice-order-linking checkpoint 1 — attaches an existing manual
+    invoice (`order_id IS NULL`, created via `create_manual_draft()`, draft
+    or already issued) to a `ServiceOrder` after the fact. Deliberately not
+    the same relationship as `annuls_invoice_id` (reissue linkage, unused in
+    V1) — this is the first time a manual invoice gets an order at all.
+
+    `customer_id` is intentionally left set afterward, not cleared — the
+    Invoice model's "exactly one of order_id/customer_id" XOR docstring
+    describes row *construction*, not an invariant this function needs to
+    re-establish. Every downstream reader that forks on `order_id`
+    (`issue()`'s buyer resolution, `_customer_name_for()`) checks the frozen
+    `buyer` snapshot first once issued, so a post-issue link never changes
+    which buyer was actually billed; the customer-match check below closes
+    the same gap for a still-draft invoice.
+
+    Sets a reference only, never touches lines/totals/status — issued
+    invoices stay immutable in financial content (root CLAUDE.md rule 6)."""
+    invoice = db.scalar(scoped(select(Invoice), Invoice, ctx).where(Invoice.id == invoice_id))
+    if invoice is None:
+        raise InvoiceError("errors.invoices.not_found", status=404)
+    if invoice.order_id is not None:
+        raise InvoiceError("errors.invoices.already_linked")
+
+    order = orders_contracts.get_order_summary(db, ctx, order_id)
+    if order is None:
+        raise InvoiceError("errors.orders.not_found", status=404)
+    if order.archived:
+        raise InvoiceError("errors.orders.archived")
+    if order.customer_id != invoice.customer_id:
+        raise InvoiceError("errors.invoices.customer_mismatch")
+
+    invoice.order_id = order_id
+    invoice.row_version += 1
+    publish(db, DomainEvent(
+        type="invoice_linked", company_id=ctx.company_id, actor_user_id=ctx.user_id,
+        subject_id=order_id, data={"invoice_id": str(invoice.id)},
+    ))
+    db.commit()
+    return invoice
+
+
 def get(db: Session, ctx: TenantContext, invoice_id: uuid.UUID) -> Invoice | None:
     return db.scalar(scoped(select(Invoice), Invoice, ctx).where(Invoice.id == invoice_id))
 

@@ -31,7 +31,7 @@ KNOWN_EVENT_TYPES = frozenset({
     "attachment_added", "attachment_deleted",
     "note_or_contact_recorded",
     "payment_recorded", "payment_refunded",
-    "invoice_issued", "invoice_annulled",
+    "invoice_issued", "invoice_annulled", "invoice_linked",
 })
 
 

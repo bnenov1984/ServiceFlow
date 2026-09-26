@@ -2974,6 +2974,60 @@
         }
       }
     },
+    "/api/v1/invoices/{invoice_id}/link-order": {
+      "post": {
+        "tags": [
+          "commercial"
+        ],
+        "summary": "Link Invoice To Order",
+        "description": "invoice-order-linking checkpoint 1. Same permission tier as\npatch_invoice/create_manual_invoice_draft — sets a reference, not a\nlegally significant transition, so no require_owner.",
+        "operationId": "link_invoice_to_order_api_v1_invoices__invoice_id__link_order_post",
+        "parameters": [
+          {
+            "name": "invoice_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Invoice Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkOrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceDetailOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/invoices/{invoice_id}/issue": {
       "post": {
         "tags": [
@@ -7556,6 +7610,20 @@
         },
         "type": "object",
         "title": "LaborLinePatch"
+      },
+      "LinkOrderRequest": {
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Order Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "order_id"
+        ],
+        "title": "LinkOrderRequest"
       },
       "LoginRequest": {
         "properties": {

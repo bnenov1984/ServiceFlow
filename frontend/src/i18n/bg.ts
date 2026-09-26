@@ -170,6 +170,8 @@ export const bg = {
   "errors.invoices.annul_not_issued": "Може да анулирате само вече издадена фактура.",
   "errors.invoices.already_annulled": "Фактурата вече е анулирана.",
   "errors.invoices.customer_not_found": "Няма такъв клиент.",
+  "errors.invoices.already_linked": "Фактурата вече е свързана с поръчка.",
+  "errors.invoices.customer_mismatch": "Поръчката принадлежи на друг клиент.",
 
   // --- intake (docs/15 §6.4) ---
   "intake.title": "Нова поръчка",

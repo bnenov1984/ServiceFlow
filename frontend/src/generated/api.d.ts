@@ -973,6 +973,28 @@ export interface paths {
         patch: operations["patch_invoice_api_v1_invoices__invoice_id__patch"];
         trace?: never;
     };
+    "/api/v1/invoices/{invoice_id}/link-order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Link Invoice To Order
+         * @description invoice-order-linking checkpoint 1. Same permission tier as
+         *     patch_invoice/create_manual_invoice_draft — sets a reference, not a
+         *     legally significant transition, so no require_owner.
+         */
+        post: operations["link_invoice_to_order_api_v1_invoices__invoice_id__link_order_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/invoices/{invoice_id}/issue": {
         parameters: {
             query?: never;
@@ -2507,6 +2529,14 @@ export interface components {
             unit_price?: number | string | null;
             /** Duration Min */
             duration_min?: number | null;
+        };
+        /** LinkOrderRequest */
+        LinkOrderRequest: {
+            /**
+             * Order Id
+             * Format: uuid
+             */
+            order_id: string;
         };
         /** LoginRequest */
         LoginRequest: {
@@ -5413,6 +5443,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["InvoicePatchIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    link_invoice_to_order_api_v1_invoices__invoice_id__link_order_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invoice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkOrderRequest"];
             };
         };
         responses: {

@@ -388,6 +388,26 @@ def patch_invoice(invoice_id: uuid.UUID, body: InvoicePatchIn, db: TenantDbDep,
     return _invoice_detail(db, tenant, invoice)
 
 
+class LinkOrderRequest(BaseModel):
+    order_id: uuid.UUID
+
+
+@router.post(
+    "/invoices/{invoice_id}/link-order",
+    dependencies=[Depends(require_csrf), Depends(require_subscription_ok)],
+)
+def link_invoice_to_order(invoice_id: uuid.UUID, body: LinkOrderRequest, db: TenantDbDep,
+                          tenant: TenantDep) -> InvoiceDetailOut:
+    """invoice-order-linking checkpoint 1. Same permission tier as
+    patch_invoice/create_manual_invoice_draft — sets a reference, not a
+    legally significant transition, so no require_owner."""
+    try:
+        invoice = service.link_to_order(db, tenant, invoice_id, body.order_id)
+    except service.InvoiceError as e:
+        raise _invoice_error(e) from e
+    return _invoice_detail(db, tenant, invoice)
+
+
 class IssueRequest(BaseModel):
     # The only client-owned datum Issue accepts — number/seller/buyer/
     # totals/vat_mode/issued_at/status are exclusively server-resolved
