@@ -417,3 +417,91 @@ describe("InvoiceDetailPage: manual invoice (Wave 6 Issue 30, no ServiceOrder)",
     }));
   });
 });
+
+describe("InvoiceDetailPage: link to order (checkpoint 2)", () => {
+  const manualDraftDetail = {
+    ...draftDetail, order_id: null, customer_id: "cust-9", lines: [], draft_total: 0,
+  };
+  const candidateOrder = {
+    id: "order-9", number: "2026-00009", customer_id: "cust-9", asset_id: "asset-1",
+    asset_label: "Peugeot 208", complaint: "Не запалва", status_code: "received",
+    status_kind: "working", technician_id: null, priority: "normal", promised_on: null,
+    warranty_days: null, origin_order_id: null, status_changed_at: null, overdue: false,
+    archived: false,
+  };
+
+  function mockOrdersList(open: (typeof candidateOrder)[] = [candidateOrder], terminal: (typeof candidateOrder)[] = []): void {
+    vi.mocked(api.get).mockImplementation((path: string) => {
+      if (path.includes("state=open")) return Promise.resolve(open) as never;
+      if (path.includes("state=terminal")) return Promise.resolve(terminal) as never;
+      return Promise.resolve(manualDraftDetail) as never;
+    });
+  }
+
+  it("shows a link-to-order action for an unlinked manual invoice", async () => {
+    mockOrdersList();
+    renderDetailPage();
+    await screen.findByText("Няма редове.");
+    expect(screen.getByRole("button", { name: "Свържи с поръчка" })).toBeInTheDocument();
+  });
+
+  it("opens the picker and lists the customer's own orders, split active/history", async () => {
+    const user = userEvent.setup();
+    mockOrdersList();
+    renderDetailPage();
+    await screen.findByText("Няма редове.");
+    await user.click(screen.getByRole("button", { name: "Свържи с поръчка" }));
+
+    await screen.findByRole("heading", { name: "Избор на поръчка" });
+    expect(await screen.findByText("№ 2026-00009")).toBeInTheDocument();
+    expect(screen.getByText("Няма приключени поръчки.")).toBeInTheDocument();
+    expect(api.get).toHaveBeenCalledWith("/orders?state=open&customer_id=cust-9");
+    expect(api.get).toHaveBeenCalledWith("/orders?state=terminal&customer_id=cust-9");
+  });
+
+  it("shows both empty states when the customer has no orders at all", async () => {
+    const user = userEvent.setup();
+    mockOrdersList([], []);
+    renderDetailPage();
+    await screen.findByText("Няма редове.");
+    await user.click(screen.getByRole("button", { name: "Свържи с поръчка" }));
+
+    expect(await screen.findByText("Няма активни поръчки.")).toBeInTheDocument();
+    expect(screen.getByText("Няма приключени поръчки.")).toBeInTheDocument();
+  });
+
+  it("picking an order calls POST link-order and the page reflects the link", async () => {
+    const user = userEvent.setup();
+    mockOrdersList();
+    const linkedDetail = { ...manualDraftDetail, order_id: candidateOrder.id, row_version: 2 };
+    vi.mocked(api.post).mockImplementation((path: string) => {
+      if (path.endsWith("/link-order")) return Promise.resolve(linkedDetail) as never;
+      return Promise.resolve(manualDraftDetail) as never;
+    });
+    renderDetailPage();
+    await screen.findByText("Няма редове.");
+    await user.click(screen.getByRole("button", { name: "Свържи с поръчка" }));
+    await user.click(await screen.findByText("№ 2026-00009"));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+      `/invoices/${invoiceId}/link-order`, { order_id: candidateOrder.id },
+    ));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(await screen.findByText("Фактурата е свързана с поръчката.")).toBeInTheDocument();
+  });
+
+  it("a rejection (e.g. customer mismatch) surfaces inline and keeps the dialog open", async () => {
+    const user = userEvent.setup();
+    mockOrdersList();
+    vi.mocked(api.post).mockRejectedValue(
+      new ApiError(409, "customer_mismatch", "errors.invoices.customer_mismatch"),
+    );
+    renderDetailPage();
+    await screen.findByText("Няма редове.");
+    await user.click(screen.getByRole("button", { name: "Свържи с поръчка" }));
+    await user.click(await screen.findByText("№ 2026-00009"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Поръчката принадлежи на друг клиент.");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+});

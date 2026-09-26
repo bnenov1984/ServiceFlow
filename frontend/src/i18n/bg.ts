@@ -308,6 +308,7 @@ export const bg = {
   "order.invoice_pdf": "PDF",
   "order.invoice_issued_success": "Фактурата е издадена.",
   "order.event_invoice_issued": "Фактурата е издадена",
+  "order.event_invoice_linked": "Фактурата е свързана с поръчката",
   "order.confirm": "Потвърди",
   "order.reason_label": "Причина",
   "order.reason_title": "Причина за промяната",
@@ -474,6 +475,9 @@ export const bg = {
   // same wording already applies).
   "invoice.back_to_invoices": "← Фактури",
   "invoice.order_label": "Поръчка",
+  "invoice.link_to_order_action": "Свържи с поръчка",
+  "invoice.link_to_order_title": "Избор на поръчка",
+  "invoice.linked_to_order_success": "Фактурата е свързана с поръчката.",
 
   // --- customers (docs/15 §6.7) ---
   "customers.search_placeholder": "Търсене по име или телефон…",

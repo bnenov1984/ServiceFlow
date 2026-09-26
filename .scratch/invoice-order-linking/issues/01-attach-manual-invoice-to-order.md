@@ -1,7 +1,7 @@
 # Attach an existing manual invoice to a service order
 
-Status: in-progress (2026-09-26) — backend (checkpoint 1) done; frontend
-order-picker action (checkpoint 2) still pending
+Status: done (2026-09-26) — backend (checkpoint 1) and frontend order-picker
+action (checkpoint 2) both shipped.
 
 ## Implementation notes (checkpoint 1 — backend)
 
@@ -54,10 +54,62 @@ same known fpdf xfails), frontend 523/523, `tsc --noEmit`/`ruff`/`mypy`/
 OpenAPI contract (`frontend/src/generated/{openapi.json,api.d.ts}`)
 regenerated.
 
-**Checkpoint 2 (not started)**: the "Свържи с поръчка" action + order
-picker on `frontend/src/invoices/InvoiceDetailPage.tsx`, scoped to the
-invoice's customer, in the spot where that page already conditionally
-renders `invoice.order_id !== null`.
+## Implementation notes (checkpoint 2 — frontend)
+
+New `frontend/src/invoices/LinkOrderDialog.tsx`, rendered from
+`InvoiceDetailPage.tsx`'s existing `invoice.order_id !== null` branch point
+(the sibling `=== null` case now shows a "Свържи с поръчка" button instead
+of nothing). Lists the invoice's own customer's orders split into
+active/history, deliberately as two explicit `GET /orders?state=open` +
+`GET /orders?state=terminal` fetches (reusing the exact
+`queryKeys.customerOrders` cache `CustomerOrdersSection` already populates
+on the customer profile page) rather than relying on `list_orders`'s
+`state` param falling through to "all orders" for any unrecognized string —
+traced that fallthrough in `service_orders/service.py` and confirmed it has
+zero test coverage, so it isn't a contract worth building on.
+
+Clicking an order links immediately, no secondary confirm dialog — matches
+this endpoint's own permission tier (no `require_owner`, "not a legally
+significant transition"). On success: the invoice cache is seeded directly
+from the response (same pattern as `InvoiceDraftEditor`'s `submitIssue`),
+plus the linked order's `orderInvoices`/`orderTimeline` cache entries are
+invalidated (genuinely server-derived, not locally fabricable — same
+reasoning `submitIssue` already uses for its own equivalent step).
+
+New i18n: `invoice.link_to_order_action`, `invoice.link_to_order_title`,
+`invoice.linked_to_order_success`; the two picker sections reuse the
+existing `customer.active_orders`/`customer.active_orders_none`/
+`customer.history`/`customer.history_none` keys rather than duplicating
+the wording.
+
+**Real bug caught in manual browser QA** (seeded a fresh company, created a
+customer/order/manual invoice, and drove the full flow end-to-end): the
+order's own timeline rendered the just-added `invoice_linked` event as the
+raw event-type string, not Bulgarian text — checkpoint 1 added it to the
+backend's `KNOWN_EVENT_TYPES` allowlist but never to
+`frontend/src/order/TimelineSection.tsx`'s separate `EVENT_LABEL` display
+map, which silently falls back to the raw type for anything unmapped.
+Fixed: added the mapping + `order.event_invoice_linked` key ("Фактурата е
+свързана с поръчката", no trailing period, matching every sibling event
+label's convention) + a regression test in `TimelineSection.test.tsx`.
+
+Also surfaced and fixed in passing: the harness's ambient shell environment
+carries a `SERVICEFLOW_DATABASE_URL` pointing at a Neon cloud Postgres
+instance, silently overriding `backend/.env`'s local Docker URL for any
+process that inherits it (pydantic-settings env vars win over `.env`) —
+including a `preview_start`-launched backend dev server. Worked around by
+starting the backend manually with the URL pinned inline instead of via
+the `backend` launch-config entry; worth the user's own attention since
+it's not a ServiceFlow-repo artifact and isn't mentioned anywhere in
+`CLAUDE.md`.
+
+Verified: full frontend suite 529/529 (523 prior + 5 new
+`InvoiceDetailPage.test.tsx` cases + 1 new `TimelineSection.test.tsx`
+case), `tsc --noEmit` clean, `npm run build` clean. Backend untouched this
+checkpoint, so its own suite wasn't re-run. Manually driven end-to-end
+against real dev servers (seeded company → new customer/order/manual
+invoice → link → order page shows both the invoice and the corrected
+timeline entry).
 
 ## Context
 

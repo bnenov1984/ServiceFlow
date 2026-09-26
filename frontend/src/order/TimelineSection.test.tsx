@@ -55,4 +55,19 @@ describe("TimelineSection (Wave 2 Issue 34)", () => {
 
     expect(await screen.findByText("Статусът е променен")).toBeInTheDocument();
   });
+
+  // invoice-order-linking checkpoint 2 — a real gap caught in manual QA: this
+  // event type was added to the backend's KNOWN_EVENT_TYPES allowlist in
+  // checkpoint 1, but EVENT_LABEL was never updated, so it rendered as the
+  // raw "invoice_linked" string instead of Bulgarian text.
+  it("renders the Bulgarian label for invoice_linked, not the raw event type", async () => {
+    renderTimeline([{
+      event_type: "invoice_linked", actor_user_id: "u1",
+      data: { invoice_id: "inv-1" },
+      created_at: "2026-03-15T10:00:00Z",
+    }]);
+
+    expect(await screen.findByText("Фактурата е свързана с поръчката")).toBeInTheDocument();
+    expect(screen.queryByText("invoice_linked")).not.toBeInTheDocument();
+  });
 });

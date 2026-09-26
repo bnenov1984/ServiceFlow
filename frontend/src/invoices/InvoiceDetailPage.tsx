@@ -27,7 +27,8 @@
  * /invoices/{id} and re-renders as IssuedInvoiceView, no redirect.
  */
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { EmptyState, ErrorState, Skeleton } from "../components/States";
 import { InvoiceDraftEditor } from "../order/InvoiceDraftEditor";
@@ -37,6 +38,7 @@ import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
 import { apiUrl } from "../lib/apiUrl";
 import { queryKeys } from "../lib/queryKeys";
+import { LinkOrderDialog } from "./LinkOrderDialog";
 import { StatusBadge } from "./InvoicesPage";
 
 interface OrderSummary {
@@ -49,6 +51,8 @@ interface OrderSummary {
 export function InvoiceDetailPage() {
   const { invoiceId } = useParams<{ invoiceId: string }>();
   const id = invoiceId!;
+  const queryClient = useQueryClient();
+  const [linkOpen, setLinkOpen] = useState(false);
 
   const {
     data: invoice, isLoading, isError, error, refetch,
@@ -121,7 +125,7 @@ export function InvoiceDetailPage() {
         )}
       </div>
 
-      {invoice.order_id !== null && (
+      {invoice.order_id !== null ? (
         <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
           <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
             {t("invoice.order_label")}
@@ -139,6 +143,28 @@ export function InvoiceDetailPage() {
             )}
           </div>
         </div>
+      ) : (
+        invoice.customer_id !== null && (
+          <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
+            <button
+              type="button"
+              onClick={() => setLinkOpen(true)}
+              className="font-medium text-blue-700 hover:underline"
+            >
+              {t("invoice.link_to_order_action")}
+            </button>
+          </div>
+        )
+      )}
+
+      {linkOpen && invoice.customer_id !== null && (
+        <LinkOrderDialog
+          open={linkOpen}
+          onClose={() => setLinkOpen(false)}
+          invoiceId={invoice.id}
+          customerId={invoice.customer_id}
+          onLinked={(updated) => queryClient.setQueryData(queryKeys.invoice(id), updated)}
+        />
       )}
 
       <div className="rounded-lg border border-slate-200 bg-white p-4">

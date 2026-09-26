@@ -56,6 +56,7 @@ const EVENT_LABEL: Record<string, Parameters<typeof t>[0]> = {
   payment_recorded: "order.event_payment_recorded",
   payment_refunded: "order.event_payment_refunded",
   invoice_issued: "order.event_invoice_issued",
+  invoice_linked: "order.event_invoice_linked",
 };
 
 export function TimelineSection({ orderId }: { orderId: string }) {
