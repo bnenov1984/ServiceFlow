@@ -53,6 +53,9 @@ test('a status changed from the orders list shows on the order page (#23)', asyn
   await listRow(page, number).getByRole('button', { name: 'Диагностика', exact: true }).click();
   await page.waitForLoadState('networkidle');
   await page.getByRole('link', { name: number, exact: true }).click();
+  // Wait for the order page itself, or the status check below races the list
+  // (whose row buttons carry the same status labels).
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(number);
 
   await expect(page.getByText('Диагностика', { exact: true })).toBeVisible({ timeout: 5000 });
   await expect(page.getByText('Приета', { exact: true })).not.toBeVisible();
@@ -73,6 +76,9 @@ test('Чака клиент → Чака части from the orders list shows o
   await page.getByRole('button', { name: 'Запиши одобрение' }).click();
   await page.waitForLoadState('networkidle');
   await page.getByRole('link', { name: number, exact: true }).click();
+  // Wait for the order page itself, or the status check below races the list
+  // (whose row buttons carry the same status labels).
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(number);
 
   await expect(page.getByText('Чака части', { exact: true })).toBeVisible({ timeout: 5000 });
   await expect(page.getByText('Чака клиент', { exact: true })).not.toBeVisible();
