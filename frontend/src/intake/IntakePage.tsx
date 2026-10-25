@@ -5,13 +5,14 @@
  * blocked flow).
  */
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ApiError, api } from "../lib/api";
 import { apiUrl } from "../lib/apiUrl";
 import { t } from "../i18n/bg";
 import { useToast } from "../components/Toast";
+import { invalidateOrderViews } from "../lib/orderQueries";
 import { queryKeys } from "../lib/queryKeys";
 import { AssetStep, DEFAULT_ASSET_STEP_DRAFT, type AssetStepDraft, type ResolvedAsset } from "./AssetStep";
 import { CustomerStep, type ResolvedCustomer } from "./CustomerStep";
@@ -81,6 +82,7 @@ export function IntakePage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const navigate = useNavigate();
   const pushToast = useToast();
+  const queryClient = useQueryClient();
 
   // Wave 5 Issue 12: the resolved customer's own default delivery address,
   // for OrderStep's courier-address prefill — a plain read, unrelated to
@@ -152,6 +154,8 @@ export function IntakePage() {
       if (partFailures > 0) {
         pushToast("error", t("intake.parts_failed", { count: partFailures }));
       }
+
+      void invalidateOrderViews(queryClient, order.id);
 
       // Same-origin navigation carries the session cookie automatically.
       window.open(apiUrl(`/api/v1/orders/${order.id}/protocol.pdf?type=intake`), "_blank");

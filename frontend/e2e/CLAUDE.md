@@ -208,12 +208,31 @@ visible — asserted visible only, never clicked, for the same fpdf reason as
 **Not yet covered:** the journey's second half — такса диагностика invoice →
 плащане against the declined order. That's the natural next spec here.
 
+### `repairflow/order-status-cache.spec.ts`
+
+Regression for PO bugs #23/#30 (24.10.2026): a status changed from the orders
+list (`OrderStatusActions`) showed the *old* status on the order page, and a
+just-created order was missing from the list, for up to the global 30 s
+`staleTime` (`src/main.tsx`) — each view invalidated only its own query keys.
+Fixed by one shared `invalidateOrderViews` (`src/lib/orderQueries.ts`) used by
+the order header, the orders page (list + Kanban) and intake. Three tests:
+intake → list, list → order page (#23), Чака клиент → Чака части with approval
+from the list → order page (#30). Two things that matter if this file is
+touched:
+
+- **Navigate client-side** (the „← Поръчки" link, row links), never
+  `page.goto` between the change and the assertion — a full load starts with
+  an empty cache and hides the bug.
+- The #23/#30 tests `page.reload()` once before opening the list on purpose,
+  so they exercise only the order-page cache, not the intake → list case the
+  first test covers.
+
 ## Domain ownership and growth rules
 
 **`repairflow/` is now a real directory** (materialized 2026-09-12): it holds
 `order-intake-customer.spec.ts`, `order-intake.spec.ts`, `order-status.spec.ts`,
-`order-delivery.spec.ts`, `order-invoice.spec.ts`, `order-rejection.spec.ts` —
-six specs, all importing the shared `../support/login` helpers (note the `../`,
+`order-delivery.spec.ts`, `order-invoice.spec.ts`, `order-rejection.spec.ts`,
+`order-status-cache.spec.ts` — seven specs, all importing the shared `../support/login` helpers (note the `../`,
 not `./`, from inside the subdirectory). `auth.spec.ts` stays flat at the E2E root for now — it's
 the only spec conceptually belonging to `platform/`, and the materialization
 rule below says one file isn't yet enough to justify a directory.

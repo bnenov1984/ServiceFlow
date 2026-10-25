@@ -14,6 +14,7 @@ import { useToast } from "../components/Toast";
 import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
 import { apiUrl } from "../lib/apiUrl";
+import { invalidateOrderViews } from "../lib/orderQueries";
 import { queryKeys } from "../lib/queryKeys";
 import { allowedTransitions, isTerminal, kindOf, statusName } from "../lib/statusMatrix";
 import { ApprovalDialog } from "./dialogs/ApprovalDialog";
@@ -182,12 +183,7 @@ export function OrderHeader({
     enabled: pending?.kind === "completion",
   });
 
-  const refreshOrder = () =>
-    Promise.all([
-      queryClient.invalidateQueries({ queryKey: queryKeys.order(orderId) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.orderTimeline(orderId) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
-    ]);
+  const refreshOrder = () => invalidateOrderViews(queryClient, orderId);
 
   const close = () => { setPending(null); setError(null); };
 
