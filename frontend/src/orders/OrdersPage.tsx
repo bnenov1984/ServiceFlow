@@ -15,6 +15,7 @@ import { useToast } from "../components/Toast";
 import { DashboardSummary } from "../dashboard/DashboardSummary";
 import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
+import { invalidateOrderViews } from "../lib/orderQueries";
 import { queryKeys } from "../lib/queryKeys";
 import { ApprovalDialog } from "../order/dialogs/ApprovalDialog";
 import { FiltersBar, type OrderFilters } from "./FiltersBar";
@@ -80,8 +81,7 @@ export function OrdersPage() {
   const technicians = (users ?? []).filter((u) => u.is_active);
 
   const refreshOrders = () => {
-    void queryClient.invalidateQueries({ queryKey: ["orders"] });
-    void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard });
+    void invalidateOrderViews(queryClient);
   };
 
   const changeStatus = async (orderId: string, body: Record<string, unknown>) => {

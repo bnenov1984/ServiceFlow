@@ -6,6 +6,9 @@ export const queryKeys = {
   dashboard: ["dashboard"] as const,
   users: ["users"] as const,
   assetTypes: ["asset-types"] as const,
+  // Prefixes for invalidation only (lib/orderQueries.ts) — never a query's own key.
+  allOrders: ["orders"] as const,
+  allOrderDetails: ["order"] as const,
   orders: (filters?: Record<string, string>) => ["orders", filters ?? {}] as const,
   order: (id: string) => ["order", id] as const,
   orderTimeline: (id: string) => ["order", id, "timeline"] as const,
