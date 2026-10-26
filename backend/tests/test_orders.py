@@ -536,3 +536,56 @@ def test_payment_method_is_unaffected_by_delivery_method(client: TestClient) -> 
                           json={"amount": "10.00", "method": "cash", "note": ""})
     assert payment.status_code == 201, payment.text
     assert payment.json()["method"] == "cash"
+
+
+# --- WP-F: technician load for the technician picker -----------------------
+
+def _technicians(client: TestClient, h: dict[str, str]) -> tuple[str, str]:
+    """(owner id, a new worker's id) — both are valid picker entries (Q22)."""
+    owner = next(u["id"] for u in client.get("/api/v1/users").json() if u["is_owner"])
+    worker = client.post("/api/v1/users", headers=h, json={
+        "name": "Иво Иванов", "email": "ivo@a.bg", "password": "парола-за-иво-123",
+    })
+    assert worker.status_code == 201, worker.text
+    return owner, worker.json()["id"]
+
+
+def _order_in(client: TestClient, h: dict[str, str], cid: str, aid: str,
+              technician_id: str | None, path: list[str]) -> None:
+    r = client.post("/api/v1/orders", headers=h, json={
+        "customer_id": cid, "asset_id": aid, "complaint": "x",
+        "technician_id": technician_id,
+    })
+    assert r.status_code == 201, r.text
+    for to in path:
+        s = client.post(f"/api/v1/orders/{r.json()['id']}/status", headers=h, json={"to": to})
+        assert s.status_code == 200, s.text
+
+
+def test_technician_load_counts_only_diagnostics_and_repair(client: TestClient) -> None:
+    h = _login(client)
+    owner, worker = _technicians(client, h)
+    cid, aid = _customer_and_asset(client, h)
+    _order_in(client, h, cid, aid, owner, ["diagnostics"])
+    _order_in(client, h, cid, aid, owner, ["diagnostics"])
+    _order_in(client, h, cid, aid, owner, ["diagnostics", "repair"])
+    _order_in(client, h, cid, aid, worker, ["diagnostics", "waiting_parts"])
+    _order_in(client, h, cid, aid, worker, [])  # Приета
+    _order_in(client, h, cid, aid, None, ["diagnostics"])  # unassigned
+
+    r = client.get("/api/v1/orders/technician-load")
+    assert r.status_code == 200, r.text
+    assert r.json() == [{"technician_id": owner, "active_count": 3}]
+
+
+def test_technician_load_is_tenant_isolated(client: TestClient) -> None:
+    h_a = _login(client, "Сервиз А", "a@a.bg")
+    owner_a = next(u["id"] for u in client.get("/api/v1/users").json() if u["is_owner"])
+    cid, aid = _customer_and_asset(client, h_a)
+    _order_in(client, h_a, cid, aid, owner_a, ["diagnostics"])
+    client.post("/api/v1/auth/logout", headers=h_a)
+
+    _login(client, "Сервиз Б", "b@b.bg")
+    r = client.get("/api/v1/orders/technician-load")
+    assert r.status_code == 200, r.text
+    assert r.json() == []
