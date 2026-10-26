@@ -193,6 +193,20 @@ def list_order_ids_for_customer(db: Session, ctx: TenantContext,
     ))
 
 
+def technician_load(db: Session, ctx: TenantContext) -> dict[uuid.UUID, int]:
+    """Orders per technician in `statuses.TECHNICIAN_LOAD` (WP-F/Q22). Only
+    technicians with at least one such order appear; the picker treats a
+    missing one as free. Archived orders are terminal by rule (`archive`), so
+    they never match these statuses and need no extra filter."""
+    stmt = (
+        scoped(select(ServiceOrder.technician_id, func.count()), ServiceOrder, ctx)
+        .where(ServiceOrder.technician_id.is_not(None),
+               ServiceOrder.status_code.in_(statuses.TECHNICIAN_LOAD))
+        .group_by(ServiceOrder.technician_id)
+    )
+    return {tid: n for tid, n in db.execute(stmt).tuples() if tid is not None}
+
+
 def list_orders(db: Session, ctx: TenantContext, *, state: str = "open",
                 status_code: str | None = None, technician_id: uuid.UUID | None = None,
                 customer_id: uuid.UUID | None = None,

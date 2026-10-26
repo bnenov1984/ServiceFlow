@@ -49,6 +49,9 @@ STATUSES: dict[str, tuple[Kind, str, int]] = {
 TERMINAL = {c for c, (k, _, _) in STATUSES.items()
             if k in (Kind.TERMINAL_SUCCESS, Kind.TERMINAL_FAILURE)}
 OPEN = set(STATUSES) - TERMINAL
+# Statuses that count as a technician's current load in the technician picker
+# (WP-F, PO decision Q22): actively being worked on, not waiting or ready.
+TECHNICIAN_LOAD = {"diagnostics", "repair"}
 
 OK = "ok"
 WARN = "warn"  # allowed with a skip warning (docs/02 §2)

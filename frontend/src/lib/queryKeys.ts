@@ -5,6 +5,8 @@ export const queryKeys = {
   health: ["health"] as const,
   dashboard: ["dashboard"] as const,
   users: ["users"] as const,
+  // Under the "orders" prefix, so invalidateOrderViews refreshes it too.
+  technicianLoad: ["orders", "technician-load"] as const,
   assetTypes: ["asset-types"] as const,
   // Prefixes for invalidation only (lib/orderQueries.ts) — never a query's own key.
   allOrders: ["orders"] as const,

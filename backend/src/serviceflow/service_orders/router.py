@@ -373,6 +373,23 @@ def _order_for_line(db: TenantDbDep, tenant: TenantDep, order_id: uuid.UUID) -> 
     return order
 
 
+class TechnicianLoadOut(BaseModel):
+    technician_id: uuid.UUID
+    active_count: int
+
+
+# Registered before /orders/{order_id} so the literal path is never parsed as
+# an order id.
+@router.get("/orders/technician-load")
+def technician_load(db: TenantDbDep, tenant: TenantDep) -> list[TechnicianLoadOut]:
+    """Per-technician count of orders in Диагностика + Ремонт for the
+    technician picker (WP-F, Q22). User names stay with identity's GET /users."""
+    return [
+        TechnicianLoadOut(technician_id=tid, active_count=n)
+        for tid, n in service.technician_load(db, tenant).items()
+    ]
+
+
 @router.get("/orders")
 def list_orders(db: TenantDbDep, tenant: TenantDep, state: str = "open",
                 status_code: str | None = None, technician_id: uuid.UUID | None = None,

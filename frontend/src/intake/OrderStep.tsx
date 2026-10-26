@@ -8,12 +8,10 @@
  * to PromisedDateBlock on the order page instead.
  */
 
-import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { t } from "../i18n/bg";
-import { api } from "../lib/api";
-import { queryKeys } from "../lib/queryKeys";
+import { TechnicianPicker } from "../components/TechnicianPicker";
 import { AccessoriesChecklist } from "./AccessoriesChecklist";
 
 // Cleanup batch Issue 26: integer, >= 0 — mirrors the backend's
@@ -51,13 +49,6 @@ export interface OrderStepValue {
   // address only matters (and only renders) once "courier" is chosen.
   deliveryMethod: DeliveryMethod;
   deliveryAddress: string;
-}
-
-interface UserOut {
-  id: string;
-  name: string;
-  is_owner: boolean;
-  is_active: boolean;
 }
 
 export function OrderStep({
@@ -106,11 +97,6 @@ export function OrderStep({
     onChange((prev) => ({ ...prev, deliveryAddress: defaultDeliveryAddress }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value.deliveryMethod, defaultDeliveryAddress]);
-
-  const { data: users } = useQuery({
-    queryKey: queryKeys.users,
-    queryFn: () => api.get<UserOut[]>("/users"),
-  });
 
   const addPhotos = (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -334,19 +320,11 @@ export function OrderStep({
           <label className="mb-1 block text-sm font-medium text-slate-700">
             {t("intake.technician")}
           </label>
-          <select
-            value={value.technicianId ?? ""}
-            onChange={(e) => {
-              const technicianId = e.target.value || null;
-              onChange((prev) => ({ ...prev, technicianId }));
-            }}
+          <TechnicianPicker
+            value={value.technicianId}
+            onChange={(technicianId) => onChange((prev) => ({ ...prev, technicianId }))}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
-          >
-            <option value="">{t("intake.technician_unassigned")}</option>
-            {(users ?? []).filter((u) => u.is_active).map((u) => (
-              <option key={u.id} value={u.id}>{u.name}</option>
-            ))}
-          </select>
+          />
         </div>
       </div>
 
