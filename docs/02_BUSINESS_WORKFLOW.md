@@ -220,23 +220,19 @@ Six operational widgets, each opening its filtered list/board: Активни п
 (promised date passed, non-terminal) · Днешни задачи · Обади се на клиента (open
 call tasks). No charts, no vanity metrics.
 
-## 16. Kanban
+## 16. Orders list
 
-Columns = working + ready statuses; terminal orders
-leave the board (reachable via search/lists). Card: order № · customer · asset ·
-one-line complaint · technician initials · days-in-status · badges (просрочена,
-приоритет, гаранционна). Filters: technician, priority, overdue. Colors communicate
-urgency only (never the sole signal — badges carry text). Drag-and-drop: permission-
-checked, matrix-validated server-side, optimistic UI with rollback + clear error
-(„Иван премести поръчката преди теб"), approval/rejection prompt when leaving Чака
-клиент, delivery prompt when dropping on Предадена. Non-drag path: status buttons on
-card menu and order screen (tablet/mobile primary). Concurrency: last-write-wins with
-conflict toast + board refresh on focus.
+*(Amended 03.11.2026 — order-workflow-revamp WP-K, Q19/Q19b: Kanban retired.)*
+One table of orders: № · Статус · Клиент · Актив · Техник · Дни в статуса ·
+Обещана дата. Status chips („Всички отворени" + each open status) and
+filters: technician, priority, overdue. Default order: overdue first, then
+longest in status. On phones the same data as stacked cards. The list does
+not change statuses; that happens only on the order page.
 
 ## 17. A Day — Owner (Мария, автосервиз, 6 души)
 
 07:45 отваря таблото: 2 просрочени, 3 готови от >5 дни, 4 задачи „обади се". 08:00
-преглежда Kanban, размества приоритети, назначава новия ремонт на Георги. 09:30 приема
+преглежда поръчките, размества приоритети, назначава новия ремонт на Георги. 09:30 приема
 клиент: намира го по телефона, нов актив (втора кола), поръчка + протокол — 2 мин.
 11:00 одобрение по телефона за скъп ремонт → записва одобрението, мести в Чака части,
 задача „поръчай накладки". 14:00 частите идват → received → Ремонт. 17:30 клиент
@@ -246,7 +242,7 @@ conflict toast + board refresh on focus.
 ## 18. A Day — Worker (Иво, GSM сервиз)
 
 09:00 влиза с PIN на общия компютър. Таблото: 3 негови поръчки, 1 тест за днес. 09:15
-Kanban → първата в Диагностика: оглед, диагноза (дисплей + батерия), оценка 180 €,
+отваря първата поръчка → Диагностика: оглед, диагноза (дисплей + батерия), оценка 180 €,
 маркира „изисква одобрение" → Чака клиент, задача „обади се". 10:30 звъни, клиентът
 одобрява → записва одобрението → Чака части. 11:00 друга поръчка: смяна на дисплей,
 ред труд 60 €, снимки „процес" → Готова. 16:00 нов клиент на гишето: Иво

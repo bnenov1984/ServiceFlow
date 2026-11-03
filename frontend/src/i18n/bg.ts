@@ -422,9 +422,8 @@ export const bg = {
   "order.event_payment_recorded": "Записано е плащане",
   "order.event_payment_refunded": "Записано е възстановяване",
 
-  // --- orders board (docs/15 §6.3) ---
-  "orders.view_kanban": "Табло",
-  "orders.view_list": "Списък",
+  // --- orders table (docs/02 §16, order-workflow-revamp WP-K) ---
+  "orders.filter_status_all": "Всички отворени",
   "orders.filter_technician_all": "Всички техници",
   "orders.filter_priority_all": "Всички приоритети",
   "orders.filter_priority_high": "Само висок приоритет",
@@ -435,7 +434,13 @@ export const bg = {
   "orders.badge_priority": "Приоритет",
   "orders.badge_warranty": "Гаранционна",
   "orders.technician_unassigned": "Без техник",
-  "orders.column_count": "{count}",
+  "orders.column_number": "№",
+  "orders.column_status": "Статус",
+  "orders.column_customer": "Клиент",
+  "orders.column_asset": "Актив",
+  "orders.column_technician": "Техник",
+  "orders.column_days_in_status": "Дни в статуса",
+  "orders.column_promised": "Обещана дата",
 
   // --- dashboard (docs/15 §6.2) ---
   "dashboard.widget_active": "Активни",

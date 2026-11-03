@@ -1,10 +1,17 @@
 import { test, expect, type Page } from '@playwright/test';
 import { enterRepairFlow, getOwnerCredentials, loginAsOwner } from '../support/login';
 
-// Regression for PO bugs #23/#30: a change made in one view (orders list,
+// Regression for PO bugs #23/#30: a change made in one view (order page,
 // intake) must show in the other views immediately — not after the global
 // 30 s staleTime (main.tsx) runs out. Every step below navigates client-side
 // on purpose: a full page load starts with an empty cache and hides the bug.
+//
+// order-workflow-revamp WP-K retired the orders list's own status buttons —
+// status changes happen only on the order page now (Q19b), so the #23/#30
+// cases (originally "changed from the list, stale on the order page") are
+// re-pointed to the only direction that still exists: changed on the order
+// page, must not be stale in the orders table. Same shared
+// `invalidateOrderViews` fix, same regression risk, opposite direction.
 
 async function createOrder(page: Page): Promise<string> {
   const unique = Date.now();
@@ -24,11 +31,10 @@ async function createOrder(page: Page): Promise<string> {
 
 async function openOrdersList(page: Page) {
   await page.getByRole('link', { name: '← Поръчки' }).click();
-  await page.getByRole('button', { name: 'Списък' }).click();
 }
 
-const listRow = (page: Page, number: string) =>
-  page.getByRole('listitem').filter({ has: page.getByRole('link', { name: number, exact: true }) });
+const tableRow = (page: Page, number: string) =>
+  page.getByRole('row').filter({ has: page.getByRole('link', { name: `№ ${number}`, exact: true }) });
 
 test.beforeEach(async ({ page }) => {
   const { email, password } = getOwnerCredentials();
@@ -39,47 +45,33 @@ test.beforeEach(async ({ page }) => {
 test('a new order shows in the orders list right after intake', async ({ page }) => {
   const number = await createOrder(page);
   await openOrdersList(page);
-  await expect(listRow(page, number)).toBeVisible({ timeout: 5000 });
+  await expect(tableRow(page, number)).toBeVisible({ timeout: 5000 });
 });
 
-test('a status changed from the orders list shows on the order page (#23)', async ({ page }) => {
+test('a status changed on the order page shows in the orders list (#23)', async ({ page }) => {
   const number = await createOrder(page);
-  // Reload so the list is fetched fresh below — this test is about the order
-  // page's cache only, not the intake → list case covered above.
-  await page.reload();
-  await expect(page.getByText('Приета', { exact: true })).toBeVisible();
-  await openOrdersList(page);
-
-  await listRow(page, number).getByRole('button', { name: 'Диагностика', exact: true }).click();
+  await page.getByRole('button', { name: 'Промени статус' }).click();
+  await page.getByRole('menuitem', { name: 'Диагностика' }).click();
   await page.waitForLoadState('networkidle');
-  await page.getByRole('link', { name: number, exact: true }).click();
-  // Wait for the order page itself, or the status check below races the list
-  // (whose row buttons carry the same status labels).
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText(number);
 
-  await expect(page.getByText('Диагностика', { exact: true })).toBeVisible({ timeout: 5000 });
-  await expect(page.getByText('Приета', { exact: true })).not.toBeVisible();
+  await openOrdersList(page);
+  // Navigated client-side straight from the order page on purpose — a full
+  // page load starts with an empty cache and would hide the bug.
+  await expect(tableRow(page, number)).toContainText('Диагностика', { timeout: 5000 });
 });
 
-test('Чака клиент → Чака части from the orders list shows on the order page (#30)', async ({ page }) => {
+test('Чака клиент → Чака части on the order page shows in the orders list (#30)', async ({ page }) => {
   const number = await createOrder(page);
   for (const status of ['Диагностика', 'Чака клиент']) {
     await page.getByRole('button', { name: 'Промени статус' }).click();
     await page.getByRole('menuitem', { name: status }).click();
     await page.waitForLoadState('networkidle');
   }
-  await page.reload();
-  await expect(page.getByText('Чака клиент', { exact: true })).toBeVisible();
-  await openOrdersList(page);
-
-  await listRow(page, number).getByRole('button', { name: 'Чака части', exact: true }).click();
+  await page.getByRole('button', { name: 'Промени статус' }).click();
+  await page.getByRole('menuitem', { name: 'Чака части' }).click();
   await page.getByRole('button', { name: 'Запиши одобрение' }).click();
   await page.waitForLoadState('networkidle');
-  await page.getByRole('link', { name: number, exact: true }).click();
-  // Wait for the order page itself, or the status check below races the list
-  // (whose row buttons carry the same status labels).
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText(number);
 
-  await expect(page.getByText('Чака части', { exact: true })).toBeVisible({ timeout: 5000 });
-  await expect(page.getByText('Чака клиент', { exact: true })).not.toBeVisible();
+  await openOrdersList(page);
+  await expect(tableRow(page, number)).toContainText('Чака части', { timeout: 5000 });
 });
