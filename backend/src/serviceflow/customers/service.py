@@ -87,16 +87,51 @@ def find_duplicates_by_phone(db: Session, ctx: TenantContext, phone: str,
     return list(db.scalars(stmt))
 
 
+def find_duplicate_individual_by_phone(db: Session, ctx: TenantContext, phone: str,
+                                        exclude_id: uuid.UUID | None = None) -> Customer | None:
+    """order-workflow-revamp WP-B (Q7): an existing, non-archived (incl.
+    non-anonymized — anonymize() always sets archived_at too) INDIVIDUAL
+    with the same normalized phone. A company sharing a phone with anyone
+    stays allowed (#4/Q4b) — only individual-vs-individual blocks."""
+    for match in find_duplicates_by_phone(db, ctx, phone, exclude_id):
+        if not match.is_company:
+            return match
+    return None
+
+
+def find_duplicate_company_by_eik(db: Session, ctx: TenantContext, eik: str,
+                                   exclude_id: uuid.UUID | None = None) -> Customer | None:
+    """order-workflow-revamp WP-B (Q8): an existing, non-archived company
+    with the same (already-normalized — see customers/router.py's
+    CustomerCompanyRequisites) ЕИК."""
+    stmt = scoped(select(Customer), Customer, ctx).where(
+        Customer.is_company.is_(True),
+        Customer.archived_at.is_(None),
+        Customer.company_requisites["eik"].astext == eik,
+    )
+    if exclude_id is not None:
+        stmt = stmt.where(Customer.id != exclude_id)
+    return db.scalar(stmt)
+
+
 def create(db: Session, ctx: TenantContext, **fields: object) -> Customer:
     is_company = fields.get("is_company", False)
     vat_registered = fields.get("vat_registered")
     company_requisites = fields.get("company_requisites")
+    phone = fields.get("phone")
     assert isinstance(is_company, bool)
     assert vat_registered is None or isinstance(vat_registered, bool)
     assert company_requisites is None or isinstance(company_requisites, dict)
+    assert isinstance(phone, str)
     company_requisites = _derive_bg_vat_number(company_requisites, vat_registered)
     fields["company_requisites"] = company_requisites
     _validate_vat_identity(is_company, vat_registered, company_requisites)
+
+    if not is_company and find_duplicate_individual_by_phone(db, ctx, phone):
+        raise CustomerError("errors.customers.phone_taken", status=409)
+    eik = (company_requisites or {}).get("eik") if is_company else None
+    if eik and find_duplicate_company_by_eik(db, ctx, eik):
+        raise CustomerError("errors.customers.eik_taken", status=409)
 
     customer = Customer(company_id=ctx.company_id, **fields)
     _refresh_shadows(customer)
@@ -152,6 +187,19 @@ def update(db: Session, ctx: TenantContext, customer: Customer,
     _validate_vat_identity(
         customer.is_company, customer.vat_registered, customer.company_requisites,
     )
+    # order-workflow-revamp WP-B (Q7b): uniqueness is re-checked only when
+    # the keyed field itself is part of this patch, never against dormant
+    # pre-existing data an unrelated patch happens to merge against.
+    phone_dup = (
+        find_duplicate_individual_by_phone(db, ctx, customer.phone, exclude_id=customer.id)
+        if "phone" in fields and not customer.is_company else None
+    )
+    if phone_dup:
+        raise CustomerError("errors.customers.phone_taken", status=409)
+    if ("company_requisites" in fields or "is_company" in fields) and customer.is_company:
+        eik = (customer.company_requisites or {}).get("eik")
+        if eik and find_duplicate_company_by_eik(db, ctx, eik, exclude_id=customer.id):
+            raise CustomerError("errors.customers.eik_taken", status=409)
     _refresh_shadows(customer)
     customer.row_version += 1
     db.commit()

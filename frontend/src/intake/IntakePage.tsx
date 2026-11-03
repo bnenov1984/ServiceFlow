@@ -32,6 +32,11 @@ interface OrderOut {
 }
 
 interface CustomerDetailOut {
+  is_company: boolean;
+  // order-workflow-revamp WP-B (Q20b): the main address, used as the
+  // courier-prefill fallback when delivery_address is null.
+  address: string | null;
+  company_requisites: { address: string | null } | null;
   delivery_address: { address: string } | null;
 }
 
@@ -197,7 +202,13 @@ export function IntakePage() {
           <OrderStep
             value={orderValue}
             assetTypeCode={asset.assetTypeCode}
-            defaultDeliveryAddress={customerDetail?.delivery_address?.address ?? null}
+            defaultDeliveryAddress={
+              customerDetail?.delivery_address?.address
+              ?? (customerDetail?.is_company
+                  ? customerDetail?.company_requisites?.address
+                  : customerDetail?.address)
+              ?? null
+            }
             onChange={setOrderValue}
             onSubmit={() => void handleSubmit()}
             submitting={submitting}

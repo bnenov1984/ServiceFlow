@@ -441,9 +441,22 @@ def create_order(body: OrderIn, db: TenantDbDep, tenant: TenantDep) -> OrderOut:
     # order with none given falls back to the customer's own default — a
     # plain copy, taken once, here, never a live reference (a later edit to
     # Customer.delivery_address must not retroactively change this order).
+    # order-workflow-revamp WP-B (Q20b): no default on file any more also
+    # means "same as the main address" (the checkbox-off state), not "no
+    # address" — fall back one step further to the customer's own main
+    # address (individual: Customer.address; company: company_requisites.
+    # address) before giving up.
     delivery_address = body.delivery_address.model_dump() if body.delivery_address else None
-    if body.delivery_method == "courier" and delivery_address is None and customer.delivery_address:
-        delivery_address = dict(customer.delivery_address)
+    if body.delivery_method == "courier" and delivery_address is None:
+        if customer.delivery_address:
+            delivery_address = dict(customer.delivery_address)
+        else:
+            main_address = (
+                (customer.company_requisites or {}).get("address")
+                if customer.is_company else customer.address
+            )
+            if main_address:
+                delivery_address = {"address": main_address}
 
     try:
         order = service.create(

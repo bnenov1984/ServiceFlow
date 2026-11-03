@@ -3,10 +3,22 @@ from an order's part/labor lines via service_orders' public contract, list,
 detail, and draft line replacement. No issue/annul/reissue/PDF/VAT — those
 are a later slice (see backend/src/serviceflow/commercial/models.py)."""
 
+import itertools
 import os
 
 import pytest
 from fastapi.testclient import TestClient
+
+# order-workflow-revamp WP-B (Q7): a second individual customer with the
+# same phone is now blocked, so `_order()` — called multiple times per test
+# with no caller-supplied uniqueness — needs a phone that's guaranteed
+# distinct on every call, never a fixed literal.
+_phone_seq = itertools.count(100000)
+
+
+def _unique_phone() -> str:
+    return f"0888{next(_phone_seq)}"
+
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("SERVICEFLOW_TEST_DATABASE_URL") is None,
@@ -28,7 +40,7 @@ def _login(client: TestClient, company: str = "Сервиз А",
 
 def _order(client: TestClient, h: dict[str, str]) -> str:
     cid = client.post("/api/v1/customers", headers=h,
-                      json={"name": "Иван", "phone": "0888111222"}).json()["id"]
+                      json={"name": "Иван", "phone": _unique_phone()}).json()["id"]
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
         "asset_type_code": "phone", "field_values": {"brand": "Apple"},
     }).json()["id"]

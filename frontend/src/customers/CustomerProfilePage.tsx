@@ -15,6 +15,7 @@ import { ApiError, api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
 import { ContactsSection } from "../order/ContactsSection";
 import { AnonymizeDialog } from "./AnonymizeDialog";
+import { CustomerAddressSection } from "./CustomerAddressSection";
 import { CustomerAssetsSection } from "./CustomerAssetsSection";
 import { CustomerCompanyDetailsSection } from "./CustomerCompanyDetailsSection";
 import { CustomerDeliveryAddressSection } from "./CustomerDeliveryAddressSection";
@@ -25,6 +26,7 @@ interface DuplicateHit {
   id: string;
   name: string;
   phone: string;
+  is_company: boolean;
 }
 
 export function CustomerProfilePage() {
@@ -45,12 +47,19 @@ export function CustomerProfilePage() {
     retry: (count, err) => !(err instanceof ApiError && err.status === 404) && count < 2,
   });
 
+  // order-workflow-revamp WP-B (Q4b): no duplicate-phone hint for a company
+  // customer, or for an individual-vs-company clash — individual-vs-
+  // individual duplicates are now blocked at creation (Q7), so this stays
+  // only as a heads-up for *legacy* individual duplicates that predate that
+  // rule (enforcement is forward-only, never retroactive).
   const { data: phoneMatches } = useQuery({
     queryKey: queryKeys.customers(customer?.phone ?? ""),
     queryFn: () => api.get<DuplicateHit[]>(`/customers?q=${encodeURIComponent(customer!.phone)}`),
-    enabled: !!customer && !customer.anonymized,
+    enabled: !!customer && !customer.anonymized && !customer.is_company,
   });
-  const duplicates = (phoneMatches ?? []).filter((c) => c.id !== customerId);
+  const duplicates = customer?.is_company
+    ? []
+    : (phoneMatches ?? []).filter((c) => c.id !== customerId && !c.is_company);
 
   const runAnonymize = async () => {
     setAnonymizeSubmitting(true);
@@ -162,7 +171,11 @@ export function CustomerProfilePage() {
           />
         </div>
         <div className="flex flex-col gap-4">
-          <CustomerCompanyDetailsSection customerId={customerId} customer={customer} />
+          {customer.is_company ? (
+            <CustomerCompanyDetailsSection customerId={customerId} customer={customer} />
+          ) : (
+            <CustomerAddressSection customerId={customerId} customer={customer} />
+          )}
           <CustomerDeliveryAddressSection customerId={customerId} customer={customer} />
           <ContactsSection customerId={customerId} />
         </div>

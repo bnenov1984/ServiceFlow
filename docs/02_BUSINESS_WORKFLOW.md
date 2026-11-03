@@ -255,7 +255,7 @@ PIN-out.
 |----------|------------|
 | Customer unreachable | Call task + escalating dashboard aging on Готова/Чака клиент; Owner archive-with-note as last resort |
 | Lost/misplaced device | Order № on intake protocol; (labels V1.5); search by any identifier |
-| Duplicate customer | Normalized-phone warning at creation; merge tool V1.5 |
+| Duplicate customer | *(Amended 03.11.2026 — WP-B, Q7/Q8)* Individuals: normalized phone unique — blocked inline with „Избери съществуващия"; companies: ЕИК unique — blocked inline |
 | Duplicate order | Same asset + open order warning at creation |
 | Wrong customer on order | Editable until first status change; afterwards Анулирана + recreate (history stays honest) |
 | Duplicate/wrong invoice | Annul + reissue; gapless numbering preserved |

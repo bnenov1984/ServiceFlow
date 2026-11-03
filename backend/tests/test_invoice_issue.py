@@ -6,6 +6,7 @@ else (mixed VAT rates, incomplete/unknown-VAT-status company buyer) must
 fail deterministically before number allocation. See commercial/service.py's
 `issue()` for the exact transaction algorithm this exercises."""
 
+import itertools
 import os
 import threading
 import uuid as uuid_mod
@@ -13,6 +14,17 @@ import uuid as uuid_mod
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
+
+# order-workflow-revamp WP-B (Q7): a second individual customer with the
+# same phone is now blocked, so `_order()` — called multiple times per test
+# with no caller-supplied uniqueness — needs a phone that's guaranteed
+# distinct on every call, never a fixed literal.
+_phone_seq = itertools.count(100000)
+
+
+def _unique_phone() -> str:
+    return f"0888{next(_phone_seq)}"
+
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("SERVICEFLOW_TEST_DATABASE_URL") is None,
@@ -56,7 +68,7 @@ def _order(client: TestClient, h: dict[str, str], *,
           company_address: str | None = "гр. Пловдив",
           company_eik: str | None = VALID_EIK,
           vat_number: str | None = None) -> str:
-    payload: dict[str, object] = {"name": customer_name, "phone": "0888111222"}
+    payload: dict[str, object] = {"name": customer_name, "phone": _unique_phone()}
     if is_company:
         payload["is_company"] = True
         payload["vat_registered"] = vat_registered

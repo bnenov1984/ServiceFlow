@@ -64,7 +64,7 @@ describe("NewInvoicePage — Wave 6 Issue 30 (manual invoice creation)", () => {
     vi.mocked(api.post).mockImplementation((path: string) => {
       if (path === "/customers") {
         return Promise.resolve({
-          id: "cust-2", name: "Нов Клиент", phone: "0888999888", duplicate_ids: [],
+          id: "cust-2", name: "Нов Клиент", phone: "0888999888",
         }) as never;
       }
       return Promise.resolve({

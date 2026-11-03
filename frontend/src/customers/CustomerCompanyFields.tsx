@@ -103,6 +103,7 @@ export function CustomerCompanyFields({
   requisites,
   onRequisitesChange,
   showTypeToggle = true,
+  onEikBlur,
 }: {
   isCompany: boolean;
   onIsCompanyChange: (isCompany: boolean) => void;
@@ -112,6 +113,11 @@ export function CustomerCompanyFields({
    * CustomerTypeToggle above — and renders this with `showTypeToggle={false}`
    * so the two don't render side by side. */
   showTypeToggle?: boolean;
+  /** order-workflow-revamp WP-B (Q8): the create flow's inline duplicate-ЕИК
+   * pre-check — optional, so the profile edit section (which relies on the
+   * save-time rejection instead, same as every other field there) doesn't
+   * need to wire anything new. */
+  onEikBlur?: () => void;
 }) {
   // Wave 5 Issue 11/12: prefill (never force) the VAT number once VAT is
   // explicitly registered and the EIK on file already structurally looks
@@ -173,8 +179,13 @@ export function CustomerCompanyFields({
             >
               {t("company.field_address")}
             </label>
-            <input
+            {/* order-workflow-revamp WP-B (Q20): free-text, multi-line — a
+             * newline is just a character in the stored string, no schema
+             * change; invoice/protocol PDF rendering must preserve line
+             * breaks wherever this value is printed. */}
+            <textarea
               id="customer-company-address"
+              rows={2}
               value={requisites.address}
               onChange={(e) => onRequisitesChange({ ...requisites, address: e.target.value })}
               maxLength={500}
@@ -192,6 +203,7 @@ export function CustomerCompanyFields({
               id="customer-company-eik"
               value={requisites.eik}
               onChange={(e) => onRequisitesChange({ ...requisites, eik: e.target.value })}
+              onBlur={onEikBlur}
               maxLength={20}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
             />

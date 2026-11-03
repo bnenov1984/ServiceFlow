@@ -105,6 +105,11 @@ class CustomerIn(BaseModel):
     # payload is expected to resolve on its own. See Customer.vat_registered.
     vat_registered: bool | None = None
     company_requisites: CustomerCompanyRequisites | None = None
+    # order-workflow-revamp WP-B (Q20): an individual's own optional main
+    # address — free-text, multi-line (newlines are just characters in a
+    # str, no separate "multi-line" validation needed). Meaningful only for
+    # is_company=False; a company's main address is company_requisites.address.
+    address: str | None = Field(default=None, max_length=1000)
     delivery_address: CustomerDeliveryAddress | None = None
     notes: str = Field(default="", max_length=5000)
 
@@ -117,6 +122,7 @@ class CustomerPatch(BaseModel):
     is_company: bool | None = None
     vat_registered: bool | None = None
     company_requisites: CustomerCompanyRequisites | None = None
+    address: str | None = Field(default=None, max_length=1000)
     delivery_address: CustomerDeliveryAddress | None = None
     notes: str | None = Field(default=None, max_length=5000)
 
@@ -130,15 +136,15 @@ class CustomerOut(BaseModel):
     is_company: bool
     vat_registered: bool | None
     company_requisites: CustomerCompanyRequisites | None
+    address: str | None
     delivery_address: CustomerDeliveryAddress | None
     notes: str
     archived: bool
     anonymized: bool
     row_version: int
-    duplicate_ids: list[uuid.UUID] = []
 
     @staticmethod
-    def of(c: Customer, duplicate_ids: list[uuid.UUID] | None = None) -> "CustomerOut":
+    def of(c: Customer) -> "CustomerOut":
         # Built via .get() rather than **c.company_requisites so a read
         # never breaks on an unexpected stored key — it's dropped from the
         # response, not deleted from the row (matches _company_requisites_out's
@@ -162,10 +168,9 @@ class CustomerOut(BaseModel):
         return CustomerOut(
             id=c.id, name=c.name, phone=c.phone, phone2=c.phone2, email=c.email,
             is_company=c.is_company, vat_registered=c.vat_registered,
-            company_requisites=requisites, delivery_address=delivery_address,
+            company_requisites=requisites, address=c.address, delivery_address=delivery_address,
             notes=c.notes, archived=c.archived_at is not None,
             anonymized=c.anonymized_at is not None, row_version=c.row_version,
-            duplicate_ids=duplicate_ids or [],
         )
 
 
@@ -200,16 +205,46 @@ def list_customers(db: TenantDbDep, tenant: TenantDep, q: str | None = None,
     ]
 
 
+class DuplicateCheckOut(BaseModel):
+    """order-workflow-revamp WP-B (Q7/Q8): the inline-on-blur pre-check — a
+    convenience the UI calls before submit so the rejection can be shown as
+    a field-level error rather than only after a round trip through POST/
+    PATCH. Never the enforcement point itself; service.create()/update()
+    independently re-check and are what actually blocks a save (this
+    endpoint is read-only, no CSRF/subscription gate needed)."""
+
+    duplicate: "DuplicateCustomerOut | None"
+
+
+class DuplicateCustomerOut(BaseModel):
+    id: uuid.UUID
+    name: str
+
+
+@router.get("/phone-check")
+def check_phone(phone: str, db: TenantDbDep, tenant: TenantDep) -> DuplicateCheckOut:
+    match = service.find_duplicate_individual_by_phone(db, tenant, phone)
+    return DuplicateCheckOut(
+        duplicate=DuplicateCustomerOut(id=match.id, name=match.name) if match else None,
+    )
+
+
+@router.get("/eik-check")
+def check_eik(eik: str, db: TenantDbDep, tenant: TenantDep) -> DuplicateCheckOut:
+    match = service.find_duplicate_company_by_eik(db, tenant, normalize_eik(eik))
+    return DuplicateCheckOut(
+        duplicate=DuplicateCustomerOut(id=match.id, name=match.name) if match else None,
+    )
+
+
 @router.post("", dependencies=[Depends(require_csrf), Depends(require_subscription_ok)],
             status_code=201)
 def create_customer(body: CustomerIn, db: TenantDbDep, tenant: TenantDep) -> CustomerOut:
-    # Duplicate phones warn, never block (docs/02 B3): the hint rides on the response.
-    duplicates = service.find_duplicates_by_phone(db, tenant, body.phone)
     try:
         customer = service.create(db, tenant, **body.model_dump())
     except service.CustomerError as e:
         raise _customer_error(e) from e
-    return CustomerOut.of(customer, [d.id for d in duplicates])
+    return CustomerOut.of(customer)
 
 
 @router.get("/{customer_id}")
@@ -236,11 +271,7 @@ def patch_customer(customer_id: uuid.UUID, body: CustomerPatch, db: TenantDbDep,
         customer = service.update(db, tenant, customer, fields)
     except service.CustomerError as e:
         raise _customer_error(e) from e
-    duplicates = (
-        service.find_duplicates_by_phone(db, tenant, customer.phone, exclude_id=customer.id)
-        if "phone" in fields else []
-    )
-    return CustomerOut.of(customer, [d.id for d in duplicates])
+    return CustomerOut.of(customer)
 
 
 @router.post("/{customer_id}/archive",

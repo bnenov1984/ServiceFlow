@@ -914,6 +914,90 @@
         }
       }
     },
+    "/api/v1/customers/phone-check": {
+      "get": {
+        "tags": [
+          "customers"
+        ],
+        "summary": "Check Phone",
+        "operationId": "check_phone_api_v1_customers_phone_check_get",
+        "parameters": [
+          {
+            "name": "phone",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Phone"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DuplicateCheckOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/customers/eik-check": {
+      "get": {
+        "tags": [
+          "customers"
+        ],
+        "summary": "Check Eik",
+        "operationId": "check_eik_api_v1_customers_eik_check_get",
+        "parameters": [
+          {
+            "name": "eik",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Eik"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DuplicateCheckOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/customers/{customer_id}": {
       "get": {
         "tags": [
@@ -1454,6 +1538,32 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orders/technician-load": {
+      "get": {
+        "tags": [
+          "orders"
+        ],
+        "summary": "Technician Load",
+        "description": "Per-technician count of orders in Диагностика + Ремонт for the\ntechnician picker (WP-F, Q22). User names stay with identity's GET /users.",
+        "operationId": "technician_load_api_v1_orders_technician_load_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TechnicianLoadOut"
+                  },
+                  "type": "array",
+                  "title": "Response Technician Load Api V1 Orders Technician Load Get"
                 }
               }
             }
@@ -6193,6 +6303,18 @@
               }
             ]
           },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
           "delivery_address": {
             "anyOf": [
               {
@@ -6279,6 +6401,17 @@
               }
             ]
           },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
           "delivery_address": {
             "anyOf": [
               {
@@ -6305,15 +6438,6 @@
             "type": "integer",
             "title": "Row Version"
           },
-          "duplicate_ids": {
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "type": "array",
-            "title": "Duplicate Ids",
-            "default": []
-          },
           "active_orders_count": {
             "type": "integer",
             "title": "Active Orders Count"
@@ -6329,6 +6453,7 @@
           "is_company",
           "vat_registered",
           "company_requisites",
+          "address",
           "delivery_address",
           "notes",
           "archived",
@@ -6401,6 +6526,17 @@
               }
             ]
           },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
           "delivery_address": {
             "anyOf": [
               {
@@ -6426,15 +6562,6 @@
           "row_version": {
             "type": "integer",
             "title": "Row Version"
-          },
-          "duplicate_ids": {
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "type": "array",
-            "title": "Duplicate Ids",
-            "default": []
           }
         },
         "type": "object",
@@ -6447,6 +6574,7 @@
           "is_company",
           "vat_registered",
           "company_requisites",
+          "address",
           "delivery_address",
           "notes",
           "archived",
@@ -6538,6 +6666,18 @@
                 "type": "null"
               }
             ]
+          },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
           },
           "delivery_address": {
             "anyOf": [
@@ -6821,6 +6961,45 @@
           "approval"
         ],
         "title": "DiagnosisOut"
+      },
+      "DuplicateCheckOut": {
+        "properties": {
+          "duplicate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DuplicateCustomerOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "duplicate"
+        ],
+        "title": "DuplicateCheckOut",
+        "description": "order-workflow-revamp WP-B (Q7/Q8): the inline-on-blur pre-check — a\nconvenience the UI calls before submit so the rejection can be shown as\na field-level error rather than only after a round trip through POST/\nPATCH. Never the enforcement point itself; service.create()/update()\nindependently re-check and are what actually blocks a save (this\nendpoint is read-only, no CSRF/subscription gate needed)."
+      },
+      "DuplicateCustomerOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "DuplicateCustomerOut"
       },
       "EmployeeIn": {
         "properties": {
@@ -9741,6 +9920,25 @@
         },
         "type": "object",
         "title": "TaskPatch"
+      },
+      "TechnicianLoadOut": {
+        "properties": {
+          "technician_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Technician Id"
+          },
+          "active_count": {
+            "type": "integer",
+            "title": "Active Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "technician_id",
+          "active_count"
+        ],
+        "title": "TechnicianLoadOut"
       },
       "TimelineEventOut": {
         "properties": {

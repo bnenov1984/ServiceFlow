@@ -31,6 +31,10 @@ export interface CustomerDetail {
   is_company: boolean;
   vat_registered: boolean | null;
   company_requisites: CustomerCompanyRequisites | null;
+  // order-workflow-revamp WP-B (Q20): an individual's own optional main
+  // address — meaningful only when !is_company (a company's main address is
+  // company_requisites.address instead).
+  address: string | null;
   delivery_address: CustomerDeliveryAddress | null;
   archived: boolean;
   anonymized: boolean;

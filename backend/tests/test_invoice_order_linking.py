@@ -36,9 +36,10 @@ def _ready_seller(client: TestClient, h: dict[str, str], eik: str = VALID_EIK) -
     assert resp.status_code == 200, resp.text
 
 
-def _customer(client: TestClient, h: dict[str, str], *, name: str = "Иван Петров") -> str:
+def _customer(client: TestClient, h: dict[str, str], *, name: str = "Иван Петров",
+              phone: str = "0888111222") -> str:
     resp = client.post("/api/v1/customers", headers=h,
-                       json={"name": name, "phone": "0888111222"})
+                       json={"name": name, "phone": phone})
     assert resp.status_code == 201, resp.text
     return str(resp.json()["id"])
 
@@ -201,7 +202,7 @@ def test_reject_linking_an_order_generated_invoice(client: TestClient) -> None:
 def test_reject_if_customer_mismatch(client: TestClient) -> None:
     h = _login(client)
     cid_invoice = _customer(client, h, name="Клиент А")
-    cid_order = _customer(client, h, name="Клиент Б")
+    cid_order = _customer(client, h, name="Клиент Б", phone="0888111333")
     invoice_id = _manual_draft(client, h, cid_invoice)
     order_id = _order(client, h, cid_order)
 

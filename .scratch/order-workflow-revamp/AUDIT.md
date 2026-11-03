@@ -501,3 +501,37 @@ section — the rest of that proposal belongs to WP-C/H, not yet applied);
 `order-status-cache.spec.ts` re-pointed to the only direction that still
 exists (status changed on the order page → list must not be stale) since
 list-driven status changes no longer exist.
+
+WP-B (customer intake rules; #2–#6/#14, Q4b/Q7/Q7b/Q8/Q20/Q20b) implemented
+03.11.2026. Backend: migration 0032 (`customers.address`, individual's own
+main address); `customers.service` blocks a second individual on the same
+normalized phone and a second company on the same ЕИК, at create and at
+update-of-the-keyed-field (GDPR-anonymized excluded, since anonymize()
+always archives too); two read-only pre-check endpoints
+(`GET /customers/phone-check`, `/eik-check`) for the inline on-blur UX; the
+old non-blocking `duplicate_ids` hint mechanism on `POST`/`PATCH
+/customers` is retired (superseded — see below); `service_orders`'s
+courier-address fallback now falls one step further to the customer's own
+main address when `delivery_address` is unset. Frontend: `NewCustomerForm`
+gets an individual main-address field, a company address `<textarea>`
+(multi-line, Q20), and on-blur phone/ЕИК duplicate pre-checks with a
+resolve-to-existing action (`onExistingFound` — CustomerStep resolves
+directly like a search hit; the standalone NewCustomerPage falls back to a
+plain profile link); `CustomerDeliveryAddressSection` is now checkbox-gated
+("Адресът за доставка е различен", Q20b) and its read-only view falls back
+to showing the main address (not stored, read-time only) when unset; new
+`CustomerAddressSection` for an individual's own address on the profile
+page. docs/01 Customer Lifecycle + docs/02 §19 "Duplicate customer" row
+amended per `proposal-docs01-02-data-rules.md`'s already-approved text
+(only the customer-duplicate portion — the Asset/vehicle and mileage rows
+in that same proposal belong to WP-C/D, not yet applied).
+
+**Real fallout found and fixed, not a design gap**: ~13 existing backend
+tests across 6 files (`test_invoice_annul.py`, `test_invoice_issue.py`,
+`test_invoice_list.py`, `test_invoice_order_linking.py`, `test_invoices.py`,
+`test_manual_invoice.py`) had local `_order()`/`_customer()` test helpers
+that created every test customer with the same hard-coded phone, relying on
+the old "duplicate phone never blocks" behavior — now correctly rejected.
+Fixed by giving each helper a guaranteed-unique phone per call (an
+`itertools.count()`-backed generator in each file, since several call these
+helpers in loops with no caller-supplied uniqueness to thread through).

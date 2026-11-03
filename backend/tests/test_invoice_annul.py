@@ -5,11 +5,23 @@ touches the frozen seller/buyer/lines/net/vat/gross, never populates
 annuls_invoice_id (reserved for a future reissue-linkage feature), never
 touches any Payment. See commercial/service.py's `annul()`."""
 
+import itertools
 import os
 import uuid as uuid_mod
 
 import pytest
 from fastapi.testclient import TestClient
+
+# order-workflow-revamp WP-B (Q7): a second individual customer with the
+# same phone is now blocked, so `_order()` — called multiple times per test
+# with no caller-supplied uniqueness — needs a phone that's guaranteed
+# distinct on every call, never a fixed literal.
+_phone_seq = itertools.count(100000)
+
+
+def _unique_phone() -> str:
+    return f"0888{next(_phone_seq)}"
+
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("SERVICEFLOW_TEST_DATABASE_URL") is None,
@@ -41,7 +53,7 @@ def _ready_seller(client: TestClient, h: dict[str, str], eik: str = VALID_EIK) -
 def _order(client: TestClient, h: dict[str, str], *,
           customer_name: str = "Иван Петров") -> str:
     cid = client.post("/api/v1/customers", headers=h, json={
-        "name": customer_name, "phone": "0888111222",
+        "name": customer_name, "phone": _unique_phone(),
     }).json()["id"]
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
         "asset_type_code": "phone", "field_values": {"brand": "Apple"},

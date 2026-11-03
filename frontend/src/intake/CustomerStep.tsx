@@ -1,8 +1,13 @@
 /**
  * Стъпка 1 КЛИЕНТ (docs/15 §6.4): phone-first search → select, or inline
- * create with a non-blocking duplicate hint. Customer is created eagerly on
- * confirm (not deferred to final submit) so the duplicate hint from the
- * create response can surface immediately, per §6.4's own requirement.
+ * create. Customer is created eagerly on confirm (not deferred to final
+ * submit), per §6.4's own requirement.
+ *
+ * order-workflow-revamp WP-B (Q7/Q8): a duplicate phone (individual) or ЕИК
+ * (company) is now blocked at creation, not just hinted afterward — the old
+ * post-create "duplicate phone" banner is gone. When NewCustomerForm's own
+ * inline pre-check finds an existing match, it resolves straight to that
+ * customer here, same as picking a search hit.
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -16,7 +21,6 @@ export interface ResolvedCustomer {
   id: string;
   name: string;
   phone: string;
-  duplicateWarning?: string;
 }
 
 interface CustomerHit {
@@ -71,21 +75,12 @@ export function CustomerStep({
             {t("intake.change")}
           </button>
         </div>
-        {resolved.duplicateWarning && (
-          <p className="mt-2 text-sm text-amber-700" role="status">
-            {resolved.duplicateWarning}
-          </p>
-        )}
       </div>
     );
   }
 
   const handleCreated = (created: CreatedCustomer) => {
-    onResolved({
-      id: created.id, name: created.name, phone: created.phone,
-      duplicateWarning: created.duplicate_ids.length > 0
-        ? t("intake.duplicate_phone_hint") : undefined,
-    });
+    onResolved({ id: created.id, name: created.name, phone: created.phone });
   };
 
   return (
@@ -135,6 +130,7 @@ export function CustomerStep({
           initialPhone={createInitialPhone}
           submitLabel={t("intake.continue")}
           onCreated={handleCreated}
+          onExistingFound={onResolved}
           onCancel={() => setMode("search")}
         />
       )}

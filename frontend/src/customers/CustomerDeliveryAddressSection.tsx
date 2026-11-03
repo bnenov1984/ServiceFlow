@@ -1,9 +1,14 @@
 /**
- * CustomerDeliveryAddressSection (Wave 5 Issue 12): ONE optional default
- * delivery address, individual or company customer alike — deliberately
- * separate from CustomerCompanyDetailsSection (which is scoped to
- * is_company/company_requisites only, the registered/legal address). Same
- * view/edit-in-place idiom.
+ * CustomerDeliveryAddressSection (Wave 5 Issue 12; checkbox semantics from
+ * order-workflow-revamp WP-B, Q20b): ONE optional default delivery address,
+ * individual or company customer alike — deliberately separate from
+ * CustomerCompanyDetailsSection/CustomerAddressSection (the main address).
+ *
+ * "Адресът за доставка е различен" unchecked means delivery resolves to the
+ * main address *at read time* — `delivery_address` is stored as null, never
+ * a copy of the main address, so a later edit to the main address is always
+ * reflected (same read-time-fallback contract service_orders/router.py's
+ * courier prefill uses at order creation).
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -13,6 +18,10 @@ import { ApiError, api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
 import type { CustomerDetail } from "./types";
 
+function mainAddressOf(customer: CustomerDetail): string | null {
+  return customer.is_company ? customer.company_requisites?.address ?? null : customer.address;
+}
+
 export function CustomerDeliveryAddressSection({
   customerId,
   customer,
@@ -21,12 +30,15 @@ export function CustomerDeliveryAddressSection({
   customer: CustomerDetail;
 }) {
   const [editing, setEditing] = useState(false);
+  const [different, setDifferent] = useState(customer.delivery_address !== null);
   const [address, setAddress] = useState(customer.delivery_address?.address ?? "");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const queryClient = useQueryClient();
+  const mainAddress = mainAddressOf(customer);
 
   const startEditing = () => {
+    setDifferent(customer.delivery_address !== null);
     setAddress(customer.delivery_address?.address ?? "");
     setError(null);
     setEditing(true);
@@ -37,7 +49,7 @@ export function CustomerDeliveryAddressSection({
     setError(null);
     try {
       await api.patch(`/customers/${customerId}`, {
-        delivery_address: address.trim() ? { address: address.trim() } : null,
+        delivery_address: different && address.trim() ? { address: address.trim() } : null,
       });
       await queryClient.invalidateQueries({ queryKey: queryKeys.customer(customerId) });
       setEditing(false);
@@ -67,21 +79,32 @@ export function CustomerDeliveryAddressSection({
 
       {editing ? (
         <div className="flex flex-col gap-3">
-          <div>
-            <label
-              className="mb-1 block text-sm font-medium text-slate-700"
-              htmlFor="customer-delivery-address"
-            >
-              {t("customer.field_delivery_address")}
-            </label>
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
             <input
-              id="customer-delivery-address"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              maxLength={500}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
+              type="checkbox"
+              checked={different}
+              onChange={(e) => setDifferent(e.target.checked)}
             />
-          </div>
+            {t("customer.delivery_different_checkbox")}
+          </label>
+          {different && (
+            <div>
+              <label
+                className="mb-1 block text-sm font-medium text-slate-700"
+                htmlFor="customer-delivery-address"
+              >
+                {t("customer.field_delivery_address")}
+              </label>
+              <textarea
+                id="customer-delivery-address"
+                rows={2}
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                maxLength={500}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 min-h-touch"
+              />
+            </div>
+          )}
           {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
           <div className="flex gap-2">
             <button
@@ -101,12 +124,17 @@ export function CustomerDeliveryAddressSection({
             </button>
           </div>
         </div>
-      ) : (
-        <p className="text-sm text-slate-700">
-          {customer.delivery_address?.address || (
-            <span className="text-slate-400">{t("customer.delivery_address_none")}</span>
-          )}
+      ) : customer.delivery_address ? (
+        <p className="whitespace-pre-wrap text-sm text-slate-700">
+          {customer.delivery_address.address}
         </p>
+      ) : mainAddress ? (
+        <p className="whitespace-pre-wrap text-sm text-slate-700">
+          {mainAddress}{" "}
+          <span className="text-xs text-slate-400">{t("customer.delivery_address_same_as_main")}</span>
+        </p>
+      ) : (
+        <p className="text-sm text-slate-400">{t("customer.delivery_address_none")}</p>
       )}
     </div>
   );

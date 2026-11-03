@@ -22,6 +22,11 @@ class Customer(Base, TimestampMixin):
     phone2: Mapped[str | None] = mapped_column(default=None)
     email: Mapped[str | None] = mapped_column(default=None)
     is_company: Mapped[bool] = mapped_column(default=False)
+    # order-workflow-revamp WP-B (Q20): an individual's own optional main
+    # address, free-text/multi-line. A company's main address lives in
+    # company_requisites.address instead (not this column) — the two are
+    # deliberately never both meaningful for the same row.
+    address: Mapped[str | None] = mapped_column(default=None)
     # Tri-state (docs/ACCOUNTANT_REVIEW.md §4 B1): NULL = not yet established
     # (never treated as "confirmed not registered"), False = explicitly
     # confirmed not VAT-registered, True = explicitly confirmed VAT-

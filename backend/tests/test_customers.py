@@ -22,7 +22,7 @@ def _seed_and_login(client: TestClient, company: str, email: str) -> str:
     return str(me["csrf_token"])
 
 
-def test_create_search_and_duplicate_hint(client: TestClient) -> None:
+def test_create_and_search(client: TestClient) -> None:
     csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
     h = {"X-CSRF-Token": csrf}
 
@@ -30,19 +30,166 @@ def test_create_search_and_duplicate_hint(client: TestClient) -> None:
         "name": "Иван Петров", "phone": "+359 88 812 3456",
     })
     assert r1.status_code == 201
-    assert r1.json()["duplicate_ids"] == []
+    assert "duplicate_ids" not in r1.json()
 
-    # Same phone in a different format → duplicate warning, creation still allowed.
     r2 = client.post("/api/v1/customers", headers=h, json={
-        "name": "Ivan Petrov", "phone": "0888123456",
+        "name": "Ivan Petrov", "phone": "0888999777",
     })
     assert r2.status_code == 201
-    assert r2.json()["duplicate_ids"] == [r1.json()["id"]]
 
     # Cyrillic and Latin queries both find both spellings; phone fragment works too.
     for q in ("Иван", "ivan", "0888123"):
         names = [c["name"] for c in client.get(f"/api/v1/customers?q={q}").json()]
-        assert set(names) == {"Иван Петров", "Ivan Petrov"}, q
+        assert "Иван Петров" in names, q
+
+
+# order-workflow-revamp WP-B (Q7/Q8/Q4b): duplicate phone (individuals) and
+# duplicate ЕИК (companies) are now blocked, not just hinted; a phone shared
+# between an individual and a company stays allowed.
+class TestDuplicateBlocking:
+    def test_second_individual_with_same_phone_is_blocked(self, client: TestClient) -> None:
+        csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+        h = {"X-CSRF-Token": csrf}
+        client.post("/api/v1/customers", headers=h, json={
+            "name": "Иван Петров", "phone": "+359 88 812 3456",
+        })
+
+        # Same phone, different format and spelling — normalization catches it.
+        r = client.post("/api/v1/customers", headers=h, json={
+            "name": "Ivan Petrov", "phone": "0888123456",
+        })
+        assert r.status_code == 409
+        assert r.json()["detail"]["message_key"] == "errors.customers.phone_taken"
+
+    def test_phone_shared_between_individual_and_company_is_allowed(
+        self, client: TestClient,
+    ) -> None:
+        csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+        h = {"X-CSRF-Token": csrf}
+        client.post("/api/v1/customers", headers=h, json={
+            "name": "Иван Петров", "phone": "0888123456",
+        })
+
+        r = client.post("/api/v1/customers", headers=h, json={
+            "name": "Иван ЕООД", "phone": "0888123456", "is_company": True,
+            "company_requisites": {"eik": "130489869"},
+        })
+        assert r.status_code == 201
+
+    def test_two_companies_sharing_a_phone_is_allowed(self, client: TestClient) -> None:
+        csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+        h = {"X-CSRF-Token": csrf}
+        client.post("/api/v1/customers", headers=h, json={
+            "name": "Фирма А", "phone": "0888123456", "is_company": True,
+            "company_requisites": {"eik": "130489869"},
+        })
+
+        r = client.post("/api/v1/customers", headers=h, json={
+            "name": "Фирма Б", "phone": "0888123456", "is_company": True,
+            "company_requisites": {"eik": "000000000"},
+        })
+        assert r.status_code == 201
+
+    def test_second_company_with_same_eik_is_blocked(self, client: TestClient) -> None:
+        csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+        h = {"X-CSRF-Token": csrf}
+        client.post("/api/v1/customers", headers=h, json={
+            "name": "Фирма А", "phone": "0888111111", "is_company": True,
+            "company_requisites": {"eik": "130489869"},
+        })
+
+        r = client.post("/api/v1/customers", headers=h, json={
+            "name": "Фирма Б (друг телефон)", "phone": "0888222222", "is_company": True,
+            "company_requisites": {"eik": "130489869"},
+        })
+        assert r.status_code == 409
+        assert r.json()["detail"]["message_key"] == "errors.customers.eik_taken"
+
+    def test_phone_update_to_an_existing_individuals_phone_is_blocked(
+        self, client: TestClient,
+    ) -> None:
+        csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+        h = {"X-CSRF-Token": csrf}
+        client.post("/api/v1/customers", headers=h, json={
+            "name": "Иван Петров", "phone": "0888111111",
+        })
+        cid2 = client.post("/api/v1/customers", headers=h, json={
+            "name": "Петър Иванов", "phone": "0888222222",
+        }).json()["id"]
+
+        r = client.patch(f"/api/v1/customers/{cid2}", headers=h, json={"phone": "0888111111"})
+        assert r.status_code == 409
+        assert r.json()["detail"]["message_key"] == "errors.customers.phone_taken"
+
+    def test_archived_individual_does_not_block_the_phone(self, client: TestClient) -> None:
+        csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+        h = {"X-CSRF-Token": csrf}
+        cid = client.post("/api/v1/customers", headers=h, json={
+            "name": "Иван Петров", "phone": "0888111111",
+        }).json()["id"]
+        client.post(f"/api/v1/customers/{cid}/archive", headers=h)
+
+        r = client.post("/api/v1/customers", headers=h, json={
+            "name": "Нов Иван", "phone": "0888111111",
+        })
+        assert r.status_code == 201
+
+    def test_phone_check_endpoint_reports_the_duplicate(self, client: TestClient) -> None:
+        csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+        h = {"X-CSRF-Token": csrf}
+        cid = client.post("/api/v1/customers", headers=h, json={
+            "name": "Иван Петров", "phone": "0888111111",
+        }).json()["id"]
+
+        hit = client.get("/api/v1/customers/phone-check?phone=0888111111").json()
+        assert hit == {"duplicate": {"id": cid, "name": "Иван Петров"}}
+        miss = client.get("/api/v1/customers/phone-check?phone=0888999999").json()
+        assert miss == {"duplicate": None}
+
+    def test_eik_check_endpoint_reports_the_duplicate(self, client: TestClient) -> None:
+        csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+        h = {"X-CSRF-Token": csrf}
+        cid = client.post("/api/v1/customers", headers=h, json={
+            "name": "Фирма А", "phone": "0888111111", "is_company": True,
+            "company_requisites": {"eik": "130489869"},
+        }).json()["id"]
+
+        hit = client.get("/api/v1/customers/eik-check?eik=130489869").json()
+        assert hit == {"duplicate": {"id": cid, "name": "Фирма А"}}
+        miss = client.get("/api/v1/customers/eik-check?eik=000000000").json()
+        assert miss == {"duplicate": None}
+
+
+# order-workflow-revamp WP-B (Q20): an individual's own optional main address.
+def test_individual_main_address_roundtrip(client: TestClient) -> None:
+    csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+    h = {"X-CSRF-Token": csrf}
+    r = client.post("/api/v1/customers", headers=h, json={
+        "name": "Иван Петров", "phone": "0888111111",
+        "address": "ул. Тестова 5\nгр. София",
+    })
+    assert r.status_code == 201
+    assert r.json()["address"] == "ул. Тестова 5\nгр. София"
+
+
+# order-workflow-revamp WP-B (Q20b): a courier order with no explicit address
+# and no customer delivery_address on file falls back to the main address.
+def test_courier_order_falls_back_to_customers_main_address(client: TestClient) -> None:
+    csrf = _seed_and_login(client, "Сервиз А", "a@a.bg")
+    h = {"X-CSRF-Token": csrf}
+    cid = client.post("/api/v1/customers", headers=h, json={
+        "name": "Иван Петров", "phone": "0888111111", "address": "ул. Главна 1",
+    }).json()["id"]
+    aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
+        "asset_type_code": "other",
+    }).json()["id"]
+
+    r = client.post("/api/v1/orders", headers=h, json={
+        "customer_id": cid, "asset_id": aid, "complaint": "Тест",
+        "delivery_method": "courier",
+    })
+    assert r.status_code == 201
+    assert r.json()["delivery_address"] == {"address": "ул. Главна 1"}
 
 
 def test_archive_hides_from_default_list(client: TestClient) -> None:

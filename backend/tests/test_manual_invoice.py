@@ -37,9 +37,10 @@ def _ready_seller(client: TestClient, h: dict[str, str], eik: str = VALID_EIK) -
     assert resp.status_code == 200, resp.text
 
 
-def _customer(client: TestClient, h: dict[str, str], *, name: str = "Иван Петров") -> str:
+def _customer(client: TestClient, h: dict[str, str], *, name: str = "Иван Петров",
+              phone: str = "0888111222") -> str:
     resp = client.post("/api/v1/customers", headers=h,
-                       json={"name": name, "phone": "0888111222"})
+                       json={"name": name, "phone": phone})
     assert resp.status_code == 201, resp.text
     return str(resp.json()["id"])
 
@@ -211,7 +212,7 @@ def test_manual_and_order_invoices_share_one_continuous_number_sequence(
 
     # Manual invoice second — must continue the SAME sequence, not a
     # separate one.
-    cid2 = _customer(client, h, name="Клиент Б")
+    cid2 = _customer(client, h, name="Клиент Б", phone="0888111333")
     manual_invoice_id = str(_manual_draft(client, h, cid2).json()["id"])
     _add_line(client, h, manual_invoice_id)
     manual_invoice_number = _issue(client, h, manual_invoice_id).json()["number"]

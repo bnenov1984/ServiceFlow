@@ -5,10 +5,22 @@ rule — frozen Invoice.buyer/gross once issued, live Customer/draft-line-sum
 while still a draft. See commercial/router.py's module docstring for the
 exact contract this exercises."""
 
+import itertools
 import os
 
 import pytest
 from fastapi.testclient import TestClient
+
+# order-workflow-revamp WP-B (Q7): a second individual customer with the
+# same phone is now blocked, so `_order()` — called many times per test,
+# often in a loop, with no caller-supplied uniqueness — needs a phone that's
+# guaranteed distinct on every call, never a fixed literal.
+_phone_seq = itertools.count(100000)
+
+
+def _unique_phone() -> str:
+    return f"0888{next(_phone_seq)}"
+
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("SERVICEFLOW_TEST_DATABASE_URL") is None,
@@ -40,7 +52,7 @@ def _ready_seller(client: TestClient, h: dict[str, str], eik: str = VALID_EIK) -
 def _order(client: TestClient, h: dict[str, str], *, customer_name: str = "Иван",
           is_company: bool = False, vat_registered: bool | None = None,
           vat_number: str | None = None) -> str:
-    payload: dict[str, object] = {"name": customer_name, "phone": "0888111222"}
+    payload: dict[str, object] = {"name": customer_name, "phone": _unique_phone()}
     if is_company:
         payload["is_company"] = True
         payload["vat_registered"] = vat_registered

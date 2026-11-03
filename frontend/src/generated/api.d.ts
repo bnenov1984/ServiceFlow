@@ -425,6 +425,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/customers/phone-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Check Phone */
+        get: operations["check_phone_api_v1_customers_phone_check_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/customers/eik-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Check Eik */
+        get: operations["check_eik_api_v1_customers_eik_check_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/customers/{customer_id}": {
         parameters: {
             query?: never;
@@ -587,6 +621,27 @@ export interface paths {
          *     impossible without a dedicated check.
          */
         post: operations["transfer_owner_api_v1_assets__asset_id__transfer_owner_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/orders/technician-load": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Technician Load
+         * @description Per-technician count of orders in Диагностика + Ремонт for the
+         *     technician picker (WP-F, Q22). User names stay with identity's GET /users.
+         */
+        get: operations["technician_load_api_v1_orders_technician_load_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2075,6 +2130,8 @@ export interface components {
             /** Vat Registered */
             vat_registered?: boolean | null;
             company_requisites?: components["schemas"]["CustomerCompanyRequisites"] | null;
+            /** Address */
+            address?: string | null;
             delivery_address?: components["schemas"]["CustomerDeliveryAddress"] | null;
             /**
              * Notes
@@ -2106,6 +2163,8 @@ export interface components {
             /** Vat Registered */
             vat_registered: boolean | null;
             company_requisites: components["schemas"]["CustomerCompanyRequisites"] | null;
+            /** Address */
+            address: string | null;
             delivery_address: components["schemas"]["CustomerDeliveryAddress"] | null;
             /** Notes */
             notes: string;
@@ -2115,11 +2174,6 @@ export interface components {
             anonymized: boolean;
             /** Row Version */
             row_version: number;
-            /**
-             * Duplicate Ids
-             * @default []
-             */
-            duplicate_ids: string[];
             /** Active Orders Count */
             active_orders_count: number;
         };
@@ -2143,6 +2197,8 @@ export interface components {
             /** Vat Registered */
             vat_registered: boolean | null;
             company_requisites: components["schemas"]["CustomerCompanyRequisites"] | null;
+            /** Address */
+            address: string | null;
             delivery_address: components["schemas"]["CustomerDeliveryAddress"] | null;
             /** Notes */
             notes: string;
@@ -2152,11 +2208,6 @@ export interface components {
             anonymized: boolean;
             /** Row Version */
             row_version: number;
-            /**
-             * Duplicate Ids
-             * @default []
-             */
-            duplicate_ids: string[];
         };
         /** CustomerPatch */
         CustomerPatch: {
@@ -2173,6 +2224,8 @@ export interface components {
             /** Vat Registered */
             vat_registered?: boolean | null;
             company_requisites?: components["schemas"]["CustomerCompanyRequisites"] | null;
+            /** Address */
+            address?: string | null;
             delivery_address?: components["schemas"]["CustomerDeliveryAddress"] | null;
             /** Notes */
             notes?: string | null;
@@ -2278,6 +2331,28 @@ export interface components {
             approval: {
                 [key: string]: unknown;
             } | null;
+        };
+        /**
+         * DuplicateCheckOut
+         * @description order-workflow-revamp WP-B (Q7/Q8): the inline-on-blur pre-check — a
+         *     convenience the UI calls before submit so the rejection can be shown as
+         *     a field-level error rather than only after a round trip through POST/
+         *     PATCH. Never the enforcement point itself; service.create()/update()
+         *     independently re-check and are what actually blocks a save (this
+         *     endpoint is read-only, no CSRF/subscription gate needed).
+         */
+        DuplicateCheckOut: {
+            duplicate: components["schemas"]["DuplicateCustomerOut"] | null;
+        };
+        /** DuplicateCustomerOut */
+        DuplicateCustomerOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
         };
         /** EmployeeIn */
         EmployeeIn: {
@@ -3327,6 +3402,16 @@ export interface components {
             /** Note */
             note?: string | null;
         };
+        /** TechnicianLoadOut */
+        TechnicianLoadOut: {
+            /**
+             * Technician Id
+             * Format: uuid
+             */
+            technician_id: string;
+            /** Active Count */
+            active_count: number;
+        };
         /** TimelineEventOut */
         TimelineEventOut: {
             /** Event Type */
@@ -4145,6 +4230,68 @@ export interface operations {
             };
         };
     };
+    check_phone_api_v1_customers_phone_check_get: {
+        parameters: {
+            query: {
+                phone: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DuplicateCheckOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_eik_api_v1_customers_eik_check_get: {
+        parameters: {
+            query: {
+                eik: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DuplicateCheckOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_customer_api_v1_customers__customer_id__get: {
         parameters: {
             query?: never;
@@ -4520,6 +4667,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    technician_load_api_v1_orders_technician_load_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TechnicianLoadOut"][];
                 };
             };
         };

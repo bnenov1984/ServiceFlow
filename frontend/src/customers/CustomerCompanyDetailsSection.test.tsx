@@ -18,14 +18,14 @@ beforeEach(() => {
 const individualCustomer: CustomerDetail = {
   id: "c1", name: "Иван Петров", phone: "0888123456", phone2: null, email: null,
   is_company: false, vat_registered: null, company_requisites: null,
-  delivery_address: null, archived: false, anonymized: false,
+  address: null, delivery_address: null, archived: false, anonymized: false,
 };
 
 const companyCustomerUnknown: CustomerDetail = {
   id: "c2", name: "Пример ЕООД", phone: "029001122", phone2: null, email: null,
   is_company: true, vat_registered: null,
   company_requisites: { country: "BG", address: "гр. София", eik: "130489869", vat_number: null },
-  delivery_address: null, archived: false, anonymized: false,
+  address: null, delivery_address: null, archived: false, anonymized: false,
 };
 
 const companyCustomerRegistered: CustomerDetail = {
@@ -34,7 +34,7 @@ const companyCustomerRegistered: CustomerDetail = {
   company_requisites: {
     country: "BG", address: "гр. Варна", eik: "130489869", vat_number: "BG130489869",
   },
-  delivery_address: null, archived: false, anonymized: false,
+  address: null, delivery_address: null, archived: false, anonymized: false,
 };
 
 function renderSection(customer: CustomerDetail) {

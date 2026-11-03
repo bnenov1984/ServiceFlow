@@ -141,7 +141,7 @@ export function CustomerCompanyDetailsSection({
             <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
               {t("company.field_address")}
             </dt>
-            <dd className="mt-0.5">{customer.company_requisites?.address || "—"}</dd>
+            <dd className="mt-0.5 whitespace-pre-wrap">{customer.company_requisites?.address || "—"}</dd>
           </div>
           <div>
             <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">

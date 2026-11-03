@@ -70,10 +70,18 @@ Attributes are business attributes, not columns.
 ### Customer
 - **Purpose:** the owner of assets; the person/company we answer to.
 - **Attributes:** name (required), primary phone (required, normalized), secondary
-  phone, email, is-company flag + invoice requisites when B2B (name, ЕИК, ДДС №,
-  МОЛ, address), notes, created date, archived flag.
-- **Lifecycle:** created (with duplicate-phone warning) → active → archived. GDPR
-  anonymization replaces personal data, preserving order history integrity.
+  phone, email, own main address (individuals only — free text, multi-line; a
+  company's main address lives in its invoice requisites instead), is-company flag +
+  invoice requisites when B2B (name, ЕИК, ДДС №, МОЛ, address), notes, created date,
+  archived flag.
+- **Lifecycle:** created → active → archived. An **individual** cannot be created (or
+  have its phone changed) to a normalized phone that another non-anonymized
+  individual already has; the user is offered the existing customer instead. A
+  **company** cannot be created (or have its ЕИК changed) to an ЕИК another company
+  already has. Phones shared between an individual and a company are allowed.
+  *(Amended 03.11.2026 — order-workflow-revamp WP-B, Q7/Q8: supersedes the prior
+  "duplicate-phone warning, never blocked" rule.)* GDPR anonymization replaces
+  personal data, preserving order history integrity.
 - **Invariants:** contains no repair logic; never owns attachments directly.
 
 ### AssetType
