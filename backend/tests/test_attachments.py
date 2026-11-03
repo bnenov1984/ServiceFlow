@@ -2,6 +2,7 @@
 soft delete, tenant isolation (docs/01 §Attachment, docs/11 §3)."""
 
 import io
+import itertools
 import os
 
 import pytest
@@ -12,6 +13,16 @@ pytestmark = pytest.mark.skipif(
     os.environ.get("SERVICEFLOW_TEST_DATABASE_URL") is None,
     reason="SERVICEFLOW_TEST_DATABASE_URL not set",
 )
+
+# order-workflow-revamp WP-B (Q7): a second individual customer with the same
+# phone is now blocked, so `_order()` — called multiple times per test with no
+# caller-supplied uniqueness — needs a phone that's guaranteed distinct on
+# every call, never a fixed literal (same pattern as test_invoices.py).
+_phone_seq = itertools.count(100000)
+
+
+def _unique_phone() -> str:
+    return f"0888{next(_phone_seq)}"
 
 
 def _login(client: TestClient, company: str = "Сервиз А",
@@ -28,7 +39,7 @@ def _login(client: TestClient, company: str = "Сервиз А",
 
 def _order(client: TestClient, h: dict[str, str]) -> str:
     cid = client.post("/api/v1/customers", headers=h,
-                      json={"name": "Иван", "phone": "0888111222"}).json()["id"]
+                      json={"name": "Иван", "phone": _unique_phone()}).json()["id"]
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
         "asset_type_code": "phone", "field_values": {"brand": "Apple"},
     }).json()["id"]
@@ -173,6 +184,61 @@ def test_soft_delete_hides_from_list_and_writes_timeline(client: TestClient) -> 
     events = [e["event_type"] for e in client.get(f"/api/v1/orders/{oid}/timeline").json()]
     assert "attachment_added" in events
     assert "attachment_deleted" in events
+
+
+def test_seq_increments_per_order_in_upload_order_and_survives_delete(client: TestClient) -> None:
+    h = _login(client)
+    oid = _order(client, h)
+    order_number = client.get(f"/api/v1/orders/{oid}", headers=h).json()["number"]
+
+    first = client.post(
+        f"/api/v1/orders/{oid}/attachments", headers=h,
+        files={"file": ("a.jpg", _jpeg_bytes(), "image/jpeg")}, data={"stage": "reception"},
+    ).json()
+    second = client.post(
+        f"/api/v1/orders/{oid}/attachments", headers=h,
+        files={"file": ("b.jpg", _jpeg_bytes(), "image/jpeg")}, data={"stage": "progress"},
+    ).json()
+    assert first["display_name"] == f"{order_number}_1.jpg"
+    assert second["display_name"] == f"{order_number}_2.jpg"
+
+    client.delete(f"/api/v1/attachments/{first['id']}", headers=h)
+    third = client.post(
+        f"/api/v1/orders/{oid}/attachments", headers=h,
+        files={"file": ("c.jpg", _jpeg_bytes(), "image/jpeg")}, data={"stage": "other"},
+    ).json()
+    # #1 was deleted, not reused or renumbered — the next upload is #3, not #2.
+    assert third["display_name"] == f"{order_number}_3.jpg"
+
+
+def test_seq_is_independent_per_order(client: TestClient) -> None:
+    h = _login(client)
+    oid_a = _order(client, h)
+    oid_b = _order(client, h)
+    a = client.post(
+        f"/api/v1/orders/{oid_a}/attachments", headers=h,
+        files={"file": ("a.jpg", _jpeg_bytes(), "image/jpeg")}, data={"stage": "other"},
+    ).json()
+    b = client.post(
+        f"/api/v1/orders/{oid_b}/attachments", headers=h,
+        files={"file": ("b.jpg", _jpeg_bytes(), "image/jpeg")}, data={"stage": "other"},
+    ).json()
+    assert a["display_name"].endswith("_1.jpg")
+    assert b["display_name"].endswith("_1.jpg")
+    assert a["display_name"] != b["display_name"]  # different order numbers
+
+
+def test_download_filename_uses_order_number_and_seq(client: TestClient) -> None:
+    h = _login(client)
+    oid = _order(client, h)
+    order_number = client.get(f"/api/v1/orders/{oid}", headers=h).json()["number"]
+    aid = client.post(
+        f"/api/v1/orders/{oid}/attachments", headers=h,
+        files={"file": ("photo.jpg", _jpeg_bytes(), "image/jpeg")}, data={"stage": "other"},
+    ).json()["id"]
+
+    r = client.get(f"/api/v1/attachments/{aid}/file")
+    assert f'filename="{order_number}_1.jpg"' in r.headers["content-disposition"]
 
 
 def test_attachments_are_tenant_isolated(client: TestClient) -> None:

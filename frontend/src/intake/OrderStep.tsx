@@ -8,11 +8,13 @@
  * to PromisedDateBlock on the order page instead.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { t } from "../i18n/bg";
+import { PhotoCaptureButtons } from "../components/PhotoCaptureButtons";
 import { TechnicianPicker } from "../components/TechnicianPicker";
 import { AccessoriesChecklist } from "./AccessoriesChecklist";
+import { PhotoThumbnail } from "./PhotoThumbnail";
 
 // Cleanup batch Issue 26: integer, >= 0 — mirrors the backend's
 // `mileage: int | None = Field(default=None, ge=0)` (OrderIn), used here
@@ -79,8 +81,6 @@ export function OrderStep({
   error: string | null;
 }) {
   const { me } = useAuth();
-  const [dragOver, setDragOver] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [partName, setPartName] = useState("");
   const [partPrice, setPartPrice] = useState("");
 
@@ -186,31 +186,18 @@ export function OrderStep({
         <label className="mb-1 block text-sm font-medium text-slate-700">
           {t("intake.photos")}
         </label>
-        <div
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => { e.preventDefault(); setDragOver(false); addPhotos(e.dataTransfer.files); }}
-          onClick={() => fileInputRef.current?.click()}
-          className={`cursor-pointer rounded-lg border-2 border-dashed p-4 text-center text-sm ${
-            dragOver ? "border-blue-400 bg-blue-50" : "border-slate-300 text-slate-500"
-          }`}
-        >
-          {t("intake.photos_drop_hint")}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            hidden
-            onChange={(e) => addPhotos(e.target.files)}
-          />
-        </div>
+        <PhotoCaptureButtons onFiles={addPhotos} />
         {value.photos.length > 0 && (
           <ul className="mt-2 flex flex-wrap gap-2">
             {value.photos.map((file, index) => (
-              <li key={`${file.name}-${index}`} className="flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-xs">
-                {file.name}
-                <button type="button" onClick={() => removePhoto(index)} aria-label={t("common.close")}>
+              <li key={`${file.name}-${index}`} className="relative">
+                <PhotoThumbnail file={file} />
+                <button
+                  type="button"
+                  onClick={() => removePhoto(index)}
+                  aria-label={t("common.close")}
+                  className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-slate-700 text-xs text-white"
+                >
                   ✕
                 </button>
               </li>

@@ -25,6 +25,10 @@ class Attachment(Base, TimestampMixin):
     thumbnail_key: Mapped[str | None] = mapped_column(default=None)
     kind: Mapped[str]  # photo | document
     stage: Mapped[str] = mapped_column(default="other", server_default="other")
+    # Q21: per-order, upload-order display sequence (`<order number>_<seq>.<ext>`),
+    # never reused or renumbered after a delete — assigned once at upload time,
+    # immutable afterwards. Not a storage identifier (ADR-007's content hash is).
+    seq: Mapped[int]
     caption: Mapped[str] = mapped_column(default="", server_default="")
     mime: Mapped[str]
     size: Mapped[int]

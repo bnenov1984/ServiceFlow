@@ -535,3 +535,40 @@ the old "duplicate phone never blocks" behavior — now correctly rejected.
 Fixed by giving each helper a guaranteed-unique phone per call (an
 `itertools.count()`-backed generator in each file, since several call these
 helpers in loops with no caller-supplied uniqueness to thread through).
+
+WP-E (photo capture & naming; #10/#11/#12, Q21) implemented 03.11.2026.
+Backend: migration 0033 (`attachments.seq`, backfilled by `created_at`
+order including soft-deleted rows so no existing number shifts); `upload()`
+assigns the next per-order seq as `max(seq for order, including deleted) +
+1` — same non-atomic read-then-use shape `count_for_order` already used in
+this file, not the atomic `allocate_sequence()` order/invoice numbers use,
+since this is a display convenience, not a legally-gapless sequence (PO
+pragmatism directive); `AttachmentOut.display_name` and the download
+endpoint's `Content-Disposition` filename are both built from
+`<order.number>_<seq>.<ext>` via one shared `_display_name()` helper in
+`attachments/router.py`. Frontend: new shared `PhotoCaptureButtons`
+(camera input with `capture="environment"` + a separate "choose from
+device" input, `frontend/src/components/PhotoCaptureButtons.tsx`) replaces
+the old single generic file input at both intake (`OrderStep.tsx`) and the
+order page (`PhotosGrid.tsx`) — `PhotosGrid` keeps its gallery input's
+`application/pdf` acceptance (estimates are uploaded through the same
+grid today; only images go through the camera path, since a camera can't
+produce a PDF); new `PhotoThumbnail` (`frontend/src/intake/
+PhotoThumbnail.tsx`) gives intake a real client-side preview via
+`URL.createObjectURL`, replacing the filename-only chips; `PhotosGrid`'s
+lightbox now shows `display_name` as a caption. Two now-dead i18n keys
+removed (`intake.photos_drop_hint`, `order.photos_upload` — the drop-zone
+and its upload button no longer exist). **ZIP export, also named in Q21's
+decision text, does not exist as a feature anywhere in the app** (no
+existing endpoint, UI, or audit item number for it) — nothing to wire the
+naming convention into; out of scope here, left for whoever builds that
+feature. Verified live: seeded a fresh dev-DB company, created a real
+order through intake (client-side thumbnail rendered, camera/gallery
+buttons present), uploaded a real JPEG through the order page's gallery
+button — `display_name` came back as `2026-00001_1.jpg`, shown as the
+lightbox caption and as the `Content-Disposition` filename on direct
+fetch. Backend: 803 passed, 2 xfailed (same pre-existing pair); 3 new
+tests cover seq incrementing in upload order, seq never reused after
+delete, and seq being independent per order. Frontend: 566 passed
+(3 new OrderStep tests + a new 3-test `PhotosGrid.test.tsx`, PhotosGrid
+had none before). ruff/mypy/lint-imports/typecheck/build all clean.

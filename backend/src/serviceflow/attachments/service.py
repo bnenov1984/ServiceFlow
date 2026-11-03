@@ -35,6 +35,17 @@ def count_for_order(db: Session, ctx: TenantContext, order_id: uuid.UUID) -> int
     ) or 0
 
 
+def _next_seq(db: Session, ctx: TenantContext, order_id: uuid.UUID) -> int:
+    """Next per-order display sequence (Q21) — deliberately includes
+    soft-deleted rows (not just live ones, unlike count_for_order above), so a
+    deleted attachment's number is never handed to a later upload."""
+    max_seq = db.scalar(
+        scoped(select(func.max(Attachment.seq)), Attachment, ctx)
+        .where(Attachment.order_id == order_id)
+    )
+    return (max_seq or 0) + 1
+
+
 def upload(db: Session, ctx: TenantContext, storage: StoragePort, *, order_id: uuid.UUID,
            data: bytes, stage: str, caption: str, max_bytes: int,
            max_per_order: int) -> Attachment:
@@ -67,8 +78,8 @@ def upload(db: Session, ctx: TenantContext, storage: StoragePort, *, order_id: u
     attachment = Attachment(
         company_id=ctx.company_id, order_id=order_id, storage_key=key,
         thumbnail_key=thumbnail_key, kind="photo" if media.is_image(mime) else "document",
-        stage=stage, caption=caption, mime=mime, size=len(stored),
-        uploaded_by=ctx.user_id,
+        stage=stage, seq=_next_seq(db, ctx, order_id), caption=caption, mime=mime,
+        size=len(stored), uploaded_by=ctx.user_id,
     )
     db.add(attachment)
     db.flush()

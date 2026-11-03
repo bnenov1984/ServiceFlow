@@ -102,6 +102,10 @@ export const bg = {
   "common.close": "Затвори",
   "common.loading": "Зареждане…",
 
+  // --- photo capture (shared component, WP-E #10) ---
+  "photos.take": "Снимай",
+  "photos.choose": "От устройството",
+
   // --- backend message keys (docs/09 §1 contract) ---
   "errors.internal": "Възникна неочаквана грешка. Опитайте отново.",
   "errors.validation": "Някои полета не са попълнени коректно.",
@@ -207,7 +211,6 @@ export const bg = {
   "intake.accessory_add_placeholder": "Друг аксесоар…",
   "intake.accessory_add": "Добави",
   "intake.photos": "Снимки",
-  "intake.photos_drop_hint": "Плъзнете снимки тук или щракнете, за да изберете",
   "intake.parts": "Части (по избор)",
   "intake.parts_none": "Няма добавени части.",
   "intake.promised_on": "Обещана дата",
@@ -378,7 +381,6 @@ export const bg = {
   "order.accessories_none": "Няма аксесоари.",
   "order.photos": "Снимки",
   "order.photos_none": "Няма снимки.",
-  "order.photos_upload": "Качи снимки",
   "order.stage_all": "Всички",
   "order.stage_reception": "Приемане",
   "order.stage_progress": "Процес",

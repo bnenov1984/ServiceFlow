@@ -24,6 +24,13 @@ from serviceflow.service_orders import service as orders_service
 router = APIRouter(dependencies=[Depends(require_repairflow_active)])
 
 
+def _display_name(order_number: str, seq: int, mime: str) -> str:
+    """Q21: `<order number>_<seq>.<ext>` — download filename, lightbox
+    caption. Display/download name only; storage_key (ADR-007) is untouched."""
+    ext = "jpg" if mime == "image/jpeg" else "pdf"
+    return f"{order_number}_{seq}.{ext}"
+
+
 class AttachmentOut(BaseModel):
     id: uuid.UUID
     order_id: uuid.UUID
@@ -33,12 +40,14 @@ class AttachmentOut(BaseModel):
     mime: str
     size: int
     has_thumbnail: bool
+    display_name: str
 
     @staticmethod
-    def of(a: Attachment) -> "AttachmentOut":
+    def of(a: Attachment, order_number: str) -> "AttachmentOut":
         return AttachmentOut(
             id=a.id, order_id=a.order_id, kind=a.kind, stage=a.stage, caption=a.caption,
             mime=a.mime, size=a.size, has_thumbnail=a.thumbnail_key is not None,
+            display_name=_display_name(order_number, a.seq, a.mime),
         )
 
 
@@ -62,11 +71,12 @@ def _not_found() -> HTTPException:
 @router.get("/orders/{order_id}/attachments")
 def list_attachments(order_id: uuid.UUID, db: TenantDbDep,
                      tenant: TenantDep) -> list[AttachmentOut]:
-    if orders_service.get(db, tenant, order_id) is None:
+    order = orders_service.get(db, tenant, order_id)
+    if order is None:
         raise HTTPException(status_code=404, detail={
             "code": "not_found", "message_key": "errors.orders.not_found", "params": {},
         })
-    return [AttachmentOut.of(a) for a in service.list_for_order(db, tenant, order_id)]
+    return [AttachmentOut.of(a, order.number) for a in service.list_for_order(db, tenant, order_id)]
 
 
 @router.post("/orders/{order_id}/attachments",
@@ -76,7 +86,8 @@ def upload_attachment(order_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep,
                       file: Annotated[UploadFile, File()],
                       stage: Annotated[str, Form()] = "other",
                       caption: Annotated[str, Form()] = "") -> AttachmentOut:
-    if orders_service.get(db, tenant, order_id) is None:
+    order = orders_service.get(db, tenant, order_id)
+    if order is None:
         raise HTTPException(status_code=404, detail={
             "code": "not_found", "message_key": "errors.orders.not_found", "params": {},
         })
@@ -91,7 +102,7 @@ def upload_attachment(order_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep,
         )
     except service.AttachmentError as e:
         raise _err(e) from e
-    return AttachmentOut.of(attachment)
+    return AttachmentOut.of(attachment, order.number)
 
 
 @router.get("/attachments/{attachment_id}/file")
@@ -100,13 +111,15 @@ def get_attachment_file(attachment_id: uuid.UUID, db: TenantDbDep, tenant: Tenan
     attachment = service.get(db, tenant, attachment_id)
     if attachment is None:
         raise _not_found()
+    order = orders_service.get(db, tenant, attachment.order_id)
+    assert order is not None  # FK: an attachment's order is never deleted
     key = (attachment.thumbnail_key if thumb and attachment.thumbnail_key
           else attachment.storage_key)
     data = _storage().get(key)
-    ext = "jpg" if attachment.mime == "image/jpeg" else "pdf"
+    name = _display_name(order.number, attachment.seq, attachment.mime)
     return Response(
         content=data, media_type=attachment.mime,
-        headers={"Content-Disposition": f'inline; filename="{attachment.id}.{ext}"'},
+        headers={"Content-Disposition": f'inline; filename="{name}"'},
     )
 
 

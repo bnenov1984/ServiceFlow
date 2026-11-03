@@ -1,8 +1,9 @@
 /** PhotosGrid (docs/15 §6.5, docs/02 §9): stage tabs, upload, lightbox. */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Dialog } from "../components/Dialog";
+import { PhotoCaptureButtons } from "../components/PhotoCaptureButtons";
 import { t } from "../i18n/bg";
 import { api } from "../lib/api";
 import { apiUrl } from "../lib/apiUrl";
@@ -15,6 +16,7 @@ interface AttachmentOut {
   caption: string;
   mime: string;
   has_thumbnail: boolean;
+  display_name: string;
 }
 
 const STAGES = ["all", "reception", "progress", "completed", "other"] as const;
@@ -30,7 +32,6 @@ export function PhotosGrid({ orderId }: { orderId: string }) {
   const [activeStage, setActiveStage] = useState<(typeof STAGES)[number]>("all");
   const [lightboxId, setLightboxId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   const key = queryKeys.orderAttachments(orderId);
 
@@ -102,30 +103,28 @@ export function PhotosGrid({ orderId }: { orderId: string }) {
         )}
       </div>
 
-      <button
-        type="button"
-        disabled={uploading}
-        onClick={() => fileInputRef.current?.click()}
-        className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-50 min-h-touch"
-      >
-        {uploading ? t("common.loading") : t("order.photos_upload")}
-      </button>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*,application/pdf"
-        multiple
-        hidden
-        onChange={(e) => void upload(e.target.files)}
-      />
+      {uploading ? (
+        <p className="text-sm text-slate-500">{t("common.loading")}</p>
+      ) : (
+        <PhotoCaptureButtons
+          onFiles={(files) => void upload(files)}
+          disabled={uploading}
+          galleryAccept="image/*,application/pdf"
+        />
+      )}
 
       <Dialog open={lightboxId !== null} onClose={() => setLightboxId(null)} title={t("order.photos")}>
         {lightboxId && (
-          <img
-            src={apiUrl(`/api/v1/attachments/${lightboxId}/file`)}
-            alt=""
-            className="max-h-[70vh] w-full object-contain"
-          />
+          <>
+            <img
+              src={apiUrl(`/api/v1/attachments/${lightboxId}/file`)}
+              alt=""
+              className="max-h-[70vh] w-full object-contain"
+            />
+            <p className="mt-2 text-center text-xs text-slate-500">
+              {shown.find((a) => a.id === lightboxId)?.display_name}
+            </p>
+          </>
         )}
       </Dialog>
     </div>

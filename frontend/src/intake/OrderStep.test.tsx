@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { OrderStep, type OrderStepValue } from "./OrderStep";
 
 vi.mock("../lib/api", async (importOriginal) => {
@@ -208,6 +208,50 @@ describe("OrderStep — Wave 5 Issue 12 (order delivery method/address)", () => 
     await user.click(screen.getByRole("button", { name: "Куриер" }));
 
     expect(screen.getByLabelText("Адрес за доставка")).toHaveValue("ръчно въведен адрес");
+  });
+});
+
+describe("OrderStep — WP-E #10/#12 (camera/folder capture buttons, client thumbnails)", () => {
+  // jsdom has no real createObjectURL implementation.
+  beforeEach(() => {
+    vi.stubGlobal("URL", {
+      ...URL, createObjectURL: vi.fn(() => "blob:mock"), revokeObjectURL: vi.fn(),
+    });
+  });
+
+  function galleryInput(): HTMLInputElement {
+    // Camera input first, gallery/"choose from device" input second — see
+    // PhotoCaptureButtons' render order. There's exactly one OrderStep per
+    // test, so a document-wide query is unambiguous.
+    return document.querySelectorAll('input[type="file"]')[1] as HTMLInputElement;
+  }
+
+  it("shows explicit camera and gallery buttons instead of a generic drop-zone", () => {
+    renderStep();
+    expect(screen.getByRole("button", { name: /Снимай/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /От устройството/ })).toBeInTheDocument();
+  });
+
+  it("adding a photo via the gallery input shows a client-side thumbnail", async () => {
+    const user = userEvent.setup();
+    renderStep();
+    const file = new File(["x"], "photo.jpg", { type: "image/jpeg" });
+
+    await user.upload(galleryInput(), file);
+
+    expect(await screen.findByAltText("photo.jpg")).toBeInTheDocument();
+  });
+
+  it("removing an added photo removes its thumbnail", async () => {
+    const user = userEvent.setup();
+    renderStep();
+    const file = new File(["x"], "photo.jpg", { type: "image/jpeg" });
+    await user.upload(galleryInput(), file);
+    const thumb = await screen.findByAltText("photo.jpg");
+
+    await user.click(within(thumb.closest("li") as HTMLElement).getByLabelText("Затвори"));
+
+    expect(screen.queryByAltText("photo.jpg")).not.toBeInTheDocument();
   });
 });
 
