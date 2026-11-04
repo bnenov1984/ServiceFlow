@@ -1,7 +1,10 @@
-"""Cleanup batch Issue 26: mileage is required at intake only for a company
-whose own business_profile is "automotive_repair" — every other profile
-keeps it fully optional, unchanged. Enforced server-side in
-serviceflow.service_orders.service.create(), before order-number allocation."""
+"""order-workflow-revamp WP-D (Q9/Q10): mileage is optional for every
+business profile (reverses Cleanup batch Issue 26's automotive-required
+rule). When given, it must not be lower than the asset's previously
+recorded maximum unless the Owner explicitly confirms the reading — then
+it is stored exactly as read, flagged `mileage_confirmed_lower`, with a
+mandatory timeline comment (`mileage_override_confirmed` event).
+Enforced server-side in serviceflow.service_orders.service.create()."""
 
 import os
 
@@ -63,33 +66,6 @@ def _set_business_profile(email: str, profile: str) -> None:
         db.commit()
 
 
-def _seed_extra_asset_type(email: str, type_profile: str) -> None:
-    """Adds another profile's single asset type to this company, alongside
-    whatever it already has — used only to construct a type/profile
-    combination normal seeding would never produce (e.g. a "phone" asset at
-    an automotive_repair company), so a specific test can prove the mileage
-    gate is keyed off the company's own business_profile, not the chosen
-    asset type."""
-    from sqlalchemy import select
-
-    from business_os.identity.models import User
-    from business_os.shared_kernel.db import bind_tenant_scope, open_session
-    from serviceflow.assets.models import AssetType
-    from serviceflow.assets.service import BUSINESS_PROFILE_ASSET_TYPES, seed_default_types
-
-    for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
-        owner = db.scalar(select(User).where(User.email == email))
-        assert owner is not None
-        bind_tenant_scope(db, owner.company_id)
-        target_code = BUSINESS_PROFILE_ASSET_TYPES[type_profile]["code"]
-        already = db.scalar(select(AssetType).where(
-            AssetType.company_id == owner.company_id, AssetType.code == target_code,
-        ))
-        if already is None:
-            seed_default_types(db, owner.company_id, type_profile)
-        db.commit()
-
-
 def _customer_and_asset(client: TestClient, h: dict[str, str],
                         asset_type_code: str = "vehicle") -> tuple[str, str]:
     cid = client.post("/api/v1/customers", headers=h,
@@ -107,49 +83,63 @@ def _customer_and_asset(client: TestClient, h: dict[str, str],
 
 
 def _create_order(client: TestClient, h: dict[str, str], cid: str, aid: str,
-                  mileage: int | None) -> "object":
-    body: dict[str, object] = {
-        "customer_id": cid, "asset_id": aid, "complaint": "Странен шум",
-    }
+                  mileage: int | None = None, mileage_confirmed_lower: bool = False,
+                  mileage_override_comment: str | None = None,
+                  complaint: str = "Странен шум") -> "object":
+    body: dict[str, object] = {"customer_id": cid, "asset_id": aid, "complaint": complaint}
     if mileage is not None:
         body["mileage"] = mileage
+    if mileage_confirmed_lower:
+        body["mileage_confirmed_lower"] = True
+    if mileage_override_comment is not None:
+        body["mileage_override_comment"] = mileage_override_comment
     return client.post("/api/v1/orders", headers=h, json=body)
 
 
-# --- Automotive: mileage required -------------------------------------------
+def _close_order(client: TestClient, h: dict[str, str], order_id: str) -> None:
+    """Q6 means a second order against the same asset is blocked while the
+    first is still open — tests that need multiple orders against one
+    asset (to compare mileage across visits) must close the prior one
+    first. "declined" is reachable directly from "received" (the status
+    every freshly created order starts in)."""
+    r = client.post(f"/api/v1/orders/{order_id}/status", headers=h,
+                    json={"to": "declined", "reason": "Тест"})
+    assert r.status_code == 200, r.text
 
 
-def test_automotive_new_order_without_mileage_rejected(client: TestClient) -> None:
+def _login_as_worker(client: TestClient, owner_headers: dict[str, str],
+                     email: str = "worker@a.bg") -> dict[str, str]:
+    client.post("/api/v1/users", headers=owner_headers,
+               json={"name": "Иво", "email": email, "password": "парола-за-иво-123"})
+    client.post("/api/v1/auth/logout", headers=owner_headers)
+    me = client.post("/api/v1/auth/login",
+                     json={"email": email, "password": "парола-за-иво-123"}).json()
+    return {"X-CSRF-Token": str(me["csrf_token"])}
+
+
+# --- Q9: mileage is optional everywhere --------------------------------------
+
+
+def test_mileage_optional_for_automotive_repair(client: TestClient) -> None:
     h = _login(client)
     _set_business_profile("a@a.bg", "automotive_repair")
     cid, aid = _customer_and_asset(client, h)
 
     resp = _create_order(client, h, cid, aid, mileage=None)
-    assert resp.status_code == 400
-    assert resp.json()["detail"]["message_key"] == "errors.orders.mileage_required"
-
-
-def test_automotive_mileage_zero_accepted(client: TestClient) -> None:
-    h = _login(client)
-    _set_business_profile("a@a.bg", "automotive_repair")
-    cid, aid = _customer_and_asset(client, h)
-
-    resp = _create_order(client, h, cid, aid, mileage=0)
     assert resp.status_code == 201, resp.text
-    assert resp.json()["mileage"] == 0
+    assert resp.json()["mileage"] is None
 
 
-def test_automotive_positive_mileage_accepted(client: TestClient) -> None:
+def test_mileage_optional_for_generic_repair(client: TestClient) -> None:
     h = _login(client)
-    _set_business_profile("a@a.bg", "automotive_repair")
-    cid, aid = _customer_and_asset(client, h)
+    cid, aid = _customer_and_asset(client, h, asset_type_code="other")
 
-    resp = _create_order(client, h, cid, aid, mileage=125_000)
+    resp = _create_order(client, h, cid, aid, mileage=None)
     assert resp.status_code == 201, resp.text
-    assert resp.json()["mileage"] == 125_000
+    assert resp.json()["mileage"] is None
 
 
-def test_automotive_negative_mileage_rejected(client: TestClient) -> None:
+def test_negative_mileage_rejected(client: TestClient) -> None:
     h = _login(client)
     _set_business_profile("a@a.bg", "automotive_repair")
     cid, aid = _customer_and_asset(client, h)
@@ -159,72 +149,154 @@ def test_automotive_negative_mileage_rejected(client: TestClient) -> None:
     assert resp.json()["message_key"] == "errors.validation"
 
 
-def test_automotive_missing_mileage_does_not_consume_an_order_number(client: TestClient) -> None:
-    """The check runs before number allocation — a rejected request must
-    never advance the per-company order sequence."""
+def test_mileage_accepted_for_any_asset_type_not_just_vehicle(client: TestClient) -> None:
+    """Mirrors the old Issue 26 fact ("accepted for any asset type") — Q9
+    just makes it optional everywhere too, doesn't narrow where it's
+    accepted."""
+    h = _login(client)
+    cid, aid = _customer_and_asset(client, h, asset_type_code="other")
+
+    resp = _create_order(client, h, cid, aid, mileage=100)
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["mileage"] == 100
+
+
+# --- Q9: must not go backwards, unless Q10-bypassed --------------------------
+
+
+def test_mileage_equal_to_previous_max_is_accepted(client: TestClient) -> None:
+    h = _login(client)
+    _set_business_profile("a@a.bg", "automotive_repair")
+    cid, aid = _customer_and_asset(client, h)
+    first = _create_order(client, h, cid, aid, mileage=50_000)
+    assert first.status_code == 201, first.text
+    _close_order(client, h, first.json()["id"])
+
+    second = _create_order(client, h, cid, aid, mileage=50_000)
+    assert second.status_code == 201, second.text
+    assert second.json()["mileage"] == 50_000
+    assert second.json()["mileage_confirmed_lower"] is False
+
+
+def test_mileage_higher_than_previous_max_is_accepted(client: TestClient) -> None:
+    h = _login(client)
+    _set_business_profile("a@a.bg", "automotive_repair")
+    cid, aid = _customer_and_asset(client, h)
+    first = _create_order(client, h, cid, aid, mileage=50_000)
+    _close_order(client, h, first.json()["id"])
+
+    second = _create_order(client, h, cid, aid, mileage=50_001)
+    assert second.status_code == 201, second.text
+    assert second.json()["mileage"] == 50_001
+
+
+def test_mileage_lower_than_previous_rejected_without_bypass(client: TestClient) -> None:
+    h = _login(client)
+    _set_business_profile("a@a.bg", "automotive_repair")
+    cid, aid = _customer_and_asset(client, h)
+    first = _create_order(client, h, cid, aid, mileage=50_000)
+    _close_order(client, h, first.json()["id"])
+
+    second = _create_order(client, h, cid, aid, mileage=49_999)
+    assert second.status_code == 409
+    assert second.json()["detail"]["message_key"] == "errors.orders.mileage_lower_than_previous"
+    assert second.json()["detail"]["params"]["previous"] == 50_000
+
+
+def test_mileage_lower_than_previous_rejected_for_non_owner_even_with_bypass_fields(
+    client: TestClient,
+) -> None:
+    """Q10: a non-Owner has no bypass at all — flat 403, not a 409 asking
+    for confirmation. Setting the bypass fields anyway must not help."""
+    h_owner = _login(client)
+    _set_business_profile("a@a.bg", "automotive_repair")
+    cid, aid = _customer_and_asset(client, h_owner)
+    first = _create_order(client, h_owner, cid, aid, mileage=50_000)
+    _close_order(client, h_owner, first.json()["id"])
+    h_worker = _login_as_worker(client, h_owner)
+
+    second = _create_order(
+        client, h_worker, cid, aid, mileage=49_999,
+        mileage_confirmed_lower=True, mileage_override_comment="По-малък пробег.",
+    )
+    assert second.status_code == 403
+    assert second.json()["detail"]["message_key"] == "errors.auth.owner_required"
+
+
+def test_mileage_lower_bypass_without_comment_rejected(client: TestClient) -> None:
+    h = _login(client)
+    _set_business_profile("a@a.bg", "automotive_repair")
+    cid, aid = _customer_and_asset(client, h)
+    first = _create_order(client, h, cid, aid, mileage=50_000)
+    _close_order(client, h, first.json()["id"])
+
+    second = _create_order(client, h, cid, aid, mileage=49_999, mileage_confirmed_lower=True)
+    assert second.status_code == 400
+    assert (second.json()["detail"]["message_key"]
+            == "errors.orders.mileage_override_comment_required")
+
+
+def test_owner_bypass_stores_actual_reading_flagged_and_timelined(client: TestClient) -> None:
+    h = _login(client)
+    _set_business_profile("a@a.bg", "automotive_repair")
+    cid, aid = _customer_and_asset(client, h)
+    first = _create_order(client, h, cid, aid, mileage=50_000)
+    _close_order(client, h, first.json()["id"])
+
+    second = _create_order(
+        client, h, cid, aid, mileage=49_000, mileage_confirmed_lower=True,
+        mileage_override_comment="Клиентът смени таблото след ремонт на километража.",
+    )
+    assert second.status_code == 201, second.text
+    body = second.json()
+    # Stored exactly as read — never silently corrected to the previous max.
+    assert body["mileage"] == 49_000
+    assert body["mileage_confirmed_lower"] is True
+
+    events = client.get(f"/api/v1/orders/{body['id']}/timeline", headers=h).json()
+    override = next(e for e in events if e["event_type"] == "mileage_override_confirmed")
+    assert override["data"]["reading"] == 49_000
+    assert override["data"]["previous_max"] == 50_000
+    assert override["data"]["comment"] == "Клиентът смени таблото след ремонт на километража."
+
+
+def test_legacy_field_values_mileage_used_as_floor_when_no_order_has_one_yet(
+    client: TestClient,
+) -> None:
+    """The floor also considers the legacy Asset.field_values["mileage"]
+    (set directly here, simulating data from before order-level mileage
+    existed) when no order has recorded one yet — same fallback
+    GET .../service-history already uses for `current_mileage`."""
+    from sqlalchemy import select
+
+    from business_os.identity.models import User
+    from business_os.shared_kernel.db import bind_tenant_scope, open_session
+    from serviceflow.assets.models import Asset
+
     h = _login(client)
     _set_business_profile("a@a.bg", "automotive_repair")
     cid, aid = _customer_and_asset(client, h)
 
-    rejected = _create_order(client, h, cid, aid, mileage=None)
-    assert rejected.status_code == 400
+    for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
+        owner = db.scalar(select(User).where(User.email == "a@a.bg"))
+        assert owner is not None
+        bind_tenant_scope(db, owner.company_id)
+        asset = db.get(Asset, aid)
+        assert asset is not None
+        asset.field_values = {**asset.field_values, "mileage": 80_000}
+        db.commit()
 
-    created = _create_order(client, h, cid, aid, mileage=1000)
-    assert created.status_code == 201, created.text
-    year = str(__import__("datetime").date.today().year)
-    assert created.json()["number"] == f"{year}-00001"
-
-
-# --- Non-automotive profiles: mileage stays optional ------------------------
-
-
-def test_generic_repair_profile_order_creation_unaffected(client: TestClient) -> None:
-    """Default seed_company profile is generic_repair — mileage stays fully
-    optional, exactly as before this cleanup batch."""
-    h = _login(client)
-    cid, aid = _customer_and_asset(client, h, asset_type_code="other")
-
-    resp = _create_order(client, h, cid, aid, mileage=None)
-    assert resp.status_code == 201, resp.text
-    assert resp.json()["mileage"] is None
+    resp = _create_order(client, h, cid, aid, mileage=79_999)
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["params"]["previous"] == 80_000
 
 
-def test_phone_repair_profile_order_creation_unaffected(client: TestClient) -> None:
-    h = _login(client)
-    _set_business_profile("a@a.bg", "phone_repair")
-    cid, aid = _customer_and_asset(client, h, asset_type_code="phone")
-
-    resp = _create_order(client, h, cid, aid, mileage=None)
-    assert resp.status_code == 201, resp.text
-    assert resp.json()["mileage"] is None
-
-
-def test_automotive_company_non_vehicle_asset_still_requires_mileage(client: TestClient) -> None:
-    """The gate is on the company's own business_profile (docs' own wording:
-    "automotive_repair profile: mileage required for creation of a new
-    order"), not on the specific asset type chosen for one order — matches
-    the cleanup batch's explicit instruction to key this off the company
-    profile, not a per-order asset-type check."""
-    h = _login(client)
-    _set_business_profile("a@a.bg", "automotive_repair")
-    _seed_extra_asset_type("a@a.bg", "phone_repair")
-    cid, aid = _customer_and_asset(client, h, asset_type_code="phone")
-
-    resp = _create_order(client, h, cid, aid, mileage=None)
-    assert resp.status_code == 400
-    assert resp.json()["detail"]["message_key"] == "errors.orders.mileage_required"
-
-
-# --- Legacy rows -------------------------------------------------------------
+# --- Legacy rows --------------------------------------------------------------
 
 
 def test_legacy_null_mileage_order_remains_readable(client: TestClient) -> None:
-    """A pre-existing NULL-mileage row (created before this batch, or for a
-    non-automotive company) must still read back cleanly — no backfill, no
-    migration, this batch never touches historical rows."""
+    """A pre-existing NULL-mileage row must still read back cleanly."""
     h = _login(client)
-    # generic_repair (this file's default, unset here) only seeds "other" —
-    # the non-automotive-company half of this test's own docstring.
     cid, aid = _customer_and_asset(client, h, asset_type_code="other")
     created = _create_order(client, h, cid, aid, mileage=None)
     assert created.status_code == 201
@@ -232,3 +304,4 @@ def test_legacy_null_mileage_order_remains_readable(client: TestClient) -> None:
     resp = client.get(f"/api/v1/orders/{created.json()['id']}", headers=h)
     assert resp.status_code == 200
     assert resp.json()["mileage"] is None
+    assert resp.json()["mileage_confirmed_lower"] is False

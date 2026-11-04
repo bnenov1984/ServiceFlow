@@ -64,6 +64,11 @@ def test_create_order_numbering_and_default_status(client: TestClient) -> None:
     h = _login(client)
     cid, aid = _customer_and_asset(client, h)
     o1 = _order(client, h, cid, aid)
+    # WP-D (Q6): an asset can have at most one open order — close the first
+    # before creating the second, which is all this test actually needs
+    # (sequential numbering), not two orders open at once.
+    client.post(f"/api/v1/orders/{o1['id']}/status", headers=h,
+               json={"to": "declined", "reason": "Тест"})
     o2 = _order(client, h, cid, aid, "Счупен екран")
     assert o1["status_code"] == "received"
     assert o1["status_kind"] == "working"
@@ -327,6 +332,9 @@ def test_order_accepts_mileage_for_any_asset_type(client: TestClient) -> None:
     cid, aid = _customer_and_asset(client, h)  # "phone" asset type
     order = _order(client, h, cid, aid)
     assert order["mileage"] is None
+    # WP-D (Q6): close the first before opening a second against the same asset.
+    client.post(f"/api/v1/orders/{order['id']}/status", headers=h,
+               json={"to": "declined", "reason": "Тест"})
 
     r = client.post("/api/v1/orders", headers=h, json={
         "customer_id": cid, "asset_id": aid, "complaint": "x", "mileage": 100,
@@ -356,6 +364,11 @@ def test_vehicle_service_history_spans_ownership_change(client: TestClient) -> N
     }).json()
 
     client.post(f"/api/v1/assets/{aid}/transfer-owner", headers=h, json={"customer_id": cid2})
+    # WP-D (Q6): close order1 before opening order2 against the same asset —
+    # history still includes both regardless of status (list_orders_for_asset
+    # is status-agnostic), so this doesn't weaken what's being verified below.
+    client.post(f"/api/v1/orders/{order1['id']}/status", headers=h,
+               json={"to": "declined", "reason": "Тест"})
 
     order2 = client.post("/api/v1/orders", headers=h, json={
         "customer_id": cid2, "asset_id": aid, "complaint": "Спирачки", "mileage": 105000,
@@ -597,8 +610,14 @@ def _technicians(client: TestClient, h: dict[str, str]) -> tuple[str, str]:
     return owner, worker.json()["id"]
 
 
-def _order_in(client: TestClient, h: dict[str, str], cid: str, aid: str,
+def _order_in(client: TestClient, h: dict[str, str], cid: str,
               technician_id: str | None, path: list[str]) -> None:
+    # WP-D (Q6): an asset can have at most one open order — every call here
+    # creates its own asset to have several technicians' orders open at
+    # once, exactly as separate customers' separate devices really would.
+    aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
+        "asset_type_code": "other", "field_values": {"description": "Apple 13"},
+    }).json()["id"]
     r = client.post("/api/v1/orders", headers=h, json={
         "customer_id": cid, "asset_id": aid, "complaint": "x",
         "technician_id": technician_id,
@@ -612,13 +631,13 @@ def _order_in(client: TestClient, h: dict[str, str], cid: str, aid: str,
 def test_technician_load_counts_only_diagnostics_and_repair(client: TestClient) -> None:
     h = _login(client)
     owner, worker = _technicians(client, h)
-    cid, aid = _customer_and_asset(client, h)
-    _order_in(client, h, cid, aid, owner, ["diagnostics"])
-    _order_in(client, h, cid, aid, owner, ["diagnostics"])
-    _order_in(client, h, cid, aid, owner, ["diagnostics", "repair"])
-    _order_in(client, h, cid, aid, worker, ["diagnostics", "waiting_parts"])
-    _order_in(client, h, cid, aid, worker, [])  # Приета
-    _order_in(client, h, cid, aid, None, ["diagnostics"])  # unassigned
+    cid, _aid = _customer_and_asset(client, h)
+    _order_in(client, h, cid, owner, ["diagnostics"])
+    _order_in(client, h, cid, owner, ["diagnostics"])
+    _order_in(client, h, cid, owner, ["diagnostics", "repair"])
+    _order_in(client, h, cid, worker, ["diagnostics", "waiting_parts"])
+    _order_in(client, h, cid, worker, [])  # Приета
+    _order_in(client, h, cid, None, ["diagnostics"])  # unassigned
 
     r = client.get("/api/v1/orders/technician-load")
     assert r.status_code == 200, r.text
@@ -628,8 +647,8 @@ def test_technician_load_counts_only_diagnostics_and_repair(client: TestClient) 
 def test_technician_load_is_tenant_isolated(client: TestClient) -> None:
     h_a = _login(client, "Сервиз А", "a@a.bg")
     owner_a = next(u["id"] for u in client.get("/api/v1/users").json() if u["is_owner"])
-    cid, aid = _customer_and_asset(client, h_a)
-    _order_in(client, h_a, cid, aid, owner_a, ["diagnostics"])
+    cid, _aid = _customer_and_asset(client, h_a)
+    _order_in(client, h_a, cid, owner_a, ["diagnostics"])
     client.post("/api/v1/auth/logout", headers=h_a)
 
     _login(client, "Сервиз Б", "b@b.bg")

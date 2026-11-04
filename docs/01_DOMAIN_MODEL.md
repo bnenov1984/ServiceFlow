@@ -100,6 +100,14 @@ Attributes are business attributes, not columns.
 - **Lifecycle:** registered at first intake → repaired many times → archived.
 - **Invariants:** belongs to exactly one Customer (ownership transfer is an edit with
   timeline note — rare, supported, logged). Its history is the set of its orders.
+  *(Added 04.11.2026 — order-workflow-revamp WP-C/D, Q9/Q10/Q11):* VIN and
+  registration № are each unique per company when present (normalized:
+  uppercase alphanumerics, Cyrillic/Latin look-alike letters folded).
+  Mileage on an order is optional; when entered it must be ≥ the highest
+  mileage recorded for the asset, unless the Owner confirms a lower
+  reading — then the reading is stored as read, flagged „по-малък от
+  предишния — потвърдено", with a mandatory timeline comment. Mileage is
+  never overwritten with a different value than the one read.
 
 ### ServiceOrder — the aggregate at the center
 - **Purpose:** one repair engagement; everything about a repair belongs here.

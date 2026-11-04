@@ -59,12 +59,20 @@ class ServiceOrder(Base, TimestampMixin):
     warranty_days: Mapped[int | None] = mapped_column(default=None)
     # Wave 3 Issues 21/26/27: mileage belongs to the visit, not just the
     # asset master record — captured at intake. `created_at` (TimestampMixin)
-    # is the visit timestamp; no separate mileage date column. Cleanup batch
-    # Issue 26: `service.create()` requires this for a new order when the
-    # company's own business_profile is "automotive_repair"; still fully
-    # optional for every other profile. Stays nullable at the column level
-    # regardless (legacy rows, and every non-automotive order, are NULL).
+    # is the visit timestamp; no separate mileage date column. Always
+    # optional at the column level (legacy rows, and any order, may be
+    # NULL) — Cleanup batch Issue 26 once required it for automotive_repair
+    # companies specifically; order-workflow-revamp WP-D (Q9) reversed that,
+    # migration 0035.
     mileage: Mapped[int | None] = mapped_column(default=None)
+    # Q10 (WP-D): true when `mileage` is lower than the asset's previously
+    # recorded maximum and an Owner explicitly confirmed the reading is
+    # correct as read (never a system-applied correction) — the reading
+    # itself is stored exactly as given, this is purely a display flag.
+    # Always False unless that exact bypass path was taken.
+    mileage_confirmed_lower: Mapped[bool] = mapped_column(
+        default=False, server_default=text("false"),
+    )
     # Wave 5 Issue 12: the smallest order-level logistics model. "pickup" or
     # "courier" (validated at the Pydantic layer, same no-DB-CHECK precedent
     # as `priority` above — not a lifecycle field like part_lines.state, so

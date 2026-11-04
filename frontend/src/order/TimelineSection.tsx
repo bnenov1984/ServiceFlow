@@ -36,6 +36,7 @@ const EVENT_LABEL: Record<string, Parameters<typeof t>[0]> = {
   estimate_approved: "order.event_estimate_approved",
   estimate_rejected: "order.event_estimate_rejected",
   order_unlocked: "order.event_unlocked",
+  mileage_override_confirmed: "order.event_mileage_override",
   // "delivered" renamed to "completed" 2026-09-25 (Wave 4 audit correction).
   // Both keys stay mapped: existing TimelineEvent rows still carry the old
   // type (append-only, never rewritten), only new events use the new one.
@@ -82,6 +83,7 @@ export function TimelineSection({ orderId }: { orderId: string }) {
           const contactType = e.event_type === "note_or_contact_recorded"
             ? String(e.data.type ?? "") : null;
           const contactSummary = contactType ? String(e.data.summary ?? "") : null;
+          const mileageOverride = e.event_type === "mileage_override_confirmed" ? e.data : null;
           return (
             <li key={i} className="flex items-start gap-3 text-sm">
               <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-slate-300" />
@@ -92,6 +94,14 @@ export function TimelineSection({ orderId }: { orderId: string }) {
                       {t(CONTACT_TYPE_LABEL[contactType] ?? "order.contact_note")}
                     </span>
                     {contactSummary}
+                  </p>
+                ) : mileageOverride ? (
+                  <p className="text-slate-700">
+                    {t("order.event_mileage_override", {
+                      reading: Number(mileageOverride.reading ?? 0),
+                      previous: Number(mileageOverride.previous_max ?? 0),
+                    })}
+                    {mileageOverride.comment ? ` — ${String(mileageOverride.comment)}` : ""}
                   </p>
                 ) : (
                   <p className="text-slate-700">{t(EVENT_LABEL[e.event_type] ?? e.event_type)}</p>

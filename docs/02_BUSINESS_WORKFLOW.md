@@ -84,7 +84,8 @@ Permissions: any active user may perform allowed transitions except Анулир
 
 ```
 Клиент идва → Намери/създай клиент (търсене по телефон, предупреждение за дубликат)
-→ Регистрирай/избери актив → Създай поръчка №2026-00042:
+→ Регистрирай/избери актив (при съществуващ: последни посещения + последен пробег;
+   отворена поръчка → блок с връзка към нея) → Създай поръчка №2026-00042:
      оплакване (задълж.) · аксесоари чеклист · снимки при приемане (препор.)
      · обещана дата · приоритет · техник (по избор)
 → ПЕЧАТ: приемо-предавателен протокол (A4) — клиентът си тръгва с него
@@ -256,7 +257,9 @@ PIN-out.
 | Customer unreachable | Call task + escalating dashboard aging on Готова/Чака клиент; Owner archive-with-note as last resort |
 | Lost/misplaced device | Order № on intake protocol; (labels V1.5); search by any identifier |
 | Duplicate customer | *(Amended 03.11.2026 — WP-B, Q7/Q8)* Individuals: normalized phone unique — blocked inline with „Избери съществуващия"; companies: ЕИК unique — blocked inline |
-| Duplicate order | Same asset + open order warning at creation |
+| Duplicate vehicle | *(Added 04.11.2026 — WP-C, Q11)* VIN and рег. № unique per company — blocked inline with „Избери този автомобил" |
+| Duplicate order | *(Amended 04.11.2026 — WP-D, Q6)* Same asset + open order (any non-terminal status, incl. Готова) **blocked** at the asset step and on create; link to the open order |
+| Mileage lower than before | *(Added 04.11.2026 — WP-D, Q9/Q10)* Blocked; Owner-only confirmation stores the real reading with a flag + comment |
 | Wrong customer on order | Editable until first status change; afterwards Анулирана + recreate (history stays honest) |
 | Duplicate/wrong invoice | Annul + reissue; gapless numbering preserved |
 | Forgotten repair | Просрочени widget + days-in-status on every card |

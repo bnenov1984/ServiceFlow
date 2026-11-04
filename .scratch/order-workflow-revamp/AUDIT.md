@@ -655,3 +655,76 @@ ruff/mypy/lint-imports/typecheck/build all clean. docs/adr/ADR-BOS-011
 §Decision 5 and docs/business-os/18 §15.1(1) amended with the Q18 seed
 map — only the asset-type-seeding portion; the `accessories` flag in the
 same approved proposal text belongs to WP-H, not yet applied.
+
+WP-D (mileage monotonic rule + Owner bypass, open-order block; #17/#18/#19,
+Q6/Q6b/Q9/Q10) implemented 04.11.2026. Backend: migration 0035 adds
+`service_orders.mileage_confirmed_lower`; `service.create()` gained
+`find_open_order_for_asset()` (Q6 — blocks a new order for an asset with
+any non-terminal order, incl. "ready", for every asset type, shared by
+every caller including `warranty_return()`) and `_max_mileage_for_asset()`
+(Q9's floor — the asset's true highest-ever mileage, not just its latest
+order's, since a Q10 bypass can deliberately make a later order's own
+reading lower than an earlier true maximum). Three layered checks mirror
+`unlock()`'s own style: a non-Owner gets a flat `errors.auth.owner_required`
+403 with no bypass at all; an Owner who hasn't ticked confirm gets
+`errors.orders.mileage_lower_than_previous` (409, carries the previous
+value); ticked-but-no-comment gets `errors.orders.mileage_override_
+comment_required` (400). A confirmed bypass stores the mileage exactly as
+read (never corrected), flags the row, and publishes a new
+`mileage_override_confirmed` timeline event (reading/previous_max/comment)
+— `OrderError` gained a `params` dict so `_err()` can carry structured
+detail (previous value, open order number) through to the frontend, not
+just a bare message key. New `GET /assets/{id}/open-order` (Q6b's
+proactive pre-check, mirrors reg-check/phone-check/eik-check's shape).
+Frontend: `AssetStep.tsx`'s `resolve()` — the single funnel every
+resolution path (pick/create/VIN reuse/VIN transfer/reg-№ resolve) already
+goes through — now checks open-order first and renders a blocking banner
+with a link to the open order instead of ever calling `onResolved`;
+`OrderStep.tsx` fetches the floor via the existing service-history
+endpoint, shows it as a hint, and renders the Owner-only confirm-checkbox-
++-mandatory-comment UI inline (both reset whenever the mileage value
+itself is edited again, so a stale confirmation can never silently cover
+a new number). Cleanup batch Issue 26's mileage-required-for-automotive
+rule and its one UI validation function (`isValidMileage`) are gone
+outright, not merely relaxed. `TimelineSection.tsx` renders the new event
+type specially (same pattern `note_or_contact_recorded` already
+established), interpolating reading/previous/comment into Bulgarian text.
+
+**Real fallout found and fixed, from a genuinely new constraint**: Q6's
+"one open order per asset" is a real behavior change, not a seeding-shape
+one like WP-B/C's — five existing tests across three files
+(`test_frontend_prerequisites.py`, `test_orders.py` ×4) had created two or
+more simultaneously-open orders against the *same* asset to populate
+dashboard counts, test sequential numbering, exercise mileage-on-any-type,
+check service-history across an ownership transfer, or aggregate
+technician load — each fixed by either closing the first order before
+opening the second (when the test only needed *sequence*, not
+*simultaneity*) or giving each order its own asset (when the test
+specifically needed several open at once, e.g. dashboard/technician-load
+counts) — never by weakening the new rule itself. `test_automotive_
+mileage.py` was rewritten in full (its entire premise — mileage required
+for automotive — is what Q9 reverses) rather than patched; kept the
+filename since its fixture infrastructure (`_login`, `_set_business_
+profile`, `_customer_and_asset`) is still exactly right, just repurposed
+toward Q9/Q10. New `test_open_order_block.py` for Q6 (block on create,
+"ready" still counts as open, terminal statuses clear it, warranty-return
+exemption nuance — the *original* order being terminal never self-blocks,
+but a *separate* concurrent open order on the same asset still blocks the
+warranty return too, via the same shared check). Verified live: the
+mileage floor hint picked up a value from the legacy `Asset.field_values`
+fallback exactly as designed (entered at asset creation, no order yet);
+a 40 000 km reading against a 50 000 km floor was blocked until the Owner
+ticked confirm and typed a comment, then stored as read (40 000, flagged)
+with the exact Bulgarian timeline sentence rendering the reading/previous/
+comment; a second order against the same now-open vehicle showed the
+blocking banner with a working link back to order №2026-00001. Backend:
+829 passed, 2 xfailed (same pre-existing pair, up from 813 pre-WP-D — net
+new: Q9/Q10 mileage tests, Q6 open-order-block tests). Frontend: 575
+passed (up from 572 — new WP-D mileage-floor/bypass tests replacing the
+old required-mileage ones, new Q6b open-order-block tests).
+ruff/mypy/lint-imports/typecheck/build all clean. docs/01 Asset
+Invariants and docs/02 §3/§19 amended per `proposal-docs01-02-data-rules.md`'s
+already-approved text (the mileage/open-order portion — the duplicate-
+customer portion was already applied in WP-B, the duplicate-vehicle
+portion added here too since WP-C never touched docs/01/02 despite
+shipping Q11's enforcement).

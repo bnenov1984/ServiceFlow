@@ -38,11 +38,22 @@
  *   confirmation box — `VehicleHistoryAtIntake` below, reusing the same
  *   `GET /assets/{id}/service-history` endpoint and `VehicleVisitList`
  *   the order page's `VehicleHistorySection` already uses.
+ *
+ * order-workflow-revamp WP-D (Q6/Q6b): every path that resolves an asset —
+ * pick existing, create new, VIN reuse/transfer, reg-№ resolve — funnels
+ * through the single local `resolve()` helper, so the open-order block is
+ * checked exactly once, there, via `GET /assets/{id}/open-order`, rather
+ * than at each of those six call sites individually. A blocked asset is
+ * never promoted to the parent (`onResolved` is not called) — intake simply
+ * cannot reach the order step for it; `service.create()`'s own re-check is
+ * the real, authoritative guard regardless.
  */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, type ReactNode, useState } from "react";
+import { Link } from "react-router-dom";
 import { type ServiceHistoryEntry, VehicleVisitList } from "../components/VehicleVisitList";
+import { statusName } from "../lib/statusMatrix";
 import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
@@ -96,6 +107,13 @@ interface AssetByVinOut {
 interface RegCheckOut {
   asset_id: string | null;
   label: string | null;
+}
+
+// Q6b: GET /assets/{id}/open-order — same read-only pre-check shape.
+interface OpenOrderOut {
+  order_id: string | null;
+  number: string | null;
+  status_code: string | null;
 }
 
 // The full in-progress Asset-step draft, lifted to IntakePage (Issue 22) so
@@ -244,6 +262,11 @@ export function AssetStep({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [regConflict, setRegConflict] = useState<{ assetId: string; label: string } | null>(null);
+  // Q6b: set instead of resolving, when the chosen asset already has an
+  // open order — see resolve() below.
+  const [openOrderBlock, setOpenOrderBlock] = useState<
+    { asset: ResolvedAsset; orderId: string; number: string; statusCode: string } | null
+  >(null);
   const queryClient = useQueryClient();
 
   const patchDraft = (patch: Partial<AssetStepDraft>) => onDraftChange({ ...draft, ...patch });
@@ -252,7 +275,27 @@ export function AssetStep({
   // resolved (picked, reused, transferred, or freshly created) — the
   // in-progress-data-survives-navigation guarantee is about *unsaved* work,
   // not about carrying a finished attempt's leftovers into the next one.
-  const resolve = (asset: ResolvedAsset) => {
+  //
+  // Q6b: every resolution path funnels through here, so the open-order
+  // check (GET /assets/{id}/open-order) runs exactly once regardless of
+  // which path got the asset — pick existing, create new, VIN reuse/
+  // transfer, or reg-№ resolve. A blocked asset is never promoted to the
+  // parent (onResolved is not called); service.create()'s own re-check
+  // stays the authoritative guard if this pre-check itself fails or is
+  // raced.
+  const resolve = async (asset: ResolvedAsset) => {
+    try {
+      const openOrder = await api.get<OpenOrderOut>(`/assets/${asset.id}/open-order`);
+      if (openOrder.order_id && openOrder.number && openOrder.status_code) {
+        setOpenOrderBlock({
+          asset, orderId: openOrder.order_id, number: openOrder.number,
+          statusCode: openOrder.status_code,
+        });
+        return;
+      }
+    } catch {
+      // best-effort pre-check only; fall through and resolve normally.
+    }
     onDraftChange(DEFAULT_ASSET_STEP_DRAFT);
     onResolved(asset);
   };
@@ -296,6 +339,37 @@ export function AssetStep({
       setRegConflict(null);
     }
   };
+
+  // Q6b: a chosen asset with an open order never reaches `resolved` at
+  // all — this blocks right here, with a link to the open order and a way
+  // back to picking a different asset ("Промени" resets this block only,
+  // the draft/mode underneath is untouched).
+  if (openOrderBlock) {
+    return (
+      <div className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+        <p className="text-sm text-slate-800">
+          {t("intake.open_order_block", {
+            number: openOrderBlock.number, status: statusName(openOrderBlock.statusCode),
+          })}
+        </p>
+        <div className="flex gap-2">
+          <Link
+            to={`/orders/${openOrderBlock.orderId}`}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-center font-semibold text-white hover:bg-blue-700 min-h-touch"
+          >
+            {t("intake.open_order_view")}
+          </Link>
+          <button
+            type="button"
+            onClick={() => setOpenOrderBlock(null)}
+            className="rounded-lg border border-slate-300 px-4 py-2 hover:bg-slate-50 min-h-touch"
+          >
+            {t("intake.change")}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (resolved) {
     return (
@@ -349,7 +423,7 @@ export function AssetStep({
         if (match.customer_id === customerId) {
           // Already this customer's own vehicle — reuse it outright, same
           // as picking it from the "pick existing" list would have done.
-          resolve({ id: match.id, label: match.label, assetTypeCode: match.asset_type_code });
+          await resolve({ id: match.id, label: match.label, assetTypeCode: match.asset_type_code });
         } else {
           patchDraft({ ownerConflict: match });
         }
@@ -383,7 +457,7 @@ export function AssetStep({
       const match = await lookupVinConflict();
       if (match) {
         if (match.customer_id === customerId) {
-          resolve({ id: match.id, label: match.label, assetTypeCode: match.asset_type_code });
+          await resolve({ id: match.id, label: match.label, assetTypeCode: match.asset_type_code });
         } else {
           patchDraft({ ownerConflict: match });
         }
@@ -400,7 +474,7 @@ export function AssetStep({
         ),
       });
       await queryClient.invalidateQueries({ queryKey: queryKeys.customerAssets(customerId) });
-      resolve({
+      await resolve({
         id: created.id, label: created.label, assetTypeCode: created.asset_type_code,
         duplicateWarning: created.duplicate_asset_ids.length > 0
           ? t("intake.duplicate_asset_hint") : undefined,
@@ -421,9 +495,9 @@ export function AssetStep({
   // "Използвай автомобила" — MUST NOT change Asset.customer_id or ownership
   // history; the new order simply uses this intake's customer together with
   // the existing vehicle's asset_id (docs/business-os Wave 3, Issue 20).
-  const useExistingVehicle = () => {
+  const useExistingVehicle = async () => {
     if (!ownerConflict) return;
-    resolve({
+    await resolve({
       id: ownerConflict.id, label: ownerConflict.label,
       assetTypeCode: ownerConflict.asset_type_code,
     });
@@ -438,7 +512,7 @@ export function AssetStep({
       const asset = await api.post<AssetOut>(`/assets/${ownerConflict.id}/transfer-owner`, {
         customer_id: customerId,
       });
-      resolve({ id: asset.id, label: asset.label, assetTypeCode: asset.asset_type_code });
+      await resolve({ id: asset.id, label: asset.label, assetTypeCode: asset.asset_type_code });
     } catch (err) {
       setError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
     } finally {
@@ -456,7 +530,7 @@ export function AssetStep({
                 <button
                   key={a.id}
                   type="button"
-                  onClick={() => resolve({ id: a.id, label: a.label, assetTypeCode: a.asset_type_code })}
+                  onClick={() => void resolve({ id: a.id, label: a.label, assetTypeCode: a.asset_type_code })}
                   className="flex items-center gap-3 rounded-lg border border-slate-200 px-4 py-2 text-left hover:bg-slate-50 min-h-touch"
                 >
                   <AssetTypeIcon code={a.asset_type_code} className="h-5 w-5 text-slate-400" />
@@ -510,7 +584,7 @@ export function AssetStep({
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={useExistingVehicle}
+              onClick={() => void useExistingVehicle()}
               disabled={submitting}
               className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-50 min-h-touch"
             >
@@ -596,7 +670,7 @@ export function AssetStep({
                   </p>
                   <button
                     type="button"
-                    onClick={() => resolve({
+                    onClick={() => void resolve({
                       id: regConflict.assetId, label: regConflict.label,
                       assetTypeCode: selectedType.code,
                     })}

@@ -77,13 +77,17 @@ def test_dashboard_counts(client: TestClient) -> None:
     today = datetime.now(UTC).date()  # server computes "today" in UTC, not local wall-clock
     cid = client.post("/api/v1/customers", headers=h,
                       json={"name": "Иван", "phone": "0888111222"}).json()["id"]
-    aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
-        "asset_type_code": "other", "field_values": {"description": "Apple"},
-    }).json()["id"]
 
+    # order-workflow-revamp WP-D (Q6): an asset can have at most one open
+    # order now — each call below needs its own asset to have several open
+    # simultaneously, exactly as a real dashboard would (four different
+    # customers' devices, not one device with four parallel repairs).
     def order(**extra: object) -> str:
+        new_aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
+            "asset_type_code": "other", "field_values": {"description": "Apple"},
+        }).json()["id"]
         return str(client.post("/api/v1/orders", headers=h, json={
-            "customer_id": cid, "asset_id": aid, "complaint": "x", **extra,
+            "customer_id": cid, "asset_id": new_aid, "complaint": "x", **extra,
         }).json()["id"])
 
     o1 = order()  # received

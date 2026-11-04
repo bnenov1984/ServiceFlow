@@ -5,16 +5,27 @@ import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { OrderStep, type OrderStepValue } from "./OrderStep";
 
+// Q9/Q10 (WP-D): OrderStep fetches GET /assets/{id}/service-history for the
+// mileage floor whenever assetTypeCode === "vehicle" — default mock has no
+// floor (current_mileage: null), the pre-existing "no constraint at all"
+// shape every test below except the dedicated WP-D describe block relies on.
+const mockServiceHistory = vi.fn();
 vi.mock("../lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/api")>();
-  return { ...actual, api: { ...actual.api, get: vi.fn().mockResolvedValue([]) } };
+  return {
+    ...actual,
+    api: {
+      ...actual.api,
+      get: vi.fn((path: string) => {
+        if (path.includes("/service-history")) return Promise.resolve(mockServiceHistory());
+        return Promise.resolve([]);
+      }),
+    },
+  };
 });
 
-// Cleanup batch Issue 26: OrderStep now reads me?.business_profile to decide
-// whether mileage is required — same mock-module pattern InvoiceCard.test.tsx
-// already uses for useAuth. Defaults to no profile at all (the pre-existing
-// "mileage always optional" behavior every test below except the dedicated
-// Issue 26 describe block relies on).
+// OrderStep reads me?.is_owner for the Q10 bypass — same mock-module
+// pattern InvoiceCard.test.tsx already uses for useAuth.
 const mockUseAuth = vi.fn();
 vi.mock("../auth/AuthContext", () => ({
   useAuth: () => mockUseAuth(),
@@ -23,6 +34,7 @@ vi.mock("../auth/AuthContext", () => ({
 const DEFAULT_VALUE: OrderStepValue = {
   complaint: "", accessories: [], photos: [], partLines: [],
   priority: "normal", technicianId: null, mileage: "",
+  mileageConfirmedLower: false, mileageOverrideComment: "",
   deliveryMethod: "pickup", deliveryAddress: "",
 };
 
@@ -38,6 +50,7 @@ function Harness({
   return (
     <OrderStep
       value={value}
+      assetId="asset-1"
       assetTypeCode={assetTypeCode}
       defaultDeliveryAddress={defaultDeliveryAddress}
       onChange={setValue}
@@ -50,9 +63,10 @@ function Harness({
 
 function renderStep(
   initial?: OrderStepValue, assetTypeCode?: string, defaultDeliveryAddress?: string | null,
-  businessProfile?: string,
+  isOwner = false,
 ) {
-  mockUseAuth.mockReturnValue({ me: { business_profile: businessProfile } });
+  mockUseAuth.mockReturnValue({ me: { is_owner: isOwner } });
+  mockServiceHistory.mockReturnValue({ current_mileage: null });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
@@ -96,18 +110,26 @@ describe("OrderStep — Wave 3 Issues 21/26/27 (mileage at intake)", () => {
 
     expect(input).toHaveValue(123000);
   });
+
+  it("mileage is never required — submit is enabled with it left blank", async () => {
+    const user = userEvent.setup();
+    renderStep(undefined, "vehicle");
+
+    await user.type(screen.getByText("Оплакване").parentElement
+      ?.querySelector("textarea") as HTMLTextAreaElement, "Странен шум");
+
+    expect(screen.getByRole("button", { name: "Създай поръчка" })).not.toBeDisabled();
+  });
 });
 
-describe("OrderStep — cleanup batch Issue 26 (automotive mileage required)", () => {
+describe("OrderStep — WP-D (Q9/Q10: mileage floor + Owner-only lower-reading bypass)", () => {
   function complaintInput(): HTMLTextAreaElement {
     return screen.getByText("Оплакване").parentElement
       ?.querySelector("textarea") as HTMLTextAreaElement;
   }
 
   function mileageInput(): HTMLInputElement {
-    // The label reads "Пробег (км) *" once mileage is required — match by
-    // substring so this helper works whether or not the marker is present.
-    return screen.getByText(/Пробег \(км\)/).parentElement
+    return screen.getByText("Пробег (км)").parentElement
       ?.querySelector("input") as HTMLInputElement;
   }
 
@@ -115,58 +137,94 @@ describe("OrderStep — cleanup batch Issue 26 (automotive mileage required)", (
     return screen.getByRole("button", { name: "Създай поръчка" });
   }
 
-  it("marks mileage required and blocks submit when it's missing, for a vehicle order at an automotive_repair company", async () => {
+  function renderWithFloor(floor: number, isOwner: boolean) {
+    mockUseAuth.mockReturnValue({ me: { is_owner: isOwner } });
+    mockServiceHistory.mockReturnValue({ current_mileage: floor });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <Harness assetTypeCode="vehicle" />
+      </QueryClientProvider>,
+    );
+    return within(screen.getByText("Части (по избор)").closest("div") as HTMLElement);
+  }
+
+  it("shows the previously recorded mileage as a hint", async () => {
+    renderWithFloor(50000, false);
+    expect(await screen.findByText("Последно записан пробег: 50000 км")).toBeInTheDocument();
+  });
+
+  it("a value at or above the floor needs no confirmation and does not block submit", async () => {
     const user = userEvent.setup();
-    renderStep(undefined, "vehicle", null, "automotive_repair");
+    renderWithFloor(50000, false);
+    await screen.findByText("Последно записан пробег: 50000 км");
 
-    expect(screen.getByText(/Пробег \(км\)/)).toHaveTextContent("*");
     await user.type(complaintInput(), "Странен шум");
+    await user.type(mileageInput(), "50000");
 
+    expect(submitButton()).not.toBeDisabled();
+    expect(screen.queryByText("Потвърждавам по-малкия пробег")).not.toBeInTheDocument();
+  });
+
+  it("a non-Owner gets a flat blocked message, no bypass offered, submit disabled", async () => {
+    const user = userEvent.setup();
+    renderWithFloor(50000, false);
+    await screen.findByText("Последно записан пробег: 50000 км");
+
+    await user.type(complaintInput(), "Странен шум");
+    await user.type(mileageInput(), "40000");
+
+    expect(screen.getByText(
+      "Пробегът е по-малък от последния записан — само собственикът може да го потвърди.",
+    )).toBeInTheDocument();
+    expect(screen.queryByText("Потвърждавам по-малкия пробег")).not.toBeInTheDocument();
     expect(submitButton()).toBeDisabled();
   });
 
-  it("enables submit once a valid mileage is entered, for automotive_repair", async () => {
+  it("an Owner sees the bypass checkbox + comment, both required before submit unblocks", async () => {
     const user = userEvent.setup();
-    renderStep(undefined, "vehicle", null, "automotive_repair");
+    renderWithFloor(50000, true);
+    await screen.findByText("Последно записан пробег: 50000 км");
 
     await user.type(complaintInput(), "Странен шум");
-    await user.type(mileageInput(), "125000");
+    await user.type(mileageInput(), "40000");
+    expect(submitButton()).toBeDisabled();
+
+    await user.click(screen.getByText("Потвърждавам по-малкия пробег"));
+    expect(submitButton()).toBeDisabled(); // checkbox alone isn't enough — comment still required
+
+    const comment = screen.getByPlaceholderText("Коментар (задължителен) — защо пробегът е по-малък…");
+    await user.type(comment, "Клиентът смени километража на таблото след ремонт.");
 
     expect(submitButton()).not.toBeDisabled();
   });
 
-  it("accepts mileage 0 as valid for automotive_repair", async () => {
+  it("editing the mileage again resets the checkbox and comment, re-blocking submit", async () => {
     const user = userEvent.setup();
-    renderStep(undefined, "vehicle", null, "automotive_repair");
+    renderWithFloor(50000, true);
+    await screen.findByText("Последно записан пробег: 50000 км");
 
     await user.type(complaintInput(), "Странен шум");
-    await user.type(mileageInput(), "0");
-
+    await user.type(mileageInput(), "40000");
+    await user.click(screen.getByText("Потвърждавам по-малкия пробег"));
+    await user.type(
+      screen.getByPlaceholderText("Коментар (задължителен) — защо пробегът е по-малък…"),
+      "Коментар.",
+    );
     expect(submitButton()).not.toBeDisabled();
-  });
 
-  it("does not require mileage for a vehicle order at a non-automotive company", async () => {
-    const user = userEvent.setup();
-    renderStep(undefined, "vehicle", null, "generic_repair");
+    // Still below the floor (45000 < 50000) — a different value, so the
+    // stale confirmation must not silently carry over: the checkbox is
+    // back to unchecked and the comment field is gone, not pre-filled.
+    const input = mileageInput();
+    await user.clear(input);
+    await user.type(input, "45000");
 
-    expect(screen.getByText("Пробег (км)")).not.toHaveTextContent("*");
-    await user.type(complaintInput(), "Странен шум");
-
-    expect(submitButton()).not.toBeDisabled();
-  });
-
-  it("does not require mileage when no business_profile is known at all", async () => {
-    const user = userEvent.setup();
-    renderStep(undefined, "vehicle");
-
-    await user.type(complaintInput(), "Странен шум");
-
-    expect(submitButton()).not.toBeDisabled();
-  });
-
-  it("has no mileage field at all for a non-vehicle order, even at an automotive_repair company", () => {
-    renderStep(undefined, "phone", null, "automotive_repair");
-    expect(screen.queryByText("Пробег (км)")).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox")).not.toBeChecked();
+    expect(screen.queryByPlaceholderText(
+      "Коментар (задължителен) — защо пробегът е по-малък…",
+    )).not.toBeInTheDocument();
+    expect(submitButton()).toBeDisabled();
   });
 });
 

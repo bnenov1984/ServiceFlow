@@ -34,6 +34,9 @@ beforeEach(() => {
   vi.mocked(api.get).mockImplementation((path: string) => {
     if (path === "/asset-types") return Promise.resolve([vehicleType]) as never;
     if (path.endsWith("/assets")) return Promise.resolve([]) as never;
+    if (path.includes("/open-order")) {
+      return Promise.resolve({ order_id: null, number: null, status_code: null }) as never;
+    }
     return Promise.reject(new Error(`unexpected GET ${path}`));
   });
 });
@@ -204,6 +207,9 @@ describe("AssetStep choice-type field (Issue 23: automotive make dropdown)", () 
     vi.mocked(api.get).mockImplementation((path: string) => {
       if (path === "/asset-types") return Promise.resolve([vehicleTypeWithChoiceBrand]) as never;
       if (path.endsWith("/assets")) return Promise.resolve([]) as never;
+    if (path.includes("/open-order")) {
+      return Promise.resolve({ order_id: null, number: null, status_code: null }) as never;
+    }
       return Promise.reject(new Error(`unexpected GET ${path}`));
     });
     vi.mocked(api.post).mockResolvedValue({
@@ -241,6 +247,9 @@ describe("AssetStep back navigation", () => {
     vi.mocked(api.get).mockImplementation((path: string) => {
       if (path === "/asset-types") return Promise.resolve([vehicleType, otherType]) as never;
       if (path.endsWith("/assets")) return Promise.resolve([]) as never;
+    if (path.includes("/open-order")) {
+      return Promise.resolve({ order_id: null, number: null, status_code: null }) as never;
+    }
       return Promise.reject(new Error(`unexpected GET ${path}`));
     });
     const user = userEvent.setup();
@@ -277,6 +286,9 @@ describe("AssetStep VIN-first lookup (Issue 20: VIN before the full form)", () =
     vi.mocked(api.get).mockImplementation((path: string) => {
       if (path === "/asset-types") return Promise.resolve([vehicleType]) as never;
       if (path.endsWith("/assets")) return Promise.resolve([]) as never;
+    if (path.includes("/open-order")) {
+      return Promise.resolve({ order_id: null, number: null, status_code: null }) as never;
+    }
       if (path.startsWith("/assets/by-vin")) {
         const vin = decodeURIComponent(path.split("vin=")[1] ?? "");
         const result = impl(vin);
@@ -466,6 +478,9 @@ describe("AssetStep draft survives navigation (cleanup batch Issue 22)", () => {
     vi.mocked(api.get).mockImplementation((path: string) => {
       if (path === "/asset-types") return Promise.resolve([vehicleType]) as never;
       if (path.endsWith("/assets")) return Promise.resolve([]) as never;
+    if (path.includes("/open-order")) {
+      return Promise.resolve({ order_id: null, number: null, status_code: null }) as never;
+    }
       if (path.startsWith("/assets/by-vin")) {
         return Promise.reject(new ApiError(404, "not_found", "errors.assets.vin_not_found")) as never;
       }
@@ -501,11 +516,69 @@ function renderStepWithResolution() {
   );
 }
 
+describe("AssetStep — Q6b (open-order block at the asset step)", () => {
+  function mockWithOpenOrder(
+    openOrder: { order_id: string | null; number: string | null; status_code: string | null },
+  ) {
+    vi.mocked(api.get).mockImplementation((path: string) => {
+      if (path === "/asset-types") return Promise.resolve([vehicleType]) as never;
+      if (path.endsWith("/assets")) {
+        return Promise.resolve([
+          { id: "existing-9", label: "Volkswagen Golf", asset_type_code: "vehicle", archived: false },
+        ]) as never;
+      }
+      if (path.includes("/open-order")) return Promise.resolve(openOrder) as never;
+      return Promise.reject(new Error(`unexpected GET ${path}`));
+    });
+  }
+
+  it("blocks with a link to the open order instead of resolving", async () => {
+    const user = userEvent.setup();
+    mockWithOpenOrder({ order_id: "order-5", number: "2026-00005", status_code: "repair" });
+    renderStepWithResolution();
+
+    await user.click(await screen.findByText("Volkswagen Golf"));
+
+    expect(await screen.findByText(
+      "Има отворена поръчка №2026-00005 (Ремонт) за този актив.",
+    )).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Отвори я" })).toHaveAttribute("href", "/orders/order-5");
+  });
+
+  it('"Промени" clears the block, returning to the pick list', async () => {
+    const user = userEvent.setup();
+    mockWithOpenOrder({ order_id: "order-5", number: "2026-00005", status_code: "repair" });
+    renderStepWithResolution();
+
+    await user.click(await screen.findByText("Volkswagen Golf"));
+    await screen.findByText(/Има отворена поръчка/);
+    await user.click(screen.getByRole("button", { name: "Промени" }));
+
+    expect(await screen.findByText("Volkswagen Golf")).toBeInTheDocument();
+  });
+
+  it("resolves normally when the asset has no open order", async () => {
+    const user = userEvent.setup();
+    mockWithOpenOrder({ order_id: null, number: null, status_code: null });
+    renderStepWithResolution();
+
+    await user.click(await screen.findByText("Volkswagen Golf"));
+
+    expect(screen.queryByText(/Има отворена поръчка/)).not.toBeInTheDocument();
+    // The resolved confirmation box's own "change" link, proving we landed
+    // on the normal resolved view, not stuck mid-pick.
+    expect(await screen.findByText("Промени")).toBeInTheDocument();
+  });
+});
+
 describe("AssetStep — Q11 (reg-№ on-blur conflict check)", () => {
   function mockRegCheck(impl: (reg: string) => { asset_id: string | null; label: string | null }) {
     vi.mocked(api.get).mockImplementation((path: string) => {
       if (path === "/asset-types") return Promise.resolve([vehicleType]) as never;
       if (path.endsWith("/assets")) return Promise.resolve([]) as never;
+    if (path.includes("/open-order")) {
+      return Promise.resolve({ order_id: null, number: null, status_code: null }) as never;
+    }
       if (path.startsWith("/assets/by-vin")) {
         return Promise.reject(new ApiError(404, "not_found", "errors.assets.vin_not_found")) as never;
       }
@@ -582,6 +655,9 @@ describe("AssetStep — #20 (vehicle history at intake)", () => {
     vi.mocked(api.get).mockImplementation((path: string) => {
       if (path === "/asset-types") return Promise.resolve([vehicleType]) as never;
       if (path.endsWith("/assets")) return Promise.resolve([]) as never;
+    if (path.includes("/open-order")) {
+      return Promise.resolve({ order_id: null, number: null, status_code: null }) as never;
+    }
       if (path.startsWith("/assets/by-vin")) {
         return Promise.reject(new ApiError(404, "not_found", "errors.assets.vin_not_found")) as never;
       }

@@ -24,9 +24,11 @@ UNLOCK_WINDOW = timedelta(hours=24)
 
 
 class OrderError(Exception):
-    def __init__(self, message_key: str, status: int = 409) -> None:
+    def __init__(self, message_key: str, status: int = 409,
+                params: dict[str, Any] | None = None) -> None:
         self.message_key = message_key
         self.status = status
+        self.params = params or {}
 
 
 def _now() -> datetime:
@@ -108,29 +110,80 @@ def _event(db: Session, ctx: TenantContext, order: ServiceOrder, type_: str,
     ))
 
 
+def find_open_order_for_asset(db: Session, ctx: TenantContext,
+                              asset_id: uuid.UUID) -> ServiceOrder | None:
+    """Q6: an asset with any open order (every non-terminal status, incl.
+    "ready" — `statuses.OPEN`) blocks a new one, for every asset type, not
+    just vehicles. Newest first in the unlikely case more than one somehow
+    exists already."""
+    stmt = (
+        scoped(select(ServiceOrder), ServiceOrder, ctx)
+        .where(ServiceOrder.asset_id == asset_id, ServiceOrder.status_code.in_(statuses.OPEN))
+        .order_by(ServiceOrder.created_at.desc())
+    )
+    return db.scalar(stmt)
+
+
+def _max_mileage_for_asset(db: Session, ctx: TenantContext, asset_id: uuid.UUID) -> int | None:
+    """Q9's floor a new order's mileage must be >= (unless Owner-bypassed,
+    Q10): the true highest mileage **ever** recorded for this asset — not
+    just its latest order's value, since a Q10 bypass can deliberately make
+    a later order's own mileage lower than an earlier true maximum. Falls
+    back to the legacy `Asset.field_values["mileage"]` only when no order
+    has recorded one yet (same fallback `GET .../service-history` uses)."""
+    highest = db.scalar(
+        scoped(select(func.max(ServiceOrder.mileage)), ServiceOrder, ctx)
+        .where(ServiceOrder.asset_id == asset_id)
+    )
+    if highest is not None:
+        return highest
+    asset = assets_service.get(db, ctx, asset_id)
+    legacy = asset.field_values.get("mileage") if asset else None
+    return int(legacy) if isinstance(legacy, int | float) else None
+
+
 def create(db: Session, ctx: TenantContext, *, customer_id: uuid.UUID,
            asset_id: uuid.UUID, complaint: str, priority: str = "normal",
            promised_on: Any = None, technician_id: uuid.UUID | None = None,
            origin_order_id: uuid.UUID | None = None,
-           mileage: int | None = None, delivery_method: str | None = None,
+           mileage: int | None = None, mileage_confirmed_lower: bool = False,
+           mileage_override_comment: str | None = None,
+           delivery_method: str | None = None,
            delivery_address: dict[str, Any] | None = None) -> ServiceOrder:
-    # Cleanup batch Issue 26: mileage is required at intake only for a
-    # company whose own business_profile is "automotive_repair" — every
-    # other profile (phone_repair, electronics_repair, generic_repair, ...)
-    # keeps mileage fully optional, unchanged. Checked before number
-    # allocation, same discipline commercial.service.issue() uses for its
-    # own pre-allocation validation, so a rejected request never consumes
-    # an order number.
-    if mileage is None and identity_contracts.get_business_profile(
-        db, ctx.company_id,
-    ) == "automotive_repair":
-        raise OrderError("errors.orders.mileage_required", status=400)
+    # Q6: checked before number allocation, same discipline commercial.
+    # service.issue() uses for its own pre-allocation validation, so a
+    # rejected request never consumes an order number.
+    existing_open = find_open_order_for_asset(db, ctx, asset_id)
+    if existing_open is not None:
+        raise OrderError("errors.orders.open_order_exists", status=409,
+                         params={"number": existing_open.number})
+
+    # Q9/Q10 (order-workflow-revamp WP-D): mileage is optional for every
+    # profile now (reverses Cleanup batch Issue 26's automotive-required
+    # rule) — but when given, it must not go backwards unless the Owner
+    # explicitly confirms a lower reading with a mandatory comment. Each
+    # distinct failure gets its own message key, same layered-checks style
+    # `unlock()` above already uses (owner_required is a flat 403 — a
+    # non-Owner has no bypass at all, full stop).
+    is_lower_confirmed = False
+    previous_max = _max_mileage_for_asset(db, ctx, asset_id) if mileage is not None else None
+    if previous_max is not None and mileage is not None and mileage < previous_max:
+        if not ctx.is_owner:
+            raise OrderError("errors.auth.owner_required", status=403)
+        if not mileage_confirmed_lower:
+            raise OrderError("errors.orders.mileage_lower_than_previous", status=409,
+                             params={"previous": previous_max})
+        if not (mileage_override_comment or "").strip():
+            raise OrderError("errors.orders.mileage_override_comment_required", status=400)
+        is_lower_confirmed = True
+
     order = ServiceOrder(
         company_id=ctx.company_id, number=next_order_number(db, ctx),
         customer_id=customer_id, asset_id=asset_id, complaint=complaint,
         status_code="received", priority=priority, promised_on=promised_on,
         technician_id=technician_id, origin_order_id=origin_order_id,
         status_changed_at=_now(), created_by=ctx.user_id, mileage=mileage,
+        mileage_confirmed_lower=is_lower_confirmed,
         delivery_method=delivery_method, delivery_address=delivery_address,
     )
     db.add(order)
@@ -141,6 +194,11 @@ def create(db: Session, ctx: TenantContext, *, customer_id: uuid.UUID,
     })
     if technician_id is not None:
         _event(db, ctx, order, "technician_assigned", {"technician_id": str(technician_id)})
+    if is_lower_confirmed:
+        _event(db, ctx, order, "mileage_override_confirmed", {
+            "reading": mileage, "previous_max": previous_max,
+            "comment": (mileage_override_comment or "").strip(),
+        })
     db.commit()
     return order
 

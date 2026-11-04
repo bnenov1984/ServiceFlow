@@ -43,6 +43,7 @@ interface CustomerDetailOut {
 const DEFAULT_ORDER_VALUE: OrderStepValue = {
   complaint: "", accessories: [], photos: [], partLines: [],
   priority: "normal", technicianId: null, mileage: "",
+  mileageConfirmedLower: false, mileageOverrideComment: "",
   deliveryMethod: "pickup", deliveryAddress: "",
 };
 
@@ -111,6 +112,8 @@ export function IntakePage() {
         priority: orderValue.priority,
         technician_id: orderValue.technicianId,
         mileage: mileage !== null && !Number.isNaN(mileage) ? mileage : null,
+        mileage_confirmed_lower: orderValue.mileageConfirmedLower,
+        mileage_override_comment: orderValue.mileageOverrideComment.trim() || null,
         delivery_method: orderValue.deliveryMethod,
         delivery_address: orderValue.deliveryMethod === "courier" && orderValue.deliveryAddress.trim()
           ? { address: orderValue.deliveryAddress.trim() } : null,
@@ -201,6 +204,7 @@ export function IntakePage() {
         <StepSection number={3} title={t("intake.step_order")} active>
           <OrderStep
             value={orderValue}
+            assetId={asset.id}
             assetTypeCode={asset.assetTypeCode}
             defaultDeliveryAddress={
               customerDetail?.delivery_address?.address

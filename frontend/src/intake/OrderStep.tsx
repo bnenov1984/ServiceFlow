@@ -6,26 +6,25 @@
  * Wave 2 Issue 25: promised_on is no longer collected here — it only
  * becomes relevant once there's a diagnosis to promise against, so it moved
  * to PromisedDateBlock on the order page instead.
+ *
+ * order-workflow-revamp WP-D (Q9/Q10): mileage is optional for every
+ * profile now (reverses Cleanup batch Issue 26's automotive-required
+ * rule). The asset's previously recorded maximum ("floor") is fetched here
+ * and shown as a hint; a value below it needs the Owner to tick a
+ * confirmation box and type a comment — `service.create()`'s own check is
+ * the real, authoritative guard regardless of what this UI allows through.
  */
 
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { t } from "../i18n/bg";
+import { api } from "../lib/api";
+import { queryKeys } from "../lib/queryKeys";
 import { PhotoCaptureButtons } from "../components/PhotoCaptureButtons";
 import { TechnicianPicker } from "../components/TechnicianPicker";
 import { AccessoriesChecklist } from "./AccessoriesChecklist";
 import { PhotoThumbnail } from "./PhotoThumbnail";
-
-// Cleanup batch Issue 26: integer, >= 0 — mirrors the backend's
-// `mileage: int | None = Field(default=None, ge=0)` (OrderIn), used here
-// only to decide whether Submit should be disabled for an automotive
-// order; the backend (service_orders.service.create()) is still the real
-// authority.
-function isValidMileage(v: string): boolean {
-  if (v.trim() === "") return false;
-  const n = Number(v);
-  return Number.isInteger(n) && n >= 0;
-}
 
 const DELIVERY_METHODS = ["pickup", "courier"] as const;
 export type DeliveryMethod = (typeof DELIVERY_METHODS)[number];
@@ -47,6 +46,11 @@ export interface OrderStepValue {
   // the submit boundary (IntakePage), same convention as AssetStep's number
   // fields.
   mileage: string;
+  // Q10: only meaningful when `mileage` is below the asset's previous
+  // maximum — Owner-only checkbox + mandatory comment, both reset whenever
+  // `mileage` itself is edited again (see the mileage onChange below).
+  mileageConfirmedLower: boolean;
+  mileageOverrideComment: string;
   // Wave 5 Issue 12: "pickup" is the default/common path — the delivery
   // address only matters (and only renders) once "courier" is chosen.
   deliveryMethod: DeliveryMethod;
@@ -55,6 +59,7 @@ export interface OrderStepValue {
 
 export function OrderStep({
   value,
+  assetId,
   assetTypeCode,
   defaultDeliveryAddress,
   onChange,
@@ -63,7 +68,10 @@ export function OrderStep({
   error,
 }: {
   value: OrderStepValue;
-  // Gates the mileage field (Issue 21: automotive only, never required for
+  // Q9: the floor hint is fetched for this asset — only meaningful (and
+  // only fetched) for a vehicle, see the `enabled` gate below.
+  assetId: string;
+  // Gates the mileage field (Issue 21: automotive only, never shown for
   // other asset types).
   assetTypeCode: string;
   // Wave 5 Issue 12: the resolved customer's own default delivery address
@@ -84,11 +92,24 @@ export function OrderStep({
   const [partName, setPartName] = useState("");
   const [partPrice, setPartPrice] = useState("");
 
-  // Cleanup batch Issue 26: required only for a vehicle asset at a company
-  // whose own business_profile is "automotive_repair" — every other
-  // profile/asset type keeps mileage fully optional, unchanged.
-  const mileageRequired = assetTypeCode === "vehicle" && me?.business_profile === "automotive_repair";
-  const mileageMissing = mileageRequired && !isValidMileage(value.mileage);
+  // Q9: the asset's previously recorded maximum mileage — shown as a hint,
+  // and the floor a new value must not go below without the Q10 bypass.
+  // Only relevant for vehicles; `current_mileage` already combines order
+  // history with the legacy Asset.field_values fallback server-side.
+  const { data: serviceHistory } = useQuery({
+    queryKey: queryKeys.assetServiceHistory(assetId),
+    queryFn: () => api.get<{ current_mileage: number | null }>(`/assets/${assetId}/service-history`),
+    enabled: assetTypeCode === "vehicle",
+  });
+  const floor = serviceHistory?.current_mileage ?? null;
+  const mileageNum = value.mileage.trim() !== "" ? Number(value.mileage) : null;
+  const belowFloor = floor !== null && mileageNum !== null
+    && Number.isInteger(mileageNum) && mileageNum < floor;
+  const isOwner = me?.is_owner === true;
+  // Q10: blocks Submit until the Owner has both ticked the box and typed a
+  // comment — a non-Owner has no path through this at all.
+  const mileageBlocked = belowFloor
+    && !(isOwner && value.mileageConfirmedLower && value.mileageOverrideComment.trim());
 
   useEffect(() => {
     if (value.deliveryMethod !== "courier") return;
@@ -147,20 +168,61 @@ export function OrderStep({
       {assetTypeCode === "vehicle" && (
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">
-            {t("intake.mileage")}{mileageRequired && " *"}
+            {t("intake.mileage")}
           </label>
           <input
-            type="number" min={0} required={mileageRequired} value={value.mileage}
+            type="number" min={0} value={value.mileage}
             onChange={(e) => {
               const mileage = e.target.value;
-              onChange((prev) => ({ ...prev, mileage }));
+              // Q10: a freshly edited value always needs re-confirming —
+              // never let a stale checkbox/comment silently cover a new
+              // number the Owner never actually looked at.
+              onChange((prev) => ({
+                ...prev, mileage, mileageConfirmedLower: false, mileageOverrideComment: "",
+              }));
             }}
             className={`w-full rounded-lg border px-3 py-2 min-h-touch ${
-              mileageMissing ? "border-red-600" : "border-slate-300"
+              belowFloor ? "border-red-600" : "border-slate-300"
             }`}
           />
-          {mileageMissing && (
-            <p className="mt-0.5 text-xs text-red-700">{t("errors.orders.mileage_required")}</p>
+          {floor !== null && (
+            <p className="mt-0.5 text-xs text-slate-400">
+              {t("intake.mileage_floor_hint", { floor })}
+            </p>
+          )}
+          {belowFloor && !isOwner && (
+            <p className="mt-0.5 text-xs text-red-700">{t("intake.mileage_lower_owner_only")}</p>
+          )}
+          {belowFloor && isOwner && (
+            <div className="mt-2 flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <p className="text-xs text-amber-800">
+                {t("intake.mileage_lower_warning", { floor })}
+              </p>
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={value.mileageConfirmedLower}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    onChange((prev) => ({ ...prev, mileageConfirmedLower: checked }));
+                  }}
+                />
+                {t("intake.mileage_confirm_lower")}
+              </label>
+              {value.mileageConfirmedLower && (
+                <textarea
+                  required
+                  rows={2}
+                  value={value.mileageOverrideComment}
+                  onChange={(e) => {
+                    const mileageOverrideComment = e.target.value;
+                    onChange((prev) => ({ ...prev, mileageOverrideComment }));
+                  }}
+                  placeholder={t("intake.mileage_override_comment_placeholder")}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                />
+              )}
+            </div>
           )}
         </div>
       )}
@@ -319,7 +381,7 @@ export function OrderStep({
       <button
         type="button"
         onClick={onSubmit}
-        disabled={submitting || value.complaint.trim().length === 0 || mileageMissing}
+        disabled={submitting || value.complaint.trim().length === 0 || mileageBlocked}
         className="rounded-lg bg-blue-600 px-6 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-50 min-h-touch"
       >
         {submitting ? t("common.loading") : t("intake.create_order")}
