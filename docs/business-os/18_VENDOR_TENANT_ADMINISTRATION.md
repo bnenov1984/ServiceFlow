@@ -1030,6 +1030,15 @@ existing documents; the PO decided each before any code was written:
    introduce real per-profile content by branching inside
    `serviceflow.assets.service.seed_default_types`, never by touching the
    schema again.
+
+   **Superseded 03.11.2026** (order-workflow-revamp WP-C, Q18, migration
+   0034): that future migration landed — `seed_default_types` now branches
+   on `business_profile`, each profile seeding exactly one type per the Q18
+   seed map (`serviceflow.assets.service.BUSINESS_PROFILE_ASSET_TYPES`; see
+   ADR-BOS-011 §Decision 5's 03.11.2026 amendment for the map itself). The
+   parametrized "every profile seeds identical content" test this point
+   describes was rewritten to assert the opposite
+   (`tests/test_repairflow_business_profiles.py`).
 2. **A single clean migration, not §6.4's additive-first recommendation.**
    That recommendation (new table alongside the old, cut over, drop the old
    one in a second migration) is written for a scenario with real

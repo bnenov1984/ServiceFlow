@@ -76,7 +76,7 @@ def test_invoice_issued_is_accepted_and_writes_timeline_entry_on_order(
     cid = client.post("/api/v1/customers", headers=h,
                       json={"name": "Иван", "phone": "0888111222"}).json()["id"]
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
-        "asset_type_code": "phone", "field_values": {"brand": "Apple"},
+        "asset_type_code": "other", "field_values": {"description": "Apple"},
     }).json()["id"]
     oid = client.post("/api/v1/orders", headers=h, json={
         "customer_id": cid, "asset_id": aid, "complaint": "x",
@@ -124,7 +124,7 @@ def test_known_serviceflow_event_still_writes_timeline_entry(client: TestClient)
     cid = client.post("/api/v1/customers", headers=h,
                       json={"name": "Иван", "phone": "0888111222"}).json()["id"]
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
-        "asset_type_code": "phone", "field_values": {"brand": "Apple"},
+        "asset_type_code": "other", "field_values": {"description": "Apple"},
     }).json()["id"]
     oid = client.post("/api/v1/orders", headers=h, json={
         "customer_id": cid, "asset_id": aid, "complaint": "x",

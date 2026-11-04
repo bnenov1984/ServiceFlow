@@ -36,6 +36,25 @@ def normalize_identifier(value: str) -> str:
     return "".join(ch for ch in value.upper() if ch.isalnum())
 
 
+# order-workflow-revamp Q11: Bulgarian plates mix Cyrillic and Latin letters
+# that are visually identical, depending on who/what typed them — a Cyrillic
+# keyboard gives "СА1234ВХ", a Latin one gives "CA1234BX", same physical
+# plate. Only the ~11 letters that are genuinely homoglyphs in the Cyrillic
+# alphabet used on BG plates; this is deliberately narrower than
+# `transliterate` above (which maps every Cyrillic letter, including ones
+# with no Latin look-alike, e.g. "ж"→"zh" — wrong tool here, it would turn
+# one plate character into several). Folds to Latin since `normalize_identifier`
+# already uppercases, and ASCII alphanumerics are what a VIN/reg-№ index
+# compares.
+_PLATE_HOMOGLYPHS = str.maketrans("АВЕКМНОРСТУХ", "ABEKMHOPCTYX")
+
+
+def fold_plate_homoglyphs(value: str) -> str:
+    """Applied on top of `normalize_identifier` for `reg` identifiers only
+    (VIN is Latin-only by spec, every other identifier kind is untouched)."""
+    return value.translate(_PLATE_HOMOGLYPHS)
+
+
 def normalize_eik(value: str) -> str:
     """ЕИК/БУЛСТАТ: strip incidental surrounding whitespace only — matches
     the trim-before-validate convention every normalizer here follows. Does

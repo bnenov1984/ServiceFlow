@@ -295,8 +295,8 @@ def _asset_with_sensitive_value(client: TestClient, h: dict[str, str], cid: str)
     from serviceflow.assets.models import Asset
 
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
-        "asset_type_code": "phone",
-        "field_values": {"brand": "Apple", "model": "13", "imei": "356985061234567"},
+        "asset_type_code": "other",
+        "field_values": {"description": "Apple 13", "identifier": "356985061234567"},
     }).json()["id"]
     # No API writes sensitive_values yet (docs/08 §assets: "wired later") —
     # set it directly, simulating a stored encrypted passcode.
@@ -337,7 +337,7 @@ def test_anonymize_clears_sensitive_values_for_currently_owned_assets(
         assert asset is not None
         assert asset.sensitive_values is None
         # Preserved: the asset row, its label, identifiers.
-        assert asset.field_values["imei"] == "356985061234567"
+        assert asset.field_values["identifier"] == "356985061234567"
         assert asset.archived_at is None
 
 
@@ -389,7 +389,7 @@ def test_anonymize_preserves_service_history(client: TestClient) -> None:
         "name": "Георги", "phone": "0899111222",
     }).json()["id"]
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
-        "asset_type_code": "phone", "field_values": {"brand": "Apple"},
+        "asset_type_code": "other", "field_values": {"description": "Apple"},
     }).json()["id"]
     oid = client.post("/api/v1/orders", headers=h, json={
         "customer_id": cid, "asset_id": aid, "complaint": "Счупен екран",

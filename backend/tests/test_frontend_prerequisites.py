@@ -78,7 +78,7 @@ def test_dashboard_counts(client: TestClient) -> None:
     cid = client.post("/api/v1/customers", headers=h,
                       json={"name": "Иван", "phone": "0888111222"}).json()["id"]
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
-        "asset_type_code": "phone", "field_values": {"brand": "Apple"},
+        "asset_type_code": "other", "field_values": {"description": "Apple"},
     }).json()["id"]
 
     def order(**extra: object) -> str:
@@ -120,7 +120,37 @@ def test_dashboard_empty_company(client: TestClient) -> None:
 
 # --- GET /search -------------------------------------------------------------
 
-def _seed_searchables(client: TestClient, h: dict[str, str]) -> dict[str, str]:
+def _seed_vehicle_type_without_automotive_mileage_gate(email: str) -> None:
+    """order-workflow-revamp WP-C (Q18): generic_repair no longer seeds a
+    "vehicle" type — this file's searches need one (VIN/reg-№ identifier
+    search), but must NOT flip the company to automotive_repair, which
+    requires mileage at order creation (Cleanup batch Issue 26) and would
+    break _seed_searchables' mileage-less order. AssetType.business_profile
+    is just a descriptive tag on the row — only
+    `companies.settings.repairflow.business_profile` (untouched here)
+    drives the mileage gate, so seeding the type alone is safe."""
+    from sqlalchemy import select
+
+    from business_os.identity.models import User
+    from business_os.shared_kernel.db import bind_tenant_scope, open_session
+    from serviceflow.assets.models import AssetType
+    from serviceflow.assets.service import seed_default_types
+
+    for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
+        owner = db.scalar(select(User).where(User.email == email))
+        assert owner is not None
+        bind_tenant_scope(db, owner.company_id)
+        already = db.scalar(select(AssetType).where(
+            AssetType.company_id == owner.company_id, AssetType.code == "vehicle",
+        ))
+        if already is None:
+            seed_default_types(db, owner.company_id, "automotive_repair")
+        db.commit()
+
+
+def _seed_searchables(client: TestClient, h: dict[str, str],
+                      email: str = "a@a.bg") -> dict[str, str]:
+    _seed_vehicle_type_without_automotive_mileage_gate(email)
     cid = client.post("/api/v1/customers", headers=h, json={
         "name": "Иван Петров", "phone": "+359 88 812 3456",
     }).json()["id"]

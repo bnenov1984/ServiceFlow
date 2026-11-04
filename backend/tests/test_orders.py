@@ -12,13 +12,30 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _login(client: TestClient, company: str = "Сервиз А",
-           email: str = "a@a.bg") -> dict[str, str]:
-    from business_os.identity.service import seed_company
-    from business_os.shared_kernel.db import open_session
+def _login(client: TestClient, company: str = "Сервиз А", email: str = "a@a.bg",
+           business_profile: str = "generic_repair") -> dict[str, str]:
+    """order-workflow-revamp WP-C (Q18): generic_repair (the default here)
+    only seeds "other" now, not "vehicle" — _vehicle_customer_and_asset
+    needs an explicit automotive_repair login."""
+    from sqlalchemy import select
+
+    from business_os.identity.service import seed_company, set_business_profile
+    from business_os.shared_kernel.db import bind_tenant_scope, open_session
+    from serviceflow.assets.models import AssetType
+    from serviceflow.assets.service import BUSINESS_PROFILE_ASSET_TYPES, seed_default_types
 
     for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
-        seed_company(db, company, "Owner", email, "парола-123")
+        c = seed_company(db, company, "Owner", email, "парола-123")
+        if business_profile != "generic_repair":
+            set_business_profile(db, c.id, business_profile)
+            bind_tenant_scope(db, c.id)
+            target_code = BUSINESS_PROFILE_ASSET_TYPES[business_profile]["code"]
+            already = db.scalar(select(AssetType).where(
+                AssetType.company_id == c.id, AssetType.code == target_code,
+            ))
+            if already is None:
+                seed_default_types(db, c.id, business_profile)
+            db.commit()
     me = client.post("/api/v1/auth/login",
                      json={"email": email, "password": "парола-123"}).json()
     return {"X-CSRF-Token": str(me["csrf_token"])}
@@ -29,7 +46,7 @@ def _customer_and_asset(client: TestClient, h: dict[str, str],
     cid = client.post("/api/v1/customers", headers=h,
                       json={"name": "Иван", "phone": phone}).json()["id"]
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
-        "asset_type_code": "phone", "field_values": {"brand": "Apple", "model": "13"},
+        "asset_type_code": "other", "field_values": {"description": "Apple 13"},
     }).json()["id"]
     return cid, aid
 
@@ -319,7 +336,7 @@ def test_order_accepts_mileage_for_any_asset_type(client: TestClient) -> None:
 
 
 def test_order_rejects_negative_mileage(client: TestClient) -> None:
-    h = _login(client)
+    h = _login(client, business_profile="automotive_repair")
     cid, aid = _vehicle_customer_and_asset(client, h)
     r = client.post("/api/v1/orders", headers=h, json={
         "customer_id": cid, "asset_id": aid, "complaint": "x", "mileage": -1,
@@ -328,7 +345,7 @@ def test_order_rejects_negative_mileage(client: TestClient) -> None:
 
 
 def test_vehicle_service_history_spans_ownership_change(client: TestClient) -> None:
-    h = _login(client)
+    h = _login(client, business_profile="automotive_repair")
     cid1, aid = _vehicle_customer_and_asset(client, h, "0888111222", "WVWZZZ1JZ3W386752")
     cid2 = client.post("/api/v1/customers", headers=h,
                        json={"name": "Петър", "phone": "0888333444"}).json()["id"]
@@ -356,8 +373,38 @@ def test_vehicle_service_history_spans_ownership_change(client: TestClient) -> N
     assert body["visits"][1]["customer_id"] == cid1
 
 
+def _seed_vehicle_type_without_automotive_mileage_gate(email: str) -> None:
+    """This test needs a "vehicle"-coded asset type to exist, but must NOT
+    flip the company to automotive_repair — that profile requires mileage
+    at order creation (Cleanup batch Issue 26), which would defeat the
+    whole point of this test (an order with no mileage at all, relying on
+    the service-history endpoint's fallback to the asset's own legacy
+    field_values). AssetType.business_profile is just a descriptive tag on
+    the row — only `companies.settings.repairflow.business_profile`
+    (untouched here) drives the mileage gate, so seeding the type alone,
+    without `set_business_profile`, is safe."""
+    from sqlalchemy import select
+
+    from business_os.identity.models import User
+    from business_os.shared_kernel.db import bind_tenant_scope, open_session
+    from serviceflow.assets.models import AssetType
+    from serviceflow.assets.service import seed_default_types
+
+    for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
+        owner = db.scalar(select(User).where(User.email == email))
+        assert owner is not None
+        bind_tenant_scope(db, owner.company_id)
+        already = db.scalar(select(AssetType).where(
+            AssetType.company_id == owner.company_id, AssetType.code == "vehicle",
+        ))
+        if already is None:
+            seed_default_types(db, owner.company_id, "automotive_repair")
+        db.commit()
+
+
 def test_vehicle_service_history_falls_back_to_legacy_asset_mileage(client: TestClient) -> None:
     h = _login(client)
+    _seed_vehicle_type_without_automotive_mileage_gate("a@a.bg")
     cid = client.post("/api/v1/customers", headers=h,
                       json={"name": "Иван", "phone": "0888111222"}).json()["id"]
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
@@ -376,7 +423,7 @@ def test_vehicle_service_history_falls_back_to_legacy_asset_mileage(client: Test
 
 
 def test_vehicle_service_history_prefers_order_mileage_over_legacy(client: TestClient) -> None:
-    h = _login(client)
+    h = _login(client, business_profile="automotive_repair")
     cid = client.post("/api/v1/customers", headers=h,
                       json={"name": "Иван", "phone": "0888111222"}).json()["id"]
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
@@ -392,7 +439,7 @@ def test_vehicle_service_history_prefers_order_mileage_over_legacy(client: TestC
 
 
 def test_vehicle_service_history_is_tenant_isolated(client: TestClient) -> None:
-    h_a = _login(client, "Сервиз А", "a@a.bg")
+    h_a = _login(client, "Сервиз А", "a@a.bg", business_profile="automotive_repair")
     _, aid = _vehicle_customer_and_asset(client, h_a)
     client.post("/api/v1/auth/logout", headers=h_a)
 
@@ -444,7 +491,7 @@ def test_courier_order_prefills_from_customer_default_delivery_address(
         "delivery_address": {"address": "адрес по подразбиране"},
     }).json()["id"]
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
-        "asset_type_code": "phone", "field_values": {"brand": "Apple"},
+        "asset_type_code": "other", "field_values": {"description": "Apple"},
     }).json()["id"]
 
     r = client.post("/api/v1/orders", headers=h, json={
@@ -461,7 +508,7 @@ def test_courier_order_explicit_address_overrides_customer_default(client: TestC
         "delivery_address": {"address": "адрес по подразбиране"},
     }).json()["id"]
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
-        "asset_type_code": "phone", "field_values": {"brand": "Apple"},
+        "asset_type_code": "other", "field_values": {"description": "Apple"},
     }).json()["id"]
 
     r = client.post("/api/v1/orders", headers=h, json={
@@ -481,7 +528,7 @@ def test_order_delivery_address_is_independent_of_later_customer_address_edits(
         "delivery_address": {"address": "стар адрес"},
     }).json()["id"]
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
-        "asset_type_code": "phone", "field_values": {"brand": "Apple"},
+        "asset_type_code": "other", "field_values": {"description": "Apple"},
     }).json()["id"]
     oid = client.post("/api/v1/orders", headers=h, json={
         "customer_id": cid, "asset_id": aid, "complaint": "x", "delivery_method": "courier",
@@ -502,7 +549,7 @@ def test_pickup_order_ignores_customer_default_address(client: TestClient) -> No
         "delivery_address": {"address": "адрес по подразбиране"},
     }).json()["id"]
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
-        "asset_type_code": "phone", "field_values": {"brand": "Apple"},
+        "asset_type_code": "other", "field_values": {"description": "Apple"},
     }).json()["id"]
 
     r = client.post("/api/v1/orders", headers=h, json={

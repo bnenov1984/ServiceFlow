@@ -56,7 +56,7 @@ def _order(client: TestClient, h: dict[str, str], *,
         "name": customer_name, "phone": _unique_phone(),
     }).json()["id"]
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
-        "asset_type_code": "phone", "field_values": {"brand": "Apple"},
+        "asset_type_code": "other", "field_values": {"description": "Apple"},
     }).json()["id"]
     return str(client.post("/api/v1/orders", headers=h, json={
         "customer_id": cid, "asset_id": aid, "complaint": "Не се включва",

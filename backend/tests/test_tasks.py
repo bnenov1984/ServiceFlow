@@ -28,7 +28,7 @@ def _order(client: TestClient, h: dict[str, str]) -> str:
     cid = client.post("/api/v1/customers", headers=h,
                       json={"name": "Иван", "phone": "0888111222"}).json()["id"]
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
-        "asset_type_code": "phone", "field_values": {"brand": "Apple"},
+        "asset_type_code": "other", "field_values": {"description": "Apple"},
     }).json()["id"]
     return str(client.post("/api/v1/orders", headers=h, json={
         "customer_id": cid, "asset_id": aid, "complaint": "x",

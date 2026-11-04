@@ -20,10 +20,29 @@
  * it survives this component unmounting/remounting when the user goes back
  * to the Customer step and forward again — no global state, just the
  * existing lifted-state pattern applied one level further up.
+ *
+ * order-workflow-revamp WP-C additions:
+ * - Q18: a company's business profile now seeds exactly one asset type
+ *   (`GET /asset-types` returns a single-element array for every company
+ *   provisioned/migrated after migration 0034) — `soleType` below derives
+ *   straight into that sole type instead of showing the type-picker grid;
+ *   a company that still legitimately has more than one type (real
+ *   cross-type order history the migration couldn't safely collapse, see
+ *   its own docstring) still gets the grid exactly as before.
+ * - Q11: reg-№ gets an on-blur pre-check (`checkRegOnBlur`), same shape as
+ *   WP-B's phone/ЕИК pre-checks — simpler than VIN's upfront owner-
+ *   conflict/transfer sub-form on purpose, since Q11's decision is the
+ *   simpler "inline error + Избери този автомобил" (one action, not two).
+ * - #20: once a vehicle asset is resolved (picked, reused, transferred, or
+ *   freshly created), its service history renders right below the
+ *   confirmation box — `VehicleHistoryAtIntake` below, reusing the same
+ *   `GET /assets/{id}/service-history` endpoint and `VehicleVisitList`
+ *   the order page's `VehicleHistorySection` already uses.
  */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, type ReactNode, useState } from "react";
+import { type ServiceHistoryEntry, VehicleVisitList } from "../components/VehicleVisitList";
 import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
@@ -71,6 +90,12 @@ interface AssetByVinOut {
   asset_type_code: string;
   customer_id: string;
   customer_name: string;
+}
+
+// Q11: GET /assets/reg-check — mirrors customers' phone-check/eik-check shape.
+interface RegCheckOut {
+  asset_id: string | null;
+  label: string | null;
 }
 
 // The full in-progress Asset-step draft, lifted to IntakePage (Issue 22) so
@@ -135,11 +160,18 @@ function FieldInput({
   value,
   error,
   onChange,
+  onBlur,
+  extra,
 }: {
   def: FieldDef;
   value: string;
   error?: string;
   onChange: (v: string) => void;
+  // Q11: fires the reg-№ on-blur pre-check; unused by every other field.
+  onBlur?: () => void;
+  // Q11: the reg-№ conflict message + "Избери този автомобил" action,
+  // rendered below the field's own error/hint; unused by every other field.
+  extra?: ReactNode;
 }) {
   const hintKey = def.identifier_kind ? IDENTIFIER_HINTS[def.identifier_kind] : undefined;
   const borderClass = error ? "border-red-600" : "border-slate-300";
@@ -150,6 +182,7 @@ function FieldInput({
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onBlur={onBlur}
           className={`w-full rounded-lg border ${borderClass} px-3 py-2 min-h-touch`}
         >
           <option value="" />
@@ -162,12 +195,31 @@ function FieldInput({
           type={def.type === "number" ? "number" : def.type === "date" ? "date" : "text"}
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onBlur={onBlur}
           className={`w-full rounded-lg border ${borderClass} px-3 py-2 min-h-touch`}
         />
       )}
       {error
         ? <p role="alert" className="mt-0.5 text-xs text-red-700">{error}</p>
         : hintKey && <p className="mt-0.5 text-xs text-slate-400">{t(hintKey)}</p>}
+      {extra}
+    </div>
+  );
+}
+
+// #20: once a vehicle is resolved at intake, show its prior visits — same
+// endpoint and list markup the order page's VehicleHistorySection uses.
+function VehicleHistoryAtIntake({ assetId }: { assetId: string }) {
+  const { data } = useQuery({
+    queryKey: queryKeys.assetServiceHistory(assetId),
+    queryFn: () => api.get<{ visits: ServiceHistoryEntry[] }>(`/assets/${assetId}/service-history`),
+  });
+  return (
+    <div className="mt-2 rounded-lg border border-slate-200 bg-white p-3">
+      <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {t("intake.vehicle_history")}
+      </h4>
+      <VehicleVisitList visits={data?.visits ?? []} emptyLabel={t("intake.vehicle_history_empty")} />
     </div>
   );
 }
@@ -191,6 +243,7 @@ export function AssetStep({
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [regConflict, setRegConflict] = useState<{ assetId: string; label: string } | null>(null);
   const queryClient = useQueryClient();
 
   const patchDraft = (patch: Partial<AssetStepDraft>) => onDraftChange({ ...draft, ...patch });
@@ -214,29 +267,57 @@ export function AssetStep({
     enabled: mode === "pick",
   });
 
-  const selectedType = types?.find((t2) => t2.code === selectedTypeCode) ?? null;
+  // Q18: a profile seeds exactly one type going forward, so intake shows no
+  // picker — derived synchronously (not an effect) so the grid never
+  // flashes before auto-selecting. A company still holding more than one
+  // type (real cross-type order history migration 0034 left alone, see its
+  // own docstring) keeps the picker exactly as before.
+  const soleType = mode === "create" && !selectedTypeCode && types?.length === 1
+    ? types[0] : null;
+  const selectedType = soleType ?? types?.find((t2) => t2.code === selectedTypeCode) ?? null;
   const isVehicle = selectedType?.code === "vehicle";
   const vinDef = selectedType?.field_defs.find((d) => d.identifier_kind === "vin");
+  const regDef = selectedType?.field_defs.find((d) => d.identifier_kind === "reg");
   const showVinFirst = isVehicle && !vinCheckDone && !ownerConflict;
+
+  // Q11: on-blur pre-check, mirroring WP-B's phone/ЕИК pre-checks — a
+  // convenience only; submit-time _check_reg_conflicts is the real guard.
+  const checkRegOnBlur = async () => {
+    if (!regDef) return;
+    const raw = values[regDef.key]?.trim();
+    if (!raw) {
+      setRegConflict(null);
+      return;
+    }
+    try {
+      const result = await api.get<RegCheckOut>(`/assets/reg-check?reg=${encodeURIComponent(raw)}`);
+      setRegConflict(result.asset_id ? { assetId: result.asset_id, label: result.label ?? "" } : null);
+    } catch {
+      setRegConflict(null);
+    }
+  };
 
   if (resolved) {
     return (
-      <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3">
-        <div className="flex items-center justify-between">
-          <p className="font-medium text-slate-800">{resolved.label}</p>
-          <button
-            type="button"
-            onClick={onChangeRequested}
-            className="text-sm font-medium text-blue-700 hover:underline"
-          >
-            {t("intake.change")}
-          </button>
+      <div>
+        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3">
+          <div className="flex items-center justify-between">
+            <p className="font-medium text-slate-800">{resolved.label}</p>
+            <button
+              type="button"
+              onClick={onChangeRequested}
+              className="text-sm font-medium text-blue-700 hover:underline"
+            >
+              {t("intake.change")}
+            </button>
+          </div>
+          {resolved.duplicateWarning && (
+            <p className="mt-2 text-sm text-amber-700" role="status">
+              {resolved.duplicateWarning}
+            </p>
+          )}
         </div>
-        {resolved.duplicateWarning && (
-          <p className="mt-2 text-sm text-amber-700" role="status">
-            {resolved.duplicateWarning}
-          </p>
-        )}
+        {resolved.assetTypeCode === "vehicle" && <VehicleHistoryAtIntake assetId={resolved.id} />}
       </div>
     );
   }
@@ -503,7 +584,28 @@ export function AssetStep({
               def={def}
               value={values[def.key] ?? ""}
               error={fieldErrors[def.key]}
-              onChange={(v) => patchDraft({ values: { ...values, [def.key]: v } })}
+              onChange={(v) => {
+                patchDraft({ values: { ...values, [def.key]: v } });
+                if (def.identifier_kind === "reg") setRegConflict(null);
+              }}
+              onBlur={def.identifier_kind === "reg" ? () => void checkRegOnBlur() : undefined}
+              extra={def.identifier_kind === "reg" && regConflict ? (
+                <div className="mt-1 flex items-center gap-2">
+                  <p role="alert" className="text-xs text-red-700">
+                    {t("errors.assets.reg_conflict")}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => resolve({
+                      id: regConflict.assetId, label: regConflict.label,
+                      assetTypeCode: selectedType.code,
+                    })}
+                    className="text-xs font-medium text-blue-700 hover:underline"
+                  >
+                    {t("intake.use_existing_vehicle")}
+                  </button>
+                </div>
+              ) : undefined}
             />
           ))}
           {error && <p role="alert" className="text-sm text-red-700">{error}</p>}

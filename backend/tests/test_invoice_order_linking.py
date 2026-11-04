@@ -53,7 +53,7 @@ def _manual_draft(client: TestClient, h: dict[str, str], customer_id: str) -> st
 def _order(client: TestClient, h: dict[str, str], customer_id: str,
           complaint: str = "Тест") -> str:
     aid = client.post(f"/api/v1/customers/{customer_id}/assets", headers=h, json={
-        "asset_type_code": "phone", "field_values": {"brand": "Apple"},
+        "asset_type_code": "other", "field_values": {"description": "Apple"},
     }).json()["id"]
     resp = client.post("/api/v1/orders", headers=h, json={
         "customer_id": customer_id, "asset_id": aid, "complaint": complaint,

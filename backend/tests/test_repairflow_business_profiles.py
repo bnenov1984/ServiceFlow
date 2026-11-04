@@ -4,9 +4,10 @@ the asset-type set, seeded once at provisioning via the `company_provisioned`
 domain event; the wire-level `asset_type_code` API contract is unchanged
 (tests/test_assets.py, entirely unmodified by this slice, is the proof).
 
-Per PO decision (28.07.2026): all five business profiles seed *identical*
-content today — no per-profile field_defs exist yet. This file tests the
-structural placeholder, not invented domain content.
+order-workflow-revamp WP-C (Q18, migration 0034): each business profile now
+seeds exactly **one** asset type — the "all five profiles seed identical
+content" placeholder this file tested before Q18 is reversed on purpose; see
+`serviceflow.assets.service.BUSINESS_PROFILE_ASSET_TYPES` for the seed map.
 """
 
 import os
@@ -25,7 +26,15 @@ pytestmark = pytest.mark.skipif(
 VENDOR = "/api/v1/platform-admin"
 ADMIN_EMAIL = "vendor.admin@business-os.bg"
 ADMIN_PASSWORD = "вендор-парола-123"
-EXPECTED_CODES = {"phone", "vehicle", "laptop", "other"}
+
+# Mirrors serviceflow.assets.service.BUSINESS_PROFILE_ASSET_TYPES's code map.
+EXPECTED_CODE_BY_PROFILE = {
+    "generic_repair": "other",
+    "automotive_repair": "vehicle",
+    "phone_repair": "phone",
+    "electronics_repair": "electronics",
+    "appliance_repair": "appliance",
+}
 
 
 def _db() -> Iterator[object]:
@@ -96,10 +105,10 @@ def _asset_types_for(company_id: uuid.UUID) -> list[object]:
 # --- Seeding on provisioning ------------------------------------------------
 
 
-def test_provision_company_seeds_four_asset_types(client: TestClient) -> None:
+def test_provision_company_seeds_exactly_one_asset_type(client: TestClient) -> None:
     company_id = _provision(client, "generic_repair", "owner1@shop.bg")
     types = _asset_types_for(company_id)
-    assert {t.code for t in types} == EXPECTED_CODES
+    assert {t.code for t in types} == {"other"}
     assert all(t.business_profile == "generic_repair" for t in types)
 
 
@@ -107,22 +116,21 @@ def test_provision_company_seeds_four_asset_types(client: TestClient) -> None:
     "generic_repair", "automotive_repair", "phone_repair",
     "electronics_repair", "appliance_repair",
 ])
-def test_every_business_profile_seeds_identical_content(client: TestClient, profile: str) -> None:
-    """Structural placeholder, confirmed: all five profiles produce the same
-    codes/field_defs today — only the business_profile tag differs. Not a
-    statement that this will always be true (docs/business-os/18 §15 is
-    explicit that future profile-specific content is expected)."""
+def test_every_business_profile_seeds_its_own_single_type(
+    client: TestClient, profile: str,
+) -> None:
     company_id = _provision(client, profile, f"owner-{profile}@shop.bg")
-    types = {t.code: t.field_defs for t in _asset_types_for(company_id)}
-    generic_id = _provision(client, "generic_repair", f"owner-{profile}-ref@shop.bg")
-    generic_types = {t.code: t.field_defs for t in _asset_types_for(generic_id)}
-    assert types == generic_types
+    types = _asset_types_for(company_id)
+    assert len(types) == 1
+    assert types[0].code == EXPECTED_CODE_BY_PROFILE[profile]
+    assert types[0].business_profile == profile
 
 
 def test_seed_company_dev_path_also_seeds_asset_types(client: TestClient) -> None:
     """The dev/CLI path (identity.service.seed_company) must also publish
-    company_provisioned — every company needs its own asset types, not only
-    ones created through the Vendor Control Plane."""
+    company_provisioned — every company needs its own asset type, not only
+    ones created through the Vendor Control Plane. seed_company never
+    assigns a profile, so it always falls back to generic_repair → "other"."""
     from business_os.identity.service import seed_company
 
     for db in _db():
@@ -131,7 +139,7 @@ def test_seed_company_dev_path_also_seeds_asset_types(client: TestClient) -> Non
         company_id = company.id
 
     types = _asset_types_for(company_id)
-    assert {t.code for t in types} == EXPECTED_CODES
+    assert {t.code for t in types} == {"other"}
     assert all(t.business_profile == "generic_repair" for t in types)
 
 
@@ -139,8 +147,8 @@ def test_seed_company_dev_path_also_seeds_asset_types(client: TestClient) -> Non
 
 
 def test_asset_creation_works_under_a_specialized_profile(client: TestClient) -> None:
-    """Proves the seeded types are actually usable, not just present as
-    rows — for a non-generic profile, since test_assets.py only ever
+    """Proves the seeded type is actually usable, not just present as a
+    row — for a non-generic profile, since test_assets.py only ever
     exercises seed_company's generic_repair-tagged copy."""
     _provision(client, "automotive_repair", "owner2@shop.bg")
     me = _tenant_login(client, "owner2@shop.bg")
@@ -156,25 +164,35 @@ def test_asset_creation_works_under_a_specialized_profile(client: TestClient) ->
     assert resp.json()["asset_type_code"] == "vehicle"
 
 
+def test_phone_type_has_the_new_kind_field(client: TestClient) -> None:
+    """Q18: phone_repair's type gains a "вид" (телефон/таблет) choice field
+    on top of what it already had."""
+    company_id = _provision(client, "phone_repair", "owner-kind@shop.bg")
+    types = _asset_types_for(company_id)
+    kind_def = next(d for d in types[0].field_defs if d["key"] == "kind")
+    assert kind_def["type"] == "choice"
+    assert set(kind_def["choices"]) == {"Телефон", "Таблет"}
+
+
 def test_get_asset_types_is_scoped_per_company(client: TestClient) -> None:
     _provision(client, "generic_repair", "owner3@shop.bg")
     _tenant_login(client, "owner3@shop.bg")
     types = client.get("/api/v1/asset-types").json()
-    assert {t["code"] for t in types} == EXPECTED_CODES
+    assert {t["code"] for t in types} == {"other"}
 
 
 # --- Isolation ---------------------------------------------------------
 
 
 def test_two_companies_get_independent_asset_type_rows(client: TestClient) -> None:
-    """Not shared rows: each company owns 4 of its own, not a shared 4."""
+    """Not a shared row: each company owns its own."""
     company_a = _provision(client, "generic_repair", "owner-a@shop.bg")
     company_b = _provision(client, "phone_repair", "owner-b@shop.bg")
 
     types_a = _asset_types_for(company_a)
     types_b = _asset_types_for(company_b)
     assert {t.id for t in types_a}.isdisjoint({t.id for t in types_b})
-    assert len(types_a) == len(types_b) == 4
+    assert len(types_a) == len(types_b) == 1
 
 
 def test_rls_blocks_even_unscoped_asset_type_queries(client: TestClient) -> None:

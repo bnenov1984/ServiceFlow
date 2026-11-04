@@ -12,28 +12,25 @@ from sqlalchemy.orm import Session
 
 from business_os.shared_kernel.db import TenantContext, bind_tenant_scope, scoped
 from business_os.shared_kernel.events import DomainEvent, publish, subscribe
-from business_os.shared_kernel.normalize import normalize_identifier
+from business_os.shared_kernel.normalize import fold_plate_homoglyphs, normalize_identifier
 from serviceflow.assets.models import Asset, AssetIdentifier, AssetOwnership, AssetType
 
-# Identical to migration 0015's frozen SEED_TYPES copy (migrations never
-# import application code, so that copy and this one are deliberately kept
-# in sync by hand, not shared) — this is the runtime source `seed_default_types`
-# reads for every company provisioned *after* that migration ran; the
-# migration itself backfilled every company that existed before it.
-DEFAULT_TYPES: list[dict[str, Any]] = [
-    {
-        "code": "phone", "name_bg": "Телефон", "icon": "smartphone", "sort": 1,
-        "field_defs": [
-            {"key": "brand", "label_bg": "Марка", "type": "text"},
-            {"key": "model", "label_bg": "Модел", "type": "text"},
-            {"key": "imei", "label_bg": "IMEI", "type": "text", "identifier_kind": "imei"},
-            {"key": "serial_no", "label_bg": "Сериен №", "type": "text",
-             "identifier_kind": "serial"},
-            {"key": "color", "label_bg": "Цвят", "type": "text"},
-        ],
-    },
-    {
-        "code": "vehicle", "name_bg": "Автомобил", "icon": "car", "sort": 2,
+# order-workflow-revamp WP-C (Q18, migration 0034): a company's business
+# profile now seeds exactly ONE asset type (no intake type picker) instead
+# of every profile seeding the same four. Identical to migration 0034's own
+# frozen copy of this map (migrations never import application code, so
+# that copy and this one are deliberately kept in sync by hand, not shared)
+# — this is the runtime source `seed_default_types` reads for every company
+# provisioned *after* that migration ran; the migration itself replaced
+# every pre-existing company's types in place. Keyed by business_profile,
+# not a list: automotive_repair/generic_repair reuse their pre-Q18 codes
+# and field_defs unchanged (existing "vehicle"/"other" assets keep
+# resolving against the same code); phone_repair's "phone" type gains the
+# new "kind" field; electronics_repair/appliance_repair are new types that
+# never existed before Q18.
+BUSINESS_PROFILE_ASSET_TYPES: dict[str, dict[str, Any]] = {
+    "automotive_repair": {
+        "code": "vehicle", "name_bg": "Автомобил", "icon": "car", "sort": 1,
         "field_defs": [
             # Static V1 list (Issue 23) — no external make/model API. "Друго"
             # is the escape hatch: a "choice" field rejects any value outside
@@ -53,24 +50,48 @@ DEFAULT_TYPES: list[dict[str, Any]] = [
             {"key": "mileage", "label_bg": "Пробег (км)", "type": "number"},
         ],
     },
-    {
-        "code": "laptop", "name_bg": "Лаптоп/Компютър", "icon": "laptop", "sort": 3,
+    "phone_repair": {
+        "code": "phone", "name_bg": "Телефон / таблет", "icon": "smartphone", "sort": 1,
         "field_defs": [
+            {"key": "kind", "label_bg": "Вид", "type": "choice",
+             "choices": ["Телефон", "Таблет"]},
+            {"key": "brand", "label_bg": "Марка", "type": "text"},
+            {"key": "model", "label_bg": "Модел", "type": "text"},
+            {"key": "imei", "label_bg": "IMEI", "type": "text", "identifier_kind": "imei"},
+            {"key": "serial_no", "label_bg": "Сериен №", "type": "text",
+             "identifier_kind": "serial"},
+            {"key": "color", "label_bg": "Цвят", "type": "text"},
+        ],
+    },
+    "electronics_repair": {
+        "code": "electronics", "name_bg": "Устройство", "icon": "laptop", "sort": 1,
+        "field_defs": [
+            {"key": "kind", "label_bg": "Вид", "type": "text"},
             {"key": "brand", "label_bg": "Марка", "type": "text"},
             {"key": "model", "label_bg": "Модел", "type": "text"},
             {"key": "serial_no", "label_bg": "Сериен №", "type": "text",
              "identifier_kind": "serial"},
         ],
     },
-    {
-        "code": "other", "name_bg": "Друго", "icon": "wrench", "sort": 4,
+    "appliance_repair": {
+        "code": "appliance", "name_bg": "Уред", "icon": "appliance", "sort": 1,
+        "field_defs": [
+            {"key": "kind", "label_bg": "Вид", "type": "text"},
+            {"key": "brand", "label_bg": "Марка", "type": "text"},
+            {"key": "model", "label_bg": "Модел", "type": "text"},
+            {"key": "serial_no", "label_bg": "Сериен №", "type": "text",
+             "identifier_kind": "serial"},
+        ],
+    },
+    "generic_repair": {
+        "code": "other", "name_bg": "Друго", "icon": "wrench", "sort": 1,
         "field_defs": [
             {"key": "description", "label_bg": "Описание", "type": "text"},
             {"key": "identifier", "label_bg": "Идентификатор", "type": "text",
              "identifier_kind": "other"},
         ],
     },
-]
+}
 
 # Mirrors identity.service.DEFAULT_BUSINESS_PROFILE ("generic_repair") without
 # importing identity for one string — assets is a vertical, so importing Core
@@ -97,6 +118,18 @@ class VinConflictError(Exception):
         self.existing_asset_id = existing_asset_id
 
 
+class RegConflictError(Exception):
+    """Raised when a create/update would give a vehicle Asset a reg-№ that
+    another Asset in this tenant already holds (Q11: one normalized,
+    homoglyph-folded reg-№ = one vehicle Asset per tenant — the same rule
+    VIN already has, deliberately a separate exception since reg-№'s UX is
+    the simpler single-action "Избери този автомобил", not VIN's
+    owner-conflict/transfer dialog)."""
+
+    def __init__(self, existing_asset_id: uuid.UUID) -> None:
+        self.existing_asset_id = existing_asset_id
+
+
 def list_types(db: Session, ctx: TenantContext) -> list[AssetType]:
     return list(db.scalars(
         scoped(select(AssetType), AssetType, ctx).order_by(AssetType.sort)
@@ -115,21 +148,24 @@ def get_type_by_id(db: Session, ctx: TenantContext,
 
 
 def seed_default_types(db: Session, company_id: uuid.UUID, business_profile: str) -> None:
-    """Seeds this company's own copy of the current asset-type set
+    """Seeds this company's own single asset type for its business profile
     (ADR-BOS-011 §Decision 5, copy-on-provisioning — same discipline
     `professional_services.assignments.service.create_assignment` already
-    established for workflow-template stages). Every profile currently seeds
-    identical content (docs/business-os/18 §15) — `business_profile` is
-    stored on each row regardless, so a future profile-specific set is a
-    branch here, not a schema change. Non-committing — the caller (the
-    `company_provisioned` subscriber below, itself called from inside
-    `ProvisionCompany`'s/`seed_company`'s own transaction) commits."""
-    for t in DEFAULT_TYPES:
-        db.add(AssetType(
-            company_id=company_id, code=t["code"], name_bg=t["name_bg"],
-            icon=t["icon"], sort=t["sort"], field_defs=t["field_defs"],
-            business_profile=business_profile,
-        ))
+    established for workflow-template stages). Q18 (migration 0034):
+    exactly one type per profile, not four identical ones — an unrecognized
+    profile string falls back to generic_repair's type, same fallback
+    `_FALLBACK_BUSINESS_PROFILE` already uses elsewhere in this module.
+    Non-committing — the caller (the `company_provisioned` subscriber below,
+    itself called from inside `ProvisionCompany`'s/`seed_company`'s own
+    transaction) commits."""
+    t = BUSINESS_PROFILE_ASSET_TYPES.get(
+        business_profile, BUSINESS_PROFILE_ASSET_TYPES[_FALLBACK_BUSINESS_PROFILE],
+    )
+    db.add(AssetType(
+        company_id=company_id, code=t["code"], name_bg=t["name_bg"],
+        icon=t["icon"], sort=t["sort"], field_defs=t["field_defs"],
+        business_profile=business_profile,
+    ))
 
 
 @subscribe
@@ -213,6 +249,18 @@ def _label(asset_type: AssetType, values: dict[str, Any]) -> str:
     return str(values.get("description", "")).strip() or asset_type.name_bg
 
 
+def _normalize_identifier_for_kind(kind: str, raw: str) -> str:
+    """Every identifier kind shares the same base normalization; `reg` (Q11)
+    additionally folds Cyrillic/Latin plate homoglyphs on top, since a
+    Bulgarian plate can be typed on either keyboard for the same physical
+    plate. VIN is excluded on purpose — it's Latin-only by spec, so folding
+    would only ever be a no-op there, not a second safety net."""
+    normalized = normalize_identifier(raw)
+    if kind == "reg":
+        normalized = fold_plate_homoglyphs(normalized)
+    return normalized
+
+
 def _extract_identifiers(asset: Asset, asset_type: AssetType) -> list[AssetIdentifier]:
     rows: list[AssetIdentifier] = []
     for d in asset_type.field_defs:
@@ -224,7 +272,7 @@ def _extract_identifiers(asset: Asset, asset_type: AssetType) -> list[AssetIdent
             continue
         rows.append(AssetIdentifier(
             company_id=asset.company_id, asset_id=asset.id, kind=kind,
-            value=raw, value_normalized=normalize_identifier(raw),
+            value=raw, value_normalized=_normalize_identifier_for_kind(kind, raw),
         ))
     return rows
 
@@ -255,6 +303,27 @@ def _check_vin_conflicts(db: Session, ctx: TenantContext, asset_type: AssetType,
             raise VinConflictError(existing)
 
 
+def _check_reg_conflicts(db: Session, ctx: TenantContext, asset_type: AssetType,
+                         values: dict[str, Any], exclude_asset_id: uuid.UUID | None) -> None:
+    """Q11's reg-№ counterpart to `_check_vin_conflicts` above — same shape,
+    folded normalization (see `_normalize_identifier_for_kind`)."""
+    for d in asset_type.field_defs:
+        if d.get("identifier_kind") != "reg":
+            continue
+        raw = str(values.get(d["key"], "") or "").strip()
+        if not raw:
+            continue
+        normalized = _normalize_identifier_for_kind("reg", raw)
+        stmt = scoped(select(AssetIdentifier.asset_id), AssetIdentifier, ctx).where(
+            AssetIdentifier.kind == "reg", AssetIdentifier.value_normalized == normalized,
+        )
+        if exclude_asset_id is not None:
+            stmt = stmt.where(AssetIdentifier.asset_id != exclude_asset_id)
+        existing = db.scalar(stmt)
+        if existing is not None:
+            raise RegConflictError(existing)
+
+
 def find_by_vin(db: Session, ctx: TenantContext, vin: str) -> Asset | None:
     """Tenant-wide VIN lookup (Issue 20) — deliberately NOT scoped to any one
     customer, unlike `list_for_customer`: intake must be able to find a
@@ -269,6 +338,28 @@ def find_by_vin(db: Session, ctx: TenantContext, vin: str) -> Asset | None:
         .join(AssetIdentifier, AssetIdentifier.asset_id == Asset.id)
         .where(AssetIdentifier.kind == "vin", AssetIdentifier.value_normalized == normalized)
     )
+    return db.scalar(stmt)
+
+
+def find_by_reg(db: Session, ctx: TenantContext, reg: str,
+                exclude_asset_id: uuid.UUID | None = None) -> Asset | None:
+    """Q11's reg-№ counterpart to `find_by_vin` — backs the on-blur
+    `GET /assets/reg-check` pre-check (same on-blur-check shape WP-B's
+    phone/ЕИК pre-checks already established), not a VIN-style upfront
+    owner-conflict/transfer sub-form: Q11's decision is the simpler
+    "inline error + Избери този автомобил", one action, not two.
+    `exclude_asset_id` lets an edit's own current reg-№ not conflict with
+    itself."""
+    normalized = fold_plate_homoglyphs(normalize_identifier(reg))
+    if not normalized:
+        return None
+    stmt = (
+        scoped(select(Asset), Asset, ctx)
+        .join(AssetIdentifier, AssetIdentifier.asset_id == Asset.id)
+        .where(AssetIdentifier.kind == "reg", AssetIdentifier.value_normalized == normalized)
+    )
+    if exclude_asset_id is not None:
+        stmt = stmt.where(Asset.id != exclude_asset_id)
     return db.scalar(stmt)
 
 
@@ -291,6 +382,7 @@ def create(db: Session, ctx: TenantContext, customer_id: uuid.UUID,
            asset_type: AssetType, values: dict[str, Any]) -> tuple[Asset, list[uuid.UUID]]:
     cleaned = validate_field_values(asset_type, values)
     _check_vin_conflicts(db, ctx, asset_type, cleaned, exclude_asset_id=None)
+    _check_reg_conflicts(db, ctx, asset_type, cleaned, exclude_asset_id=None)
     asset = Asset(
         company_id=ctx.company_id, customer_id=customer_id,
         asset_type_id=asset_type.id, label=_label(asset_type, cleaned),
@@ -340,6 +432,7 @@ def update_fields(db: Session, ctx: TenantContext, asset: Asset,
         asset_type, {**asset.field_values, **values}, existing=asset.field_values,
     )
     _check_vin_conflicts(db, ctx, asset_type, cleaned, exclude_asset_id=asset.id)
+    _check_reg_conflicts(db, ctx, asset_type, cleaned, exclude_asset_id=asset.id)
     asset.field_values = cleaned
     asset.label = _label(asset_type, cleaned)
     asset.row_version += 1

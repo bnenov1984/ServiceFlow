@@ -4,8 +4,13 @@ a choice list, Issue 23 follow-up).
 Same technique as test_migration_0018_tax_event_date.py: migrate to the
 revision immediately before 0020, seed pre-migration state by hand (asset_types
 rows in the OLD free-text-brand shape, the way a real pre-existing company's
-data looks), continue to head, and verify the result — not model metadata
-alone, the real upgrade path against a throwaway database.
+data looks), continue to **exactly 0020** (not head — migration 0034, WP-C,
+Q18 later replaces a company's whole asset-type set based on its business
+profile; these hand-seeded rows carry no profile override and no protecting
+orders, so continuing all the way to head would have 0034 clean some of them
+up before this file ever gets to assert on 0020's own transformation), and
+verify the result — not model metadata alone, the real upgrade path against
+a throwaway database.
 """
 
 import json
@@ -131,7 +136,7 @@ def test_upgrade_through_0020_converts_existing_vehicle_brand_to_choice(
 ) -> None:
     vehicle_a, _phone_a, vehicle_b = _seed_pre_migration_asset_types(pre_0020_db)
 
-    command.upgrade(Config("alembic.ini"), "head")
+    command.upgrade(Config("alembic.ini"), "0020")
 
     defs = _field_defs(pre_0020_db, vehicle_a)
     brand = next(d for d in defs if d["key"] == "brand")
@@ -150,7 +155,7 @@ def test_upgrade_through_0020_converts_existing_vehicle_brand_to_choice(
 def test_upgrade_through_0020_leaves_every_other_field_untouched(pre_0020_db: str) -> None:
     vehicle_a, _phone_a, _vehicle_b = _seed_pre_migration_asset_types(pre_0020_db)
 
-    command.upgrade(Config("alembic.ini"), "head")
+    command.upgrade(Config("alembic.ini"), "0020")
 
     defs = _field_defs(pre_0020_db, vehicle_a)
     by_key = {d["key"]: d for d in defs}
@@ -171,6 +176,6 @@ def test_upgrade_through_0020_leaves_every_other_field_untouched(pre_0020_db: st
 def test_upgrade_through_0020_does_not_touch_other_asset_types(pre_0020_db: str) -> None:
     _vehicle_a, phone_a, _vehicle_b = _seed_pre_migration_asset_types(pre_0020_db)
 
-    command.upgrade(Config("alembic.ini"), "head")
+    command.upgrade(Config("alembic.ini"), "0020")
 
     assert _field_defs(pre_0020_db, phone_a) == OLD_PHONE_FIELD_DEFS

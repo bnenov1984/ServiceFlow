@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, api } from "../lib/api";
 import {
@@ -100,9 +101,12 @@ function renderToggleableStep() {
   return { onResolved };
 }
 
+// WP-C (Q18): every mock in this file returns exactly one asset type
+// (`[vehicleType]`), matching the now-realistic "one type per business
+// profile" shape — the picker grid auto-skips, so there is no "Автомобил"
+// button to click any more, just the mode switch into "create".
 async function selectVehicleType(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByText("+ Нов актив"));
-  await user.click(await screen.findByText("Автомобил"));
 }
 
 // Issue 20's explicit escape hatch for a vehicle type that DOES carry a VIN
@@ -227,16 +231,42 @@ describe("AssetStep choice-type field (Issue 23: automotive make dropdown)", () 
 
 describe("AssetStep back navigation", () => {
   it("lets the user cancel out of the type picker back to the asset list", async () => {
+    // The picker grid itself only renders for a company that still has more
+    // than one type (WP-C: real cross-type history migration 0034 couldn't
+    // safely collapse) — every other test in this file has exactly one.
+    const otherType = {
+      code: "other", name_bg: "Друго", icon: "wrench",
+      field_defs: [{ key: "description", label_bg: "Описание", type: "text" }],
+    };
+    vi.mocked(api.get).mockImplementation((path: string) => {
+      if (path === "/asset-types") return Promise.resolve([vehicleType, otherType]) as never;
+      if (path.endsWith("/assets")) return Promise.resolve([]) as never;
+      return Promise.reject(new Error(`unexpected GET ${path}`));
+    });
     const user = userEvent.setup();
     renderStep();
 
     await user.click(await screen.findByText("+ Нов актив"));
-    expect(await screen.findByText("Автомобил")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Автомобил" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Отказ" }));
 
     expect(screen.getByText("+ Нов актив")).toBeInTheDocument();
     expect(screen.queryByText("Автомобил")).not.toBeInTheDocument();
+  });
+});
+
+describe("AssetStep — WP-C Q18 (single-type companies skip the picker)", () => {
+  it("goes straight to the vehicle form when the company has exactly one asset type", async () => {
+    const user = userEvent.setup();
+    renderStep();
+
+    await user.click(await screen.findByText("+ Нов актив"));
+
+    expect(screen.queryByRole("button", { name: "Автомобил" })).not.toBeInTheDocument();
+    // vehicleType carries a "vin" field_def, so the VIN-first sub-form is
+    // what a direct, auto-selected landing looks like.
+    expect(await screen.findByRole("button", { name: "Провери VIN" })).toBeInTheDocument();
   });
 });
 
@@ -442,6 +472,162 @@ describe("AssetStep draft survives navigation (cleanup batch Issue 22)", () => {
       return Promise.reject(new Error(`unexpected GET ${path}`));
     });
   }
+});
+
+// A harness that actually threads `onResolved` back into `resolved` (every
+// other harness in this file hard-codes resolved={null}) — needed to reach
+// the post-resolution vehicle-history render. Wrapped in MemoryRouter since
+// VehicleVisitList renders react-router <Link>s.
+function renderStepWithResolution() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  function Root() {
+    const [draft, setDraft] = useState<AssetStepDraft>(DEFAULT_ASSET_STEP_DRAFT);
+    const [resolved, setResolved] = useState<ResolvedAsset | null>(null);
+    return (
+      <AssetStep
+        customerId={customerId} resolved={resolved} onResolved={setResolved}
+        onChangeRequested={() => setResolved(null)} draft={draft} onDraftChange={setDraft}
+      />
+    );
+  }
+
+  render(
+    <MemoryRouter>
+      <QueryClientProvider client={client}>
+        <Root />
+      </QueryClientProvider>
+    </MemoryRouter>,
+  );
+}
+
+describe("AssetStep — Q11 (reg-№ on-blur conflict check)", () => {
+  function mockRegCheck(impl: (reg: string) => { asset_id: string | null; label: string | null }) {
+    vi.mocked(api.get).mockImplementation((path: string) => {
+      if (path === "/asset-types") return Promise.resolve([vehicleType]) as never;
+      if (path.endsWith("/assets")) return Promise.resolve([]) as never;
+      if (path.startsWith("/assets/by-vin")) {
+        return Promise.reject(new ApiError(404, "not_found", "errors.assets.vin_not_found")) as never;
+      }
+      if (path.startsWith("/assets/reg-check")) {
+        const reg = decodeURIComponent(path.split("reg=")[1] ?? "");
+        return Promise.resolve(impl(reg)) as never;
+      }
+      return Promise.reject(new Error(`unexpected GET ${path}`));
+    });
+  }
+
+  it("shows an inline conflict with a resolve action when reg-№ matches an existing vehicle on blur", async () => {
+    const user = userEvent.setup();
+    mockRegCheck(() => ({ asset_id: "existing-3", label: "Volkswagen Golf" }));
+    const { onResolved } = renderStep();
+
+    await selectVehicleType(user);
+    await skipVin(user);
+    await user.type(inputForLabel("Рег. №"), "CA5070BA");
+    await user.tab();
+
+    expect(await screen.findByText("Този рег. № вече принадлежи на друг актив."))
+      .toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Използвай автомобила" }));
+
+    expect(onResolved).toHaveBeenCalledWith({
+      id: "existing-3", label: "Volkswagen Golf", assetTypeCode: "vehicle",
+    });
+  });
+
+  it("shows no conflict when reg-№ has no match", async () => {
+    const user = userEvent.setup();
+    mockRegCheck(() => ({ asset_id: null, label: null }));
+    renderStep();
+
+    await selectVehicleType(user);
+    await skipVin(user);
+    await user.type(inputForLabel("Рег. №"), "CA5070BA");
+    await user.tab();
+
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith(
+      expect.stringContaining("/assets/reg-check"),
+    ));
+    expect(screen.queryByText("Този рег. № вече принадлежи на друг актив.")).not.toBeInTheDocument();
+  });
+
+  it("clears a stale conflict as soon as the reg-№ value is edited again", async () => {
+    const user = userEvent.setup();
+    mockRegCheck(() => ({ asset_id: "existing-3", label: "Volkswagen Golf" }));
+    renderStep();
+
+    await selectVehicleType(user);
+    await skipVin(user);
+    const regInput = inputForLabel("Рег. №");
+    await user.type(regInput, "CA5070BA");
+    await user.tab();
+    expect(await screen.findByText("Този рег. № вече принадлежи на друг актив."))
+      .toBeInTheDocument();
+
+    await user.click(regInput);
+    await user.type(regInput, "X");
+
+    expect(screen.queryByText("Този рег. № вече принадлежи на друг актив.")).not.toBeInTheDocument();
+  });
+});
+
+describe("AssetStep — #20 (vehicle history at intake)", () => {
+  function mockWithServiceHistory(
+    visits: Array<{
+      order_id: string; order_number: string; created_at: string; status_code: string;
+      customer_id: string; customer_name: string; complaint: string; mileage: number | null;
+    }>,
+  ) {
+    vi.mocked(api.get).mockImplementation((path: string) => {
+      if (path === "/asset-types") return Promise.resolve([vehicleType]) as never;
+      if (path.endsWith("/assets")) return Promise.resolve([]) as never;
+      if (path.startsWith("/assets/by-vin")) {
+        return Promise.reject(new ApiError(404, "not_found", "errors.assets.vin_not_found")) as never;
+      }
+      if (path.includes("/service-history")) return Promise.resolve({ visits }) as never;
+      return Promise.reject(new Error(`unexpected GET ${path}`));
+    });
+  }
+
+  it("shows prior visits once a freshly-created vehicle asset is resolved", async () => {
+    const user = userEvent.setup();
+    mockWithServiceHistory([{
+      order_id: "o1", order_number: "2026-00005", created_at: "2026-01-01T00:00:00Z",
+      status_code: "ready", customer_id: "c1", customer_name: "Иван", complaint: "Спирачки",
+      mileage: 50000,
+    }]);
+    vi.mocked(api.post).mockResolvedValue({
+      id: "a1", label: "Volkswagen Golf", asset_type_code: "vehicle",
+      archived: false, duplicate_asset_ids: [],
+    });
+    renderStepWithResolution();
+
+    await selectVehicleType(user);
+    await skipVin(user);
+    await user.type(inputForLabel("Марка"), "Volkswagen");
+    await user.click(screen.getByRole("button", { name: "Продължи" }));
+
+    expect(await screen.findByText("2026-00005")).toBeInTheDocument();
+    expect(screen.getByText(/Спирачки/)).toBeInTheDocument();
+  });
+
+  it("shows the empty-history message for a vehicle with no prior visits", async () => {
+    const user = userEvent.setup();
+    mockWithServiceHistory([]);
+    vi.mocked(api.post).mockResolvedValue({
+      id: "a1", label: "Volkswagen Golf", asset_type_code: "vehicle",
+      archived: false, duplicate_asset_ids: [],
+    });
+    renderStepWithResolution();
+
+    await selectVehicleType(user);
+    await skipVin(user);
+    await user.type(inputForLabel("Марка"), "Volkswagen");
+    await user.click(screen.getByRole("button", { name: "Продължи" }));
+
+    expect(await screen.findByText("Няма предишна история за този автомобил.")).toBeInTheDocument();
+  });
 });
 
 describe("coerceFieldValue", () => {

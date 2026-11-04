@@ -13,13 +13,37 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _login(client: TestClient, company: str = "Сервиз А",
-           email: str = "a@a.bg") -> dict[str, str]:
-    from business_os.identity.service import seed_company
-    from business_os.shared_kernel.db import open_session
+def _login(client: TestClient, company: str = "Сервиз А", email: str = "a@a.bg",
+           business_profile: str = "automotive_repair") -> dict[str, str]:
+    """order-workflow-revamp WP-C (Q18): seed_company() itself always seeds
+    only generic_repair's "other" type (it never assigns a profile) — most
+    of this file needs "vehicle", so an explicit profile is seeded
+    on top via the same seed_default_types() the company_provisioned
+    subscriber calls, directly (no HTTP round trip needed for a test
+    fixture). Leaves the harmless extra "other" type in place; nothing here
+    asserts an exact type count."""
+    from sqlalchemy import select
+
+    from business_os.identity.service import seed_company, set_business_profile
+    from business_os.shared_kernel.db import bind_tenant_scope, open_session
+    from serviceflow.assets.models import AssetType
+    from serviceflow.assets.service import BUSINESS_PROFILE_ASSET_TYPES, seed_default_types
 
     for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
-        seed_company(db, company, "Owner", email, "парола-123")
+        c = seed_company(db, company, "Owner", email, "парола-123")
+        set_business_profile(db, c.id, business_profile)
+        bind_tenant_scope(db, c.id)
+        # seed_company() is idempotent (returns the existing company on a
+        # repeat login as the same email, e.g. logout-then-login-again
+        # within one test) — seed_default_types() is not, so only call it
+        # the first time this profile's type doesn't exist yet.
+        target_code = BUSINESS_PROFILE_ASSET_TYPES[business_profile]["code"]
+        already = db.scalar(select(AssetType).where(
+            AssetType.company_id == c.id, AssetType.code == target_code,
+        ))
+        if already is None:
+            seed_default_types(db, c.id, business_profile)
+        db.commit()
     me = client.post("/api/v1/auth/login",
                      json={"email": email, "password": "парола-123"}).json()
     return {"X-CSRF-Token": str(me["csrf_token"])}
@@ -31,16 +55,15 @@ def _customer(client: TestClient, h: dict[str, str], phone: str = "0888111222") 
 
 
 def test_seeded_asset_types(client: TestClient) -> None:
-    _login(client)
+    _login(client, business_profile="phone_repair")
     types = client.get("/api/v1/asset-types").json()
-    assert [t["code"] for t in types] == ["phone", "vehicle", "laptop", "other"]
-    phone = types[0]
-    assert phone["name_bg"] == "Телефон"
+    phone = next(t for t in types if t["code"] == "phone")
+    assert phone["name_bg"] == "Телефон / таблет"
     assert any(f.get("identifier_kind") == "imei" for f in phone["field_defs"])
 
 
 def test_create_phone_asset_extracts_identifiers(client: TestClient) -> None:
-    h = _login(client)
+    h = _login(client, business_profile="phone_repair")
     cid = _customer(client, h)
     r = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
         "asset_type_code": "phone",
@@ -148,6 +171,94 @@ def test_field_validation_accepts_modern_reg_no_formats(client: TestClient, reg_
     assert r.status_code == 201, r.text
 
 
+# --- Q11: reg-№ identity (homoglyph-folded, tenant-unique) -----------------
+
+def test_duplicate_reg_no_rejected_on_create(client: TestClient) -> None:
+    h = _login(client)
+    cid = _customer(client, h)
+    aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
+        "asset_type_code": "vehicle",
+        "field_values": {"brand": "Volkswagen", "model": "Golf", "reg_no": "CA5070BA"},
+    }).json()["id"]
+
+    r = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
+        "asset_type_code": "vehicle",
+        "field_values": {"brand": "Audi", "model": "A4", "reg_no": "CA5070BA"},
+    })
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "reg_conflict"
+    assert r.json()["detail"]["conflicting_asset_id"] == aid
+
+
+def test_duplicate_reg_no_detected_across_cyrillic_latin_homoglyphs(client: TestClient) -> None:
+    h = _login(client)
+    cid = _customer(client, h)
+    client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
+        "asset_type_code": "vehicle",
+        "field_values": {"brand": "Volkswagen", "model": "Golf", "reg_no": "СА5070ВА"},  # Cyrillic
+    })
+
+    r = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
+        "asset_type_code": "vehicle",
+        "field_values": {"brand": "Audi", "model": "A4", "reg_no": "CA5070BA"},  # Latin
+    })
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "reg_conflict"
+
+
+def test_reg_no_uniqueness_is_scoped_per_tenant(client: TestClient) -> None:
+    h_a = _login(client, "Сервиз А", "a@a.bg")
+    cid_a = _customer(client, h_a)
+    client.post(f"/api/v1/customers/{cid_a}/assets", headers=h_a, json={
+        "asset_type_code": "vehicle",
+        "field_values": {"brand": "Volkswagen", "model": "Golf", "reg_no": "CA5070BA"},
+    })
+    client.post("/api/v1/auth/logout", headers=h_a)
+
+    h_b = _login(client, "Сервиз Б", "b@b.bg")
+    cid_b = _customer(client, h_b)
+    r = client.post(f"/api/v1/customers/{cid_b}/assets", headers=h_b, json={
+        "asset_type_code": "vehicle",
+        "field_values": {"brand": "Volkswagen", "model": "Golf", "reg_no": "CA5070BA"},
+    })
+    assert r.status_code == 201, r.text
+
+
+def test_reg_check_finds_homoglyph_variant(client: TestClient) -> None:
+    h = _login(client)
+    cid = _customer(client, h)
+    aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
+        "asset_type_code": "vehicle",
+        "field_values": {"brand": "Volkswagen", "model": "Golf", "reg_no": "CA5070BA"},
+    }).json()["id"]
+
+    r = client.get("/api/v1/assets/reg-check?reg=СА5070ВА", headers=h)  # Cyrillic query
+    assert r.status_code == 200
+    assert r.json() == {"asset_id": aid, "label": "Volkswagen Golf"}
+
+
+def test_reg_check_reports_no_match(client: TestClient) -> None:
+    h = _login(client)
+    r = client.get("/api/v1/assets/reg-check?reg=XX0000XX", headers=h)
+    assert r.status_code == 200
+    assert r.json() == {"asset_id": None, "label": None}
+
+
+def test_reg_check_excludes_the_assets_own_current_value(client: TestClient) -> None:
+    """The on-blur check must not flag an asset's own unchanged reg-№ as a
+    conflict with itself when editing (exclude_asset_id)."""
+    h = _login(client)
+    cid = _customer(client, h)
+    aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
+        "asset_type_code": "vehicle",
+        "field_values": {"brand": "Volkswagen", "model": "Golf", "reg_no": "CA5070BA"},
+    }).json()["id"]
+
+    r = client.get(f"/api/v1/assets/reg-check?reg=CA5070BA&exclude_asset_id={aid}", headers=h)
+    assert r.status_code == 200
+    assert r.json() == {"asset_id": None, "label": None}
+
+
 def test_patch_reextracts_identifiers(client: TestClient) -> None:
     h = _login(client)
     cid = _customer(client, h)
@@ -184,14 +295,14 @@ def test_patch_reextracts_identifiers(client: TestClient) -> None:
 
 
 def test_assets_are_tenant_isolated(client: TestClient) -> None:
-    h_a = _login(client, "Сервиз А", "a@a.bg")
+    h_a = _login(client, "Сервиз А", "a@a.bg", business_profile="phone_repair")
     cid_a = _customer(client, h_a)
     aid = client.post(f"/api/v1/customers/{cid_a}/assets", headers=h_a, json={
         "asset_type_code": "phone", "field_values": {"brand": "Apple", "model": "13"},
     }).json()["id"]
     client.post("/api/v1/auth/logout", headers=h_a)
 
-    _login(client, "Сервиз Б", "b@b.bg")
+    _login(client, "Сервиз Б", "b@b.bg", business_profile="phone_repair")
     assert client.get(f"/api/v1/assets/{aid}").status_code == 404
     assert client.get(f"/api/v1/customers/{cid_a}/assets").status_code == 404
 
@@ -266,9 +377,14 @@ def test_transfer_owner_moves_current_owner_and_preserves_orders(client: TestCli
     cid1 = _customer(client, h, "0888111222")
     cid2 = _customer(client, h, "0888333444")
     aid = _vehicle(client, h, cid1, "WVWZZZ1JZ3W386752")
+    # automotive_repair requires mileage at order creation (Cleanup batch
+    # Issue 26) — this test's company is now automotive_repair (WP-C: the
+    # "vehicle" type only exists under that profile), which this test
+    # didn't need to care about before.
     order = client.post("/api/v1/orders", headers=h, json={
-        "customer_id": cid1, "asset_id": aid, "complaint": "Смяна на масло",
+        "customer_id": cid1, "asset_id": aid, "complaint": "Смяна на масло", "mileage": 50000,
     }).json()
+    assert "id" in order, order
 
     r = client.post(f"/api/v1/assets/{aid}/transfer-owner", headers=h,
                     json={"customer_id": cid2})

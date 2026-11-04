@@ -80,6 +80,19 @@ class TransferOwnerIn(BaseModel):
     customer_id: uuid.UUID
 
 
+class RegCheckOut(BaseModel):
+    """Q11's on-blur pre-check for reg-№, same shape/rationale as customers'
+    DuplicateCheckOut (WP-B): a convenience the UI calls before submit so
+    the conflict can be shown as an inline field error with a direct
+    "Избери този автомобил" action — read-only, no CSRF/subscription gate
+    needed. Never the enforcement point itself; service.create()/
+    update_fields() independently re-check via _check_reg_conflicts and are
+    what actually blocks a save."""
+
+    asset_id: uuid.UUID | None = None
+    label: str | None = None
+
+
 def _err(status: int, code: str, key: str, **extra: Any) -> HTTPException:
     return HTTPException(status_code=status, detail={
         "code": code, "message_key": key, "params": {}, **extra,
@@ -123,6 +136,9 @@ def create_asset(customer_id: uuid.UUID, body: AssetIn, db: TenantDbDep,
     except service.VinConflictError as e:
         raise _err(409, "vin_conflict", "errors.assets.vin_conflict",
                    conflicting_asset_id=str(e.existing_asset_id)) from e
+    except service.RegConflictError as e:
+        raise _err(409, "reg_conflict", "errors.assets.reg_conflict",
+                   conflicting_asset_id=str(e.existing_asset_id)) from e
     return AssetOut.of(asset, asset_type.code, duplicates)
 
 
@@ -141,6 +157,15 @@ def get_asset_by_vin(vin: str, db: TenantDbDep, tenant: TenantDep) -> AssetByVin
     )
     return AssetByVinOut(id=asset.id, label=asset.label, asset_type_code=asset_type.code,
                          customer_id=owner.id, customer_name=owner.name)
+
+
+@router.get("/assets/reg-check")
+def check_reg(reg: str, db: TenantDbDep, tenant: TenantDep,
+              exclude_asset_id: uuid.UUID | None = None) -> RegCheckOut:
+    asset = service.find_by_reg(db, tenant, reg, exclude_asset_id)
+    if asset is None:
+        return RegCheckOut()
+    return RegCheckOut(asset_id=asset.id, label=asset.label)
 
 
 def _get_or_404(db: TenantDbDep, tenant: TenantDep, asset_id: uuid.UUID) -> Asset:
@@ -179,6 +204,9 @@ def patch_asset(asset_id: uuid.UUID, body: AssetPatch, db: TenantDbDep,
                    field_errors=e.field_errors) from e
     except service.VinConflictError as e:
         raise _err(409, "vin_conflict", "errors.assets.vin_conflict",
+                   conflicting_asset_id=str(e.existing_asset_id)) from e
+    except service.RegConflictError as e:
+        raise _err(409, "reg_conflict", "errors.assets.reg_conflict",
                    conflicting_asset_id=str(e.existing_asset_id)) from e
     return AssetOut.of(asset, asset_type.code, duplicates)
 

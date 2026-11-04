@@ -90,6 +90,22 @@ validation *mechanism* needs no change, only what it resolves against.
    copy-on-create discipline `ps_assignment_stages` already uses for
    workflow-template stages (ADR-PS-005: "stage copies, not template
    references"), reused here for asset-type copies instead of invented fresh.
+
+   **Amended 03.11.2026 (order-workflow-revamp WP-C, Q18, migration 0034):**
+   a profile seeds **exactly one** asset type, not four identical ones — so
+   intake shows no type picker for a company with the usual single type.
+   Seed map: `automotive_repair` → Автомобил (unchanged code/fields) ·
+   `phone_repair` → Телефон / таблет (existing "phone" code, gains a "вид"
+   choice field) · `electronics_repair` → Устройство (new) ·
+   `appliance_repair` → Уред (new) · `generic_repair` → Друго (unchanged
+   code/fields). Existing companies: a no-longer-matching type is replaced
+   outright where safe (no order ever referenced its assets — `service_
+   orders.asset_id` has no `ON DELETE` clause, so a real reference blocks
+   the delete rather than cascading through it); a company left holding
+   more than one type after that is real cross-type order history the
+   migration correctly left alone, not a bug — it keeps seeing the picker
+   until reconciled by hand. An asset type gaining an `accessories` flag is
+   a separate, not-yet-applied amendment (WP-H).
 6. **Backend validation is authoritative, not the frontend picker.** A
    company's active asset types/fields are resolved and enforced
    server-side on every asset create/update, exactly as today — a profile

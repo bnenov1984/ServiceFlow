@@ -33,17 +33,60 @@ def _set_business_profile(email: str, profile: str) -> None:
     business_profile after provisioning (only the vendor provisioning flow
     sets it, once, at creation), so this mirrors this file's own tests'
     convention of reaching into the DB directly for state the API can't
-    produce."""
+    produce.
+
+    order-workflow-revamp WP-C (Q18): flipping the settings flag alone no
+    longer gets a company a usable asset type for that profile — each
+    profile seeds exactly one type, and `seed_company` already seeded
+    generic_repair's "other" before this call ever runs. Seed the target
+    profile's type too (skipping if it already exists, for a test that
+    calls this more than once)."""
     from sqlalchemy import select
 
     from business_os.identity import service as identity_service
     from business_os.identity.models import User
-    from business_os.shared_kernel.db import open_session
+    from business_os.shared_kernel.db import bind_tenant_scope, open_session
+    from serviceflow.assets.models import AssetType
+    from serviceflow.assets.service import BUSINESS_PROFILE_ASSET_TYPES, seed_default_types
 
     for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
         owner = db.scalar(select(User).where(User.email == email))
         assert owner is not None
         identity_service.set_business_profile(db, owner.company_id, profile)
+        bind_tenant_scope(db, owner.company_id)
+        target_code = BUSINESS_PROFILE_ASSET_TYPES[profile]["code"]
+        already = db.scalar(select(AssetType).where(
+            AssetType.company_id == owner.company_id, AssetType.code == target_code,
+        ))
+        if already is None:
+            seed_default_types(db, owner.company_id, profile)
+        db.commit()
+
+
+def _seed_extra_asset_type(email: str, type_profile: str) -> None:
+    """Adds another profile's single asset type to this company, alongside
+    whatever it already has — used only to construct a type/profile
+    combination normal seeding would never produce (e.g. a "phone" asset at
+    an automotive_repair company), so a specific test can prove the mileage
+    gate is keyed off the company's own business_profile, not the chosen
+    asset type."""
+    from sqlalchemy import select
+
+    from business_os.identity.models import User
+    from business_os.shared_kernel.db import bind_tenant_scope, open_session
+    from serviceflow.assets.models import AssetType
+    from serviceflow.assets.service import BUSINESS_PROFILE_ASSET_TYPES, seed_default_types
+
+    for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
+        owner = db.scalar(select(User).where(User.email == email))
+        assert owner is not None
+        bind_tenant_scope(db, owner.company_id)
+        target_code = BUSINESS_PROFILE_ASSET_TYPES[type_profile]["code"]
+        already = db.scalar(select(AssetType).where(
+            AssetType.company_id == owner.company_id, AssetType.code == target_code,
+        ))
+        if already is None:
+            seed_default_types(db, owner.company_id, type_profile)
         db.commit()
 
 
@@ -51,10 +94,12 @@ def _customer_and_asset(client: TestClient, h: dict[str, str],
                         asset_type_code: str = "vehicle") -> tuple[str, str]:
     cid = client.post("/api/v1/customers", headers=h,
                       json={"name": "Иван", "phone": "0888111222"}).json()["id"]
-    field_values = (
-        {"brand": "BMW", "model": "3 Series"} if asset_type_code == "vehicle"
-        else {"brand": "Apple"}
-    )
+    if asset_type_code == "vehicle":
+        field_values = {"brand": "BMW", "model": "3 Series"}
+    elif asset_type_code == "other":
+        field_values = {"description": "Самсунг телевизор"}
+    else:
+        field_values = {"brand": "Apple"}
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
         "asset_type_code": asset_type_code, "field_values": field_values,
     }).json()["id"]
@@ -137,7 +182,7 @@ def test_generic_repair_profile_order_creation_unaffected(client: TestClient) ->
     """Default seed_company profile is generic_repair — mileage stays fully
     optional, exactly as before this cleanup batch."""
     h = _login(client)
-    cid, aid = _customer_and_asset(client, h)
+    cid, aid = _customer_and_asset(client, h, asset_type_code="other")
 
     resp = _create_order(client, h, cid, aid, mileage=None)
     assert resp.status_code == 201, resp.text
@@ -147,7 +192,7 @@ def test_generic_repair_profile_order_creation_unaffected(client: TestClient) ->
 def test_phone_repair_profile_order_creation_unaffected(client: TestClient) -> None:
     h = _login(client)
     _set_business_profile("a@a.bg", "phone_repair")
-    cid, aid = _customer_and_asset(client, h)
+    cid, aid = _customer_and_asset(client, h, asset_type_code="phone")
 
     resp = _create_order(client, h, cid, aid, mileage=None)
     assert resp.status_code == 201, resp.text
@@ -162,6 +207,7 @@ def test_automotive_company_non_vehicle_asset_still_requires_mileage(client: Tes
     profile, not a per-order asset-type check."""
     h = _login(client)
     _set_business_profile("a@a.bg", "automotive_repair")
+    _seed_extra_asset_type("a@a.bg", "phone_repair")
     cid, aid = _customer_and_asset(client, h, asset_type_code="phone")
 
     resp = _create_order(client, h, cid, aid, mileage=None)
@@ -177,7 +223,9 @@ def test_legacy_null_mileage_order_remains_readable(client: TestClient) -> None:
     non-automotive company) must still read back cleanly — no backfill, no
     migration, this batch never touches historical rows."""
     h = _login(client)
-    cid, aid = _customer_and_asset(client, h)
+    # generic_repair (this file's default, unset here) only seeds "other" —
+    # the non-automotive-company half of this test's own docstring.
+    cid, aid = _customer_and_asset(client, h, asset_type_code="other")
     created = _create_order(client, h, cid, aid, mileage=None)
     assert created.status_code == 201
 

@@ -1,7 +1,13 @@
 """Migration #23 regression test (Wave 3 Issue 20: vehicle identity +
 ownership history). Same technique as test_migration_0020/0021/0022: migrate
 to the revision immediately before 0023, seed pre-migration state by hand,
-continue to head, and verify the actual backfill/constraint behavior."""
+continue to **exactly 0023** (not head — migration 0034, WP-C, Q18 later
+replaces a company's whole asset-type set based on its business profile;
+these hand-seeded vehicles carry no profile override and no protecting
+orders, so continuing to head would have 0034 delete some of them, along
+with the very asset_ownership rows this file backfills and checks, before
+this file ever gets to assert on 0023's own behavior), and verify the actual
+backfill/constraint behavior."""
 
 import os
 import uuid
@@ -122,7 +128,7 @@ def test_upgrade_through_0023_backfills_one_open_ownership_row_per_asset(
         )
     engine.dispose()
 
-    command.upgrade(Config("alembic.ini"), "head")
+    command.upgrade(Config("alembic.ini"), "0023")
 
     engine = create_engine(pre_0023_db)
     with engine.connect() as conn:
@@ -147,7 +153,7 @@ def test_upgrade_through_0023_open_ownership_row_is_unique_per_asset(pre_0023_db
         )
     engine.dispose()
 
-    command.upgrade(Config("alembic.ini"), "head")
+    command.upgrade(Config("alembic.ini"), "0023")
 
     engine = create_engine(pre_0023_db)
     with pytest.raises(IntegrityError, match="uq_asset_ownership_open"), engine.begin() as conn:
@@ -162,7 +168,7 @@ def test_upgrade_through_0023_open_ownership_row_is_unique_per_asset(pre_0023_db
 
 
 def test_upgrade_through_0023_rejects_new_duplicate_vin_within_tenant(pre_0023_db: str) -> None:
-    command.upgrade(Config("alembic.ini"), "head")
+    command.upgrade(Config("alembic.ini"), "0023")
 
     engine = create_engine(pre_0023_db)
     with engine.begin() as conn:
@@ -190,4 +196,4 @@ def test_upgrade_through_0023_stops_on_pre_existing_duplicate_vins(pre_0023_db: 
     engine.dispose()
 
     with pytest.raises(RuntimeError, match="duplicate normalized VINs"):
-        command.upgrade(Config("alembic.ini"), "head")
+        command.upgrade(Config("alembic.ini"), "0023")

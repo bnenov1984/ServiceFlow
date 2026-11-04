@@ -572,3 +572,86 @@ tests cover seq incrementing in upload order, seq never reused after
 delete, and seq being independent per order. Frontend: 566 passed
 (3 new OrderStep tests + a new 3-test `PhotosGrid.test.tsx`, PhotosGrid
 had none before). ruff/mypy/lint-imports/typecheck/build all clean.
+
+WP-C (profile-driven asset type, reg-№ identity, vehicle history at
+intake; #7/#8gap/#20, Q18/Q11) implemented 04.11.2026. **Design
+confirmation**: the approved `proposal-removals-types-list.md` text
+("old asset types replaced outright") was written assuming a
+pre-production app; this session's own handoff noted production now has
+424 real customer rows. Flagged this to the PO before implementing —
+explicitly reconfirmed "replace outright, as approved" with that context
+in view. Migration 0034 is written to be safe regardless either way: a
+non-matching type's assets are deleted only when no `service_orders` row
+ever referenced them (`service_orders.asset_id`/`asset_ownership.
+asset_id` have no `ON DELETE`, so a real reference blocks the delete
+outright rather than cascading through it) — a company with genuine
+cross-type order history keeps more than one type after migration,
+visibly, rather than losing data silently.
+
+Backend: `serviceflow.assets.service.BUSINESS_PROFILE_ASSET_TYPES`
+replaces `DEFAULT_TYPES` — each business profile seeds exactly one type
+(automotive_repair→vehicle unchanged, phone_repair→phone gains a "вид"
+choice field, electronics_repair→electronics and appliance_repair→
+appliance are new, generic_repair→other unchanged); `seed_default_types`
+now branches on profile instead of looping over all four. Migration 0034:
+re-folds existing reg-№ `asset_identifiers.value_normalized` rows through
+a new `fold_plate_homoglyphs` (Cyrillic/Latin plate look-alikes — А В Е К
+М Н О Р С Т У Х), pre-flight-scans for duplicates then adds a partial
+unique index on `(company_id, value_normalized) WHERE kind='reg'`
+(mirrors migration 0023's VIN pattern exactly), then per-company
+upserts/replaces asset types per the safety rule above. New
+`RegConflictError`/`_check_reg_conflicts` (mirrors `_check_vin_conflicts`)
+wired into `create()`/`update_fields()`; new `GET /assets/reg-check`
+on-blur pre-check (mirrors WP-B's phone/ЕИК pre-checks) backing a
+*simpler* UX than VIN's upfront owner-conflict/transfer sub-form, per
+Q11's own simpler decision text ("inline error + Избери този автомобил",
+one action not two). `search/service.py`'s identifier query now folds too
+— a real bug caught live (Cyrillic plate search stopped matching a
+Latin-stored value) before it reached tests.
+
+Frontend: `AssetStep.tsx` derives `soleType` synchronously (not an effect,
+no picker flash) to skip the 4-icon grid when `GET /asset-types` returns
+exactly one type — a company still holding more than one (real history,
+see above) still gets the grid; reg-№ gets the on-blur check wired into
+`FieldInput` via new optional `onBlur`/`extra` props; new
+`VehicleHistoryAtIntake` (reusing a new shared `VehicleVisitList`,
+extracted from the order page's `VehicleHistorySection`) renders once a
+vehicle is resolved. New icons for `electronics`/`appliance` codes in
+`AssetTypeIcon.tsx` (keyed by code, confirmed the component ignores
+`AssetType.icon` entirely — always has).
+
+**Real fallout found and fixed, substantial this time**: every test
+company in the suite was seeded via `seed_company` (always generic_repair
+→ "other" now, previously all 4 types) — ~35 call sites across 18
+unrelated test files (invoices, payments, timeline, tasks, protocol, …)
+assumed a "phone" type was always available for an incidental test asset;
+mechanically swapped to "other"/`description` where the type was never
+the point. `test_assets.py`, `test_orders.py`,
+`test_frontend_prerequisites.py`, `test_automotive_mileage.py` needed
+real `business_profile`-aware login helpers (seed the right single type,
+idempotent against a repeat login as the same email) since they
+specifically exercise vehicle/phone behavior. Three isolated
+migration-regression test files (`test_migration_0015/0020/0023`) that
+drove a throwaway DB "through to head" to verify one specific past
+migration's own backfill now also run migration 0034 at that same "head"
+— `0020`/`0023` were repointed to upgrade to their own exact revision
+instead (their stated purpose never needed anything later, and this
+protects them against any future migration too, not just this one);
+`0015`'s test, whose own docstring specifically defends going "to head"
+over a fresh-empty-database shortcut, instead got its seed data adjusted
+to be migration-0034-safe (a type-matching asset) plus a new dedicated
+test for 0034's own cleanup behavior. Verified live: single-type picker
+skip, a second vehicle's Cyrillic-typed reg-№ correctly flagged as
+duplicate against an existing Latin-typed one with a working "Избери този
+автомобил" resolve, vehicle history showing both the empty state and a
+real prior visit after reuse. Backend: 813 passed, 2 xfailed (same
+pre-existing pair, up from 803/787 pre-WP-C — net new tests: reg-№
+conflict/on-blur/tenant-scoping, homoglyph fold unit tests, per-profile
+seeding, migration 0034's own cleanup behavior). Frontend: 572 passed (up
+from 566; AssetStep.test.tsx gained a single-type-skip test, 3 reg-№
+on-blur tests, 2 vehicle-history-at-intake tests, and its existing VIN
+suite's fixtures/helpers adjusted for the new auto-skip default).
+ruff/mypy/lint-imports/typecheck/build all clean. docs/adr/ADR-BOS-011
+§Decision 5 and docs/business-os/18 §15.1(1) amended with the Q18 seed
+map — only the asset-type-seeding portion; the `accessories` flag in the
+same approved proposal text belongs to WP-H, not yet applied.

@@ -15,6 +15,15 @@ assets referencing the codes migration 0003 already seeded), then continue
 through 0015 to head and verify the result — not a fresh-empty-database
 shortcut.
 
+order-workflow-revamp WP-C (migration 0034, Q18): "head" now runs 0034 too,
+which replaces each company's four identical types with its profile's
+single type — company_a's pre-existing "phone"-typed asset (automotive_repair
+→ target type "vehicle") is exactly the kind of non-matching, order-free
+asset 0034 is designed to clean up, so these tests seed a *matching*
+("vehicle") asset for the "survives the real upgrade path" assertions and
+assert the four-types-become-one outcome directly, rather than freezing the
+file at 0015's own now-superseded end state.
+
 Uses its own database (created and dropped per test), not the shared
 session-scoped `migrated_db` fixture from conftest.py, which is already
 migrated straight to head for the rest of the suite and would conflict with
@@ -36,9 +45,6 @@ pytestmark = pytest.mark.skipif(
     os.environ.get("SERVICEFLOW_TEST_DATABASE_URL") is None,
     reason="SERVICEFLOW_TEST_DATABASE_URL not set",
 )
-
-EXPECTED_CODES = {"phone", "vehicle", "laptop", "other"}
-
 
 @pytest.fixture
 def pre_0015_db() -> Iterator[str]:
@@ -83,7 +89,14 @@ def _seed_pre_migration_state(url: str) -> dict[str, uuid.UUID]:
     `settings`, one without — the pre-provisioning-era shape,
     `identity.service.seed_company`'s own), a customer, and an asset
     referencing a pre-existing global code — exactly what the backfill has
-    to reconcile."""
+    to reconcile.
+
+    `asset_a` references "vehicle" — company_a's own automotive_repair
+    profile's eventual Q18/migration-0034 target type — so it is a
+    type-*matching* asset that survives the real upgrade path unchanged;
+    `test_upgrade_through_0034_cleans_up_a_non_matching_orphaned_asset`
+    below separately seeds and verifies the *non*-matching, order-free case
+    0034 is designed to clean up."""
     engine = create_engine(url)
     company_a = uuid.uuid4()
     company_b = uuid.uuid4()
@@ -104,11 +117,11 @@ def _seed_pre_migration_state(url: str) -> dict[str, uuid.UUID]:
             "name_translit) VALUES "
             "(:id, :company_id, 'Клиент А', '0888000111', '0888000111', 'Klient A')"
         ), {"id": customer_a, "company_id": company_a})
-        # Referencing 'phone' — one of the four global rows migration 0003
+        # Referencing 'vehicle' — one of the four global rows migration 0003
         # already seeded on this database; not inserted again here.
         conn.execute(text(
             "INSERT INTO assets (id, company_id, customer_id, asset_type_code, label) "
-            "VALUES (:id, :company_id, :customer_id, 'phone', 'iPhone 13')"
+            "VALUES (:id, :company_id, :customer_id, 'vehicle', 'Volkswagen Golf')"
         ), {"id": asset_a, "company_id": company_a, "customer_id": customer_a})
 
     engine.dispose()
@@ -129,7 +142,9 @@ def test_upgrade_through_0015_backfills_every_company_without_colliding(
 
     admin = create_engine(pre_0015_db)
     with admin.connect() as conn:
-        # Each company got its own 4 rows, correctly tagged.
+        # 0015 backfills 4 identical rows per company; 0034 (WP-C, Q18) then
+        # replaces each company's set with its profile's single type — "head"
+        # now means after both, so each company ends up with exactly one row.
         rows_a = conn.execute(text(
             "SELECT code, business_profile FROM asset_types WHERE company_id = :cid"
         ), {"cid": ids["company_a"]}).all()
@@ -137,8 +152,8 @@ def test_upgrade_through_0015_backfills_every_company_without_colliding(
             "SELECT code, business_profile FROM asset_types WHERE company_id = :cid"
         ), {"cid": ids["company_b"]}).all()
 
-        assert {r.code for r in rows_a} == EXPECTED_CODES
-        assert {r.code for r in rows_b} == EXPECTED_CODES
+        assert {r.code for r in rows_a} == {"vehicle"}
+        assert {r.code for r in rows_b} == {"other"}
         assert all(r.business_profile == "automotive_repair" for r in rows_a), rows_a
         assert all(r.business_profile == "generic_repair" for r in rows_b), rows_b
 
@@ -147,8 +162,8 @@ def test_upgrade_through_0015_backfills_every_company_without_colliding(
             "SELECT count(*) FROM asset_types WHERE company_id IS NULL"
         )).scalar_one() == 0
 
-        # Existing asset reference still resolves — and to *its own*
-        # company's row, not some other company's same-code row.
+        # Existing (type-matching) asset reference still resolves — and to
+        # *its own* company's row, not some other company's same-code row.
         asset_type_id, resolved_company_id = conn.execute(text(
             "SELECT asset_type_id, (SELECT company_id FROM asset_types "
             "WHERE id = a.asset_type_id) FROM assets a WHERE a.id = :aid"
@@ -159,7 +174,47 @@ def test_upgrade_through_0015_backfills_every_company_without_colliding(
         code = conn.execute(text(
             "SELECT code FROM asset_types WHERE id = :id"
         ), {"id": asset_type_id}).scalar_one()
-        assert code == "phone"
+        assert code == "vehicle"
+    admin.dispose()
+
+
+def test_upgrade_through_0034_cleans_up_a_non_matching_orphaned_asset(
+    pre_0015_db: str,
+) -> None:
+    """WP-C (Q18, migration 0034): a pre-existing asset of a type that no
+    longer matches its company's profile, and that no order ever referenced,
+    is deleted outright as part of the real upgrade path — not left behind
+    as a stray row, and not merely hidden."""
+    ids = _seed_pre_migration_state(pre_0015_db)
+
+    engine = create_engine(pre_0015_db)
+    orphan_phone_asset = uuid.uuid4()
+    with engine.begin() as conn:
+        # Referencing 'phone' — non-matching for company_a's automotive_repair
+        # profile, and never ordered against, exactly the case 0034 cleans up.
+        conn.execute(text(
+            "INSERT INTO assets (id, company_id, customer_id, asset_type_code, label) "
+            "VALUES (:id, :company_id, "
+            "(SELECT customer_id FROM assets WHERE id = :existing_asset), "
+            "'phone', 'iPhone 13')"
+        ), {"id": orphan_phone_asset, "company_id": ids["company_a"],
+            "existing_asset": ids["asset_a"]})
+    engine.dispose()
+
+    command.upgrade(Config("alembic.ini"), "head")
+
+    admin = create_engine(pre_0015_db)
+    with admin.connect() as conn:
+        assert conn.execute(text(
+            "SELECT count(*) FROM assets WHERE id = :id"
+        ), {"id": orphan_phone_asset}).scalar_one() == 0
+        assert conn.execute(text(
+            "SELECT count(*) FROM asset_types WHERE company_id = :cid AND code = 'phone'"
+        ), {"cid": ids["company_a"]}).scalar_one() == 0
+        # The type-matching vehicle asset is untouched.
+        assert conn.execute(text(
+            "SELECT count(*) FROM assets WHERE id = :id"
+        ), {"id": ids["asset_a"]}).scalar_one() == 1
     admin.dispose()
 
 
@@ -167,6 +222,8 @@ def test_unique_company_id_code_is_actually_enforced(pre_0015_db: str) -> None:
     ids = _seed_pre_migration_state(pre_0015_db)
     command.upgrade(Config("alembic.ini"), "head")
 
+    # Post-0034, company_a (automotive_repair) holds exactly one type row,
+    # "vehicle" — that's the surviving code to collide against.
     admin = create_engine(pre_0015_db)
     with admin.begin() as conn, pytest.raises(
         IntegrityError, match="uq_asset_types_company_id_code",
@@ -174,7 +231,7 @@ def test_unique_company_id_code_is_actually_enforced(pre_0015_db: str) -> None:
         conn.execute(text(
             "INSERT INTO asset_types (id, company_id, code, name_bg, icon, sort, "
             "field_defs, business_profile) VALUES "
-            "(gen_random_uuid(), :cid, 'phone', 'Дубликат', '', 0, '[]'::jsonb, "
+            "(gen_random_uuid(), :cid, 'vehicle', 'Дубликат', '', 0, '[]'::jsonb, "
             "'generic_repair')"
         ), {"cid": ids["company_a"]})
     admin.dispose()
@@ -211,13 +268,13 @@ def test_rls_scopes_asset_types_per_company_after_migration(pre_0015_db: str) ->
     for db in open_session(app_url):
         bind_tenant_scope(db, ids["company_a"])  # type: ignore[arg-type]
         seen = db.scalars(select(AssetType)).all()  # type: ignore[attr-defined]
-        assert {t.code for t in seen} == EXPECTED_CODES
+        assert {t.code for t in seen} == {"vehicle"}
         assert all(t.company_id == ids["company_a"] for t in seen)
 
     for db in open_session(app_url):
         bind_tenant_scope(db, ids["company_b"])  # type: ignore[arg-type]
         seen = db.scalars(select(AssetType)).all()  # type: ignore[attr-defined]
-        assert {t.code for t in seen} == EXPECTED_CODES
+        assert {t.code for t in seen} == {"other"}
         assert all(t.company_id == ids["company_b"] for t in seen)
 
     # Fail-closed: no tenant scope bound at all → zero rows, not an error and

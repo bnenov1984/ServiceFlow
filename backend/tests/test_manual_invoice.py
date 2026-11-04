@@ -200,7 +200,7 @@ def test_manual_and_order_invoices_share_one_continuous_number_sequence(
     # Order-generated invoice first.
     cid1 = _customer(client, h, name="Клиент А")
     aid = client.post(f"/api/v1/customers/{cid1}/assets", headers=h, json={
-        "asset_type_code": "phone", "field_values": {"brand": "Apple"},
+        "asset_type_code": "other", "field_values": {"description": "Apple"},
     }).json()["id"]
     oid = client.post("/api/v1/orders", headers=h, json={
         "customer_id": cid1, "asset_id": aid, "complaint": "Тест",
@@ -283,7 +283,7 @@ def test_customer_id_filter_still_finds_order_generated_invoices(client: TestCli
     _ready_seller(client, h)
     cid = _customer(client, h)
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
-        "asset_type_code": "phone", "field_values": {"brand": "Apple"},
+        "asset_type_code": "other", "field_values": {"description": "Apple"},
     }).json()["id"]
     oid = client.post("/api/v1/orders", headers=h, json={
         "customer_id": cid, "asset_id": aid, "complaint": "Тест",
@@ -301,7 +301,7 @@ def test_customer_id_filter_combines_manual_and_order_invoices_for_same_customer
     _ready_seller(client, h)
     cid = _customer(client, h)
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
-        "asset_type_code": "phone", "field_values": {"brand": "Apple"},
+        "asset_type_code": "other", "field_values": {"description": "Apple"},
     }).json()["id"]
     oid = client.post("/api/v1/orders", headers=h, json={
         "customer_id": cid, "asset_id": aid, "complaint": "Тест",
@@ -318,7 +318,7 @@ def test_order_id_filter_unaffected_by_manual_invoices(client: TestClient) -> No
     _ready_seller(client, h)
     cid = _customer(client, h)
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
-        "asset_type_code": "phone", "field_values": {"brand": "Apple"},
+        "asset_type_code": "other", "field_values": {"description": "Apple"},
     }).json()["id"]
     oid = client.post("/api/v1/orders", headers=h, json={
         "customer_id": cid, "asset_id": aid, "complaint": "Тест",

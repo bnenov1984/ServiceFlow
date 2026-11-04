@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from business_os.shared_kernel.db import TenantContext, scoped
 from business_os.shared_kernel.normalize import (
+    fold_plate_homoglyphs,
     normalize_identifier,
     normalize_phone,
     transliterate,
@@ -62,7 +63,12 @@ def global_search(db: Session, ctx: TenantContext, q: str) -> SearchResults:
 
     translit_q = transliterate(q)
     phone_q = normalize_phone(q)
-    ident_q = normalize_identifier(q)
+    # Q11: reg-№ identifiers are now stored homoglyph-folded (business_os.
+    # shared_kernel.normalize.fold_plate_homoglyphs) — folding the query
+    # too keeps a Cyrillic-typed plate search matching a Latin-stored one.
+    # A no-op for every other identifier kind (IMEI/VIN/serial digits and
+    # Latin letters never collide with the fold's narrow Cyrillic input set).
+    ident_q = fold_plate_homoglyphs(normalize_identifier(q))
 
     # P1: customers by name (Cyrillic/Latin tolerant) or phone fragment.
     conditions = [Customer.name_translit.contains(translit_q)]

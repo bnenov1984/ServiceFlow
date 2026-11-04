@@ -29,9 +29,9 @@ def _order_with_accessories(client: TestClient, h: dict[str, str]) -> str:
     cid = client.post("/api/v1/customers", headers=h,
                       json={"name": "Иван Петров", "phone": "0888111222"}).json()["id"]
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
-        "asset_type_code": "phone",
-        "field_values": {"brand": "Samsung", "model": "Galaxy S22",
-                         "imei": "356985061234567"},
+        "asset_type_code": "other",
+        "field_values": {"description": "Samsung Galaxy S22",
+                         "identifier": "356985061234567"},
     }).json()["id"]
     oid = client.post("/api/v1/orders", headers=h, json={
         "customer_id": cid, "asset_id": aid, "complaint": "Не се включва след падане",
@@ -185,7 +185,7 @@ def test_delivery_protocol_survives_later_live_data_changes(client: TestClient) 
     cid = client.post("/api/v1/customers", headers=h,
                       json={"name": "Оригинално Име", "phone": "0888111222"}).json()["id"]
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
-        "asset_type_code": "phone", "field_values": {"brand": "Apple", "model": "13"},
+        "asset_type_code": "other", "field_values": {"description": "Apple 13"},
     }).json()["id"]
     oid = client.post("/api/v1/orders", headers=h, json={
         "customer_id": cid, "asset_id": aid, "complaint": "Не се включва",
@@ -251,7 +251,7 @@ def test_delivery_protocol_snapshot_is_never_rebuilt_on_redelivery(client: TestC
     cid = client.post("/api/v1/customers", headers=h,
                       json={"name": "Първо Име", "phone": "0888111222"}).json()["id"]
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
-        "asset_type_code": "phone", "field_values": {"brand": "Apple", "model": "13"},
+        "asset_type_code": "other", "field_values": {"description": "Apple 13"},
     }).json()["id"]
     oid = client.post("/api/v1/orders", headers=h, json={
         "customer_id": cid, "asset_id": aid, "complaint": "Не се включва",
@@ -383,8 +383,8 @@ def _order_with_customer_email(client: TestClient, h: dict[str, str],
         "name": "Иван Петров", "phone": "0888111222", "email": email,
     }).json()["id"]
     aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
-        "asset_type_code": "phone",
-        "field_values": {"brand": "Samsung", "model": "Galaxy S22"},
+        "asset_type_code": "other",
+        "field_values": {"description": "Samsung Galaxy S22"},
     }).json()["id"]
     return str(client.post("/api/v1/orders", headers=h, json={
         "customer_id": cid, "asset_id": aid, "complaint": "Не се включва",
