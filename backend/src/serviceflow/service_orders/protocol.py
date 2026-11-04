@@ -139,7 +139,13 @@ class DeliveryPartLine:
     name: str
     qty: int
     unit_price: str
-    warranty_days: int | None
+    # order-workflow-revamp WP-J: already resolved to display text by
+    # `build_delivery_protocol_data` (either the new "да"/"не" boolean
+    # rendering or, for a snapshot frozen before this change, the legacy
+    # months text — Q14c: an already-issued protocol keeps printing its
+    # stored months forever) — the renderer below doesn't need to know
+    # which shape produced it.
+    warranty_label: str
 
 
 @dataclass(frozen=True)
@@ -220,7 +226,7 @@ def build_delivery_protocol_data(snapshot: dict[str, Any]) -> DeliveryProtocolDa
         ],
         part_lines=[
             DeliveryPartLine(name=p["name"], qty=p["qty"], unit_price=p["unit_price"],
-                             warranty_days=p["warranty_days"])
+                             warranty_label=_part_warranty_label(p))
             for p in snapshot["part_lines"]
         ],
         accessories=[
@@ -249,12 +255,14 @@ def _warranty_text(days: int | None) -> str:
 
 
 def _warranty_text_months(days: int | None) -> str:
-    """Part-line warranty only (issue 05, audit correction: months-
-    granularity at the UI/API boundary; `days` here is still the frozen
-    snapshot's day count — same `PartLine.warranty_days` storage as always,
-    converted only for display, same 30-days/month rule as the router's
-    `_days_to_months`). NULL -> "Не е посочена", 0 -> "Без гаранция",
-    positive -> "N месец"/"N месеца" (correct singular for exactly 1)."""
+    """Legacy part-line warranty only (issue 05, audit correction: months-
+    granularity at the UI/API boundary). order-workflow-revamp WP-J retired
+    this shape going forward (`_part_warranty_label` below handles new
+    snapshots), but a `completion_snapshot` frozen before WP-J still has
+    this exact `warranty_days` int-or-null shape and must keep printing its
+    months forever (Q14c) — never rewritten, so this function stays. NULL ->
+    "Не е посочена", 0 -> "Без гаранция", positive -> "N месец"/"N месеца"
+    (correct singular for exactly 1)."""
     if days is None:
         return "Не е посочена"
     if days == 0:
@@ -267,6 +275,18 @@ def _warranty_text_months(days: int | None) -> str:
         # claiming "Без гаранция", which 0 has its own distinct meaning for.
         return f"{days} дни"
     return f"{months} месец" if months == 1 else f"{months} месеца"
+
+
+def _part_warranty_label(p: dict[str, Any]) -> str:
+    """order-workflow-revamp WP-J: a snapshot built after this change has
+    `has_warranty` (boolean — Q14b: the flag never affects price, Q14c:
+    the term itself is the company-wide "Гаранционни условия" text already
+    rendered separately, not a per-part value); one frozen before it still
+    has the old `warranty_days` key and must keep printing its months
+    (Q14c) — never reconstructed from the new shape."""
+    if "has_warranty" in p:
+        return "да" if p["has_warranty"] else "не"
+    return _warranty_text_months(p.get("warranty_days"))
 
 
 def generate_delivery_protocol(
@@ -349,7 +369,7 @@ def generate_delivery_protocol(
         for p in data.part_lines:
             qty = f" x{p.qty}" if p.qty > 1 else ""
             warranty_suffix = (
-                f" (гаранция: {_warranty_text_months(p.warranty_days)})" if include_warranty else ""
+                f" (гаранция: {p.warranty_label})" if include_warranty else ""
             )
             pdf.cell(0, 6,
                     f"- {p.name}{qty} — {p.unit_price} €{warranty_suffix}",

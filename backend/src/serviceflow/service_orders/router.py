@@ -183,27 +183,6 @@ class DiagnosisIn(BaseModel):
     approval_required: bool = False
 
 
-# Issue 05 (audit correction, 2026-09-25): part-level warranty is
-# months-granularity at the API boundary, unlike order-level (labor)
-# warranty, which stays in days (docs/15's CompletionDialog "Гаранция
-# (дни)" field is untouched — only per-part warranty changes unit).
-# `PartLine.warranty_days` (the DB column, migration 0025) and every
-# internal service_orders/lines.py function keep working in days —
-# unchanged storage, unchanged warranty-return logic (which doesn't do any
-# date math against this value at all, confirmed before choosing this
-# approach over a schema migration). Only this router's request/response
-# models convert at the boundary. 30 days/month exactly (not calendar-
-# accurate 30.44) — round-trips the PO's own whole-month examples (12, 6)
-# without drift, and the precision loss for values nobody entered in exact
-# days anyway is the tradeoff this conversion accepts by design.
-def _days_to_months(days: int | None) -> int | None:
-    return None if days is None else round(days / 30)
-
-
-def _months_to_days(months: int | None) -> int | None:
-    return None if months is None else round(months * 30)
-
-
 class PartLineOut(BaseModel):
     id: uuid.UUID
     catalog_item_id: uuid.UUID | None
@@ -213,14 +192,19 @@ class PartLineOut(BaseModel):
     unit_cost: float
     unit_price: float
     state: str
-    # NULL = not specified, 0 = explicitly no warranty, positive = months.
-    warranty_months: int | None = None
+    has_warranty: bool
+    # order-workflow-revamp WP-J (Q5/Q5c): non-null only right after an add
+    # or a state-changing PATCH, when a one-click status-change nudge
+    # applies — never populated on a plain GET, and never itself a change;
+    # the client still has to POST /orders/{id}/status to act on it.
+    suggested_status: str | None = None
 
     @staticmethod
-    def of(p: PartLine) -> "PartLineOut":
+    def of(p: PartLine, suggested_status: str | None = None) -> "PartLineOut":
         return PartLineOut(id=p.id, catalog_item_id=p.catalog_item_id, name=p.name, code=p.code,
                            qty=p.qty, unit_cost=float(p.unit_cost), unit_price=float(p.unit_price),
-                           state=p.state, warranty_months=_days_to_months(p.warranty_days))
+                           state=p.state, has_warranty=p.has_warranty,
+                           suggested_status=suggested_status)
 
 
 class PartLineIn(BaseModel):
@@ -228,11 +212,20 @@ class PartLineIn(BaseModel):
     catalog item — no name/price field exists here at all. `catalog_item_id`
     is resolved against this order's company and `kind="part"` by the
     `add_part_line` endpoint below, which snapshots the item's current
-    name/code/price onto the new row."""
+    name/code/price onto the new row.
+
+    WP-J (Q15b): `state` must be one of `lines.ADD_PART_STATES` (checked by
+    the endpoint, not a pydantic Literal, for the same custom-400-with-
+    message_key reason `patch_part_line` already validates `PartLinePatch.
+    state` by hand) — the add form always sends one of its two buttons'
+    explicit values; "issued" is only the default for callers that don't
+    offer that choice (e.g. a fixture creating a line purely for an
+    unrelated invoice/payment total)."""
 
     catalog_item_id: uuid.UUID
     qty: int = Field(default=1, ge=1)
-    warranty_months: int | None = Field(default=None, ge=0, le=120)
+    state: str = "issued"
+    has_warranty: bool = True
 
 
 class PartLinePatch(BaseModel):
@@ -240,7 +233,7 @@ class PartLinePatch(BaseModel):
     or edit, for any role") — only what was never a catalog concern."""
 
     qty: int | None = Field(default=None, ge=1)
-    warranty_months: int | None = Field(default=None, ge=0, le=120)
+    has_warranty: bool | None = None
     state: str | None = None
 
 
@@ -743,10 +736,16 @@ def add_part_line(order_id: uuid.UUID, body: PartLineIn, db: TenantDbDep,
     order = _get_or_404(db, tenant, order_id)
     _reject_if_terminal(order)
     _reject_if_line_creation_not_allowed(order)
+    if body.state not in lines.ADD_PART_STATES:
+        raise HTTPException(status_code=400, detail={
+            "code": "invalid_state", "message_key": "errors.part_lines.invalid_state",
+            "params": {},
+        })
     item = _resolve_catalog_item(db, tenant, body.catalog_item_id, "part")
     line = lines.add_part_line(db, tenant, order, catalog_item=item, qty=body.qty,
-                               warranty_days=_months_to_days(body.warranty_months))
-    return PartLineOut.of(line)
+                               state=body.state, has_warranty=body.has_warranty)
+    suggested = lines.suggest_status_after_part_add(order.status_code, line.state)
+    return PartLineOut.of(line, suggested_status=suggested)
 
 
 @router.patch("/part-lines/{line_id}",
@@ -758,21 +757,20 @@ def patch_part_line(line_id: uuid.UUID, body: PartLinePatch, db: TenantDbDep,
         raise HTTPException(status_code=404, detail={
             "code": "not_found", "message_key": "errors.part_lines.not_found", "params": {},
         })
-    _reject_if_terminal(_order_for_line(db, tenant, line.order_id))
+    order = _order_for_line(db, tenant, line.order_id)
+    _reject_if_terminal(order)
     if body.state is not None and body.state not in PART_STATES:
         raise HTTPException(status_code=400, detail={
             "code": "invalid_state", "message_key": "errors.part_lines.invalid_state",
             "params": {},
         })
     fields = body.model_dump(exclude_unset=True)
-    if "warranty_months" in fields:
-        # `PartLine.warranty_days` is the model attribute `lines.
-        # update_part_line`'s generic setattr() writes to — translate the
-        # months-at-the-boundary field to it before that call, never pass
-        # "warranty_months" through (no such column/attribute exists).
-        fields["warranty_days"] = _months_to_days(fields.pop("warranty_months"))
     line = lines.update_part_line(db, tenant, line, fields)
-    return PartLineOut.of(line)
+    suggested = (
+        lines.suggest_status_after_part_state_change(db, tenant, order, line.state)
+        if "state" in fields else None
+    )
+    return PartLineOut.of(line, suggested_status=suggested)
 
 
 # --- Labor lines -----------------------------------------------------------

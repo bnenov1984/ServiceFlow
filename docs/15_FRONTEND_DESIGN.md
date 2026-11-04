@@ -177,9 +177,13 @@ OrderPage
 │    signed amount + reason — WP-I, Q13) · MoneyCard (parts+labor+adjustments
 │    изчислени; „Фактура" бутон disabled с „Етап 4")
 ├─ дясна колона: PartLines (CatalogItemPicker — избор от каталога, без
-│    свободен текст; state chips ordered→installed; add-form заменен с
-│    текст-обяснение извън Диагностика/Чака клиент/Чака части/Ремонт —
-│    WP-I, Q12a/Q13d) · LaborLines (същият picker; количество дробно за
+│    свободен текст; add-form заменен с текст-обяснение извън Диагностика/
+│    Чака клиент/Чака части/Ремонт — WP-I, Q12a/Q13d; два бутона за добавяне,
+│    „От наличност"/„Поръчай" (издадена/поръчана), чекбокс „Гаранция"
+│    (по подразбиране чекнат, не влияе на цената), state select издадена→
+│    поръчана→монтирана за съществуващи редове, one-click banner за преход
+│    към Чака части/Ремонт при поръчана/издадена последна част — WP-J,
+│    Q5/Q5c/Q14/Q15) · LaborLines (същият picker; количество дробно за
 │    часови артикули) · AccessoriesList
 │    (returned checkbox; add-form hidden when the asset type's `accessories`
 │    flag is false — WP-H, Q16/Q16b) · PhotosGrid (stage tabs; upload; lightbox) ·

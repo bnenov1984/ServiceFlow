@@ -146,14 +146,28 @@ catalog — Owner-maintained in Settings, ADR-BOS-013) — no hand-typed name or
 price, for any role. Lines are
 addable only while the order is in Диагностика, Чака клиент, Чака части or
 Ремонт — never at intake, never once Готова (reverses the earlier
-"addable at intake" design). States: **ordered → installed** *(correction:
-this had drifted to a stale 4-state "needed → ordered → received →
-installed" list — Wave 2 Issue 33 simplified it to these two well before
-this amendment; a further 3-state split is WP-J, not yet applied)*. „Чака
+"addable at intake" design). States: **издадена (issued, from the shop's own
+supply) → поръчана (ordered, must come from a supplier) → монтирана
+(installed)** *(amended 05.11.2026 — WP-J, Q15/Q15b: splits a third state
+out of the prior 2-state "ordered → installed" model; adding a line offers
+only "issued" or "ordered" as the starting state, via two separate buttons —
+"installed" is reached only by a later change. Marking a line поръчана from
+a working status offers a one-click suggestion to move the order to Чака
+части; marking the last remaining поръчана line издадена offers a one-click
+suggestion back to Ремонт — both nudges only (Q5/Q5c), never automatic — the
+order's status still changes only through a human action.)* „Чака
 части" is used when the order is blocked. Repair may proceed before all
 parts arrive (partial work is real). No reservations, no stock levels, no
 returns-to-inventory in V1 (no inventory exists; the catalog is a price
-list, not stock) — unused part lines are removed with timeline trace.
+list, not stock; "issued" above is a line state, never a stock movement) —
+unused part lines are removed with timeline trace.
+
+Each part line also carries a plain on/off warranty flag — defaults on,
+never affects price, and carries no term of its own (the term is the
+company-wide warranty text already printed on the delivery protocol)
+*(amended 05.11.2026 — WP-J, Q14/Q14b/Q14c, replaces the prior months-at-the-
+API-boundary field entirely; a protocol frozen before this change keeps
+printing its stored months forever, never retroactively reconstructed)*.
 
 ## 8. Labor
 

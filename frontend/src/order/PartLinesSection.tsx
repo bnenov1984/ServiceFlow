@@ -1,17 +1,19 @@
 /** PartLines (docs/15 §6.5): per-line state selector, direct-select (not
- * cycling) - Wave 2 Issue 33 simplified V1 model: ordered/installed only, no
- * server-side transition restriction (docs/02 §7 — no inventory, states are
- * presentation only). "ordered" means assigned/requested for this order,
- * regardless of whether it's physically in stock yet.
+ * cycling).
  *
  * order-workflow-revamp WP-I (Q12a/Q13d): a line is added only by picking a
  * catalog item (CatalogItemPicker) — no free-text name/price field, and only
  * while the order is in one of the allowed statuses (`addLineBlockedHint`,
- * passed in by OrderPage from the order's own status_code). */
+ * passed in by OrderPage from the order's own status_code).
+ *
+ * WP-J (Q5/Q5c/Q14/Q15): three states — издадена/поръчана/монтирана — with
+ * two distinct add buttons (от наличност/поръчай) instead of a single
+ * "Добави", a plain on/off warranty checkbox (no more per-line months), and
+ * a one-click banner suggesting a status change when the server says one
+ * applies (never automatic — the user still has to confirm it). */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import { useAuth } from "../auth/AuthContext";
+import { useState } from "react";
 import { useToast } from "../components/Toast";
 import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
@@ -27,28 +29,25 @@ interface PartLineOut {
   unit_cost: number;
   unit_price: number;
   state: string;
-  // Issue 05 (audit correction, 2026-09-25): months, not days — the PO's
-  // own examples ("12 месеца", "6 месеца"). Order-level (labor) warranty is
-  // untouched, still days (CompletionDialog's own field).
-  warranty_months: number | null;
+  has_warranty: boolean;
+  suggested_status?: string | null;
 }
 
-// NULL = not specified (render nothing), 0 = explicitly no warranty, N = months.
-function warrantyLabel(months: number | null): string | null {
-  if (months === null) return null;
-  if (months === 0) return t("order.part_warranty_none");
-  return months === 1
-    ? t("order.part_warranty_month_one")
-    : t("order.part_warranty_months", { months });
-}
-
-// The 2 states the domain model accepts (backend/service_orders/lines.py
-// PART_STATES) - the backend has no from->to transition matrix for part
-// lines (unlike order status), so either state is always a valid target.
-const STATES = ["ordered", "installed"] as const;
+const STATES = ["issued", "ordered", "installed"] as const;
 const STATE_LABEL: Record<string, Parameters<typeof t>[0]> = {
+  issued: "order.part_state_issued",
   ordered: "order.part_state_ordered",
   installed: "order.part_state_installed",
+};
+
+const ADD_BUTTONS = [
+  { variant: "issued", labelKey: "order.part_add_issued" as const },
+  { variant: "ordered", labelKey: "order.part_add_ordered" as const },
+];
+
+const SUGGESTION_LABEL: Record<string, Parameters<typeof t>[0]> = {
+  waiting_parts: "order.part_suggest_waiting_parts",
+  repair: "order.part_suggest_repair",
 };
 
 export function PartLinesSection({
@@ -62,31 +61,19 @@ export function PartLinesSection({
   // lines; see CatalogItemPicker).
   addLineBlockedHint: string | null;
 }) {
-  const { me } = useAuth();
-  // Wave 4 Issue 38: prefill new parts from the company default — never
-  // forced, the field stays a plain editable number input either way.
-  // Issue 05: the company setting (`parts_days`) is still stored/edited in
-  // days (docs/business-os company-settings screen) — convert to months
-  // here, at the one point a days-shaped value meets this months-shaped
-  // input, same 30-days/month rule as the backend's own conversion.
-  const partsDefaultDays = me?.warranty_defaults?.parts_days ?? null;
-  const partsDefaultMonths = partsDefaultDays !== null ? Math.round(partsDefaultDays / 30) : null;
-  const defaultInput = partsDefaultMonths !== null ? String(partsDefaultMonths) : "";
-
-  const [warrantyMonths, setWarrantyMonths] = useState(defaultInput);
+  // Q14c: on by default — the user unchecks it for the rare part added
+  // without the shop's own warranty.
+  const [hasWarranty, setHasWarranty] = useState(true);
   // Tracked per line-id so one row's in-flight mutation never disables or
   // otherwise affects any other row's selector.
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
+  // Q5/Q5c: a one-click nudge from the server's last add/patch response —
+  // local-only UI state, never persisted, cleared on dismiss or once acted on.
+  const [suggestedStatus, setSuggestedStatus] = useState<string | null>(null);
+  const [suggestionPending, setSuggestionPending] = useState(false);
   const queryClient = useQueryClient();
   const pushToast = useToast();
   const key = queryKeys.orderPartLines(orderId);
-
-  // `me` (and its warranty_defaults) may still be loading at first render —
-  // catch up once it arrives, but only while the field is still untouched
-  // ("" and the user hasn't typed anything of their own yet).
-  useEffect(() => {
-    setWarrantyMonths((prev) => (prev === "" ? defaultInput : prev));
-  }, [defaultInput]);
 
   const { data: lines } = useQuery({
     queryKey: key,
@@ -99,12 +86,13 @@ export function PartLinesSection({
       queryClient.invalidateQueries({ queryKey: queryKeys.order(orderId) }),
     ]);
 
-  const addLine = async (catalogItemId: string, qty: string) => {
-    await api.post(`/orders/${orderId}/part-lines`, {
+  const addLine = async (catalogItemId: string, qty: string, variant: string) => {
+    const added = await api.post<PartLineOut>(`/orders/${orderId}/part-lines`, {
       catalog_item_id: catalogItemId, qty: qty.trim() ? Number(qty) : 1,
-      warranty_months: warrantyMonths.trim() ? Number(warrantyMonths) : null,
+      state: variant, has_warranty: hasWarranty,
     });
-    setWarrantyMonths(defaultInput);
+    setHasWarranty(true);
+    setSuggestedStatus(added.suggested_status ?? null);
     await invalidate();
   };
 
@@ -112,7 +100,8 @@ export function PartLinesSection({
     if (nextState === line.state || pendingIds.has(line.id)) return;
     setPendingIds((prev) => new Set(prev).add(line.id));
     try {
-      await api.patch(`/part-lines/${line.id}`, { state: nextState });
+      const patched = await api.patch<PartLineOut>(`/part-lines/${line.id}`, { state: nextState });
+      setSuggestedStatus(patched.suggested_status ?? null);
       await invalidate();
     } catch (err) {
       pushToast("error", err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
@@ -122,6 +111,20 @@ export function PartLinesSection({
         next.delete(line.id);
         return next;
       });
+    }
+  };
+
+  const acceptSuggestion = async () => {
+    if (suggestedStatus === null || suggestionPending) return;
+    setSuggestionPending(true);
+    try {
+      await api.post(`/orders/${orderId}/status`, { to: suggestedStatus });
+      setSuggestedStatus(null);
+      await invalidate();
+    } catch (err) {
+      pushToast("error", err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
+    } finally {
+      setSuggestionPending(false);
     }
   };
 
@@ -137,12 +140,6 @@ export function PartLinesSection({
               <span className="font-medium text-slate-800">{line.name}</span>
               {" · "}
               <span className="text-slate-500">{line.unit_price.toFixed(2)} €</span>
-              {warrantyLabel(line.warranty_months) !== null && (
-                <>
-                  {" · "}
-                  <span className="text-slate-500">{warrantyLabel(line.warranty_months)}</span>
-                </>
-              )}
             </span>
             <select
               aria-label={`${t("order.part_status_label")} — ${line.name}`}
@@ -159,17 +156,42 @@ export function PartLinesSection({
         ))}
         {lines?.length === 0 && <p className="text-sm text-slate-400">{t("order.part_lines_none")}</p>}
       </ul>
-      {addLineBlockedHint === null && (
-        <input
-          type="number" min={0} value={warrantyMonths}
-          onChange={(e) => setWarrantyMonths(e.target.value)}
-          aria-label={t("order.part_warranty_months_label")}
-          title={t("order.part_warranty_months_label")}
-          placeholder={t("order.part_warranty_months_label")}
-          className="mb-2 w-32 rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-h-touch"
-        />
+      {suggestedStatus !== null && SUGGESTION_LABEL[suggestedStatus] && (
+        <div className="mb-3 flex items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50 p-2 text-sm text-blue-900">
+          <span>{t(SUGGESTION_LABEL[suggestedStatus])}</span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={suggestionPending}
+              onClick={() => void acceptSuggestion()}
+              className="rounded-lg bg-blue-600 px-2 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 min-h-touch"
+            >
+              {t("common.yes")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSuggestedStatus(null)}
+              className="rounded-lg border border-blue-300 px-2 py-1 text-xs hover:bg-blue-100 min-h-touch"
+            >
+              {t("common.no")}
+            </button>
+          </div>
+        </div>
       )}
-      <CatalogItemPicker kind="part" disabledHint={addLineBlockedHint} onAdd={addLine} />
+      {addLineBlockedHint === null && (
+        <label className="mb-2 flex items-center gap-2 text-sm text-slate-600">
+          <input
+            type="checkbox"
+            checked={hasWarranty}
+            onChange={(e) => setHasWarranty(e.target.checked)}
+            className="h-4 w-4"
+          />
+          {t("order.part_warranty_label")}
+        </label>
+      )}
+      <CatalogItemPicker
+        kind="part" disabledHint={addLineBlockedHint} onAdd={addLine} addButtons={ADD_BUTTONS}
+      />
     </div>
   );
 }

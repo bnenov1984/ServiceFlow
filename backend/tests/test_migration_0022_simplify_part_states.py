@@ -174,9 +174,13 @@ def test_upgrade_through_0022_new_rows_default_to_ordered(pre_0022_db: str) -> N
     """The column-level DEFAULT itself (not just the model's Python-side
     default) must reflect the new state — a raw INSERT that omits `state`
     entirely, exactly like ORM-level `PartLine(...)` does, must land on
-    "ordered"."""
+    "ordered". Pinned to "0022" itself, not "head" — order-workflow-revamp
+    WP-J's migration 0038 changes this same column's server_default again
+    (to "issued"), which is a separate, later fact this test must not
+    accidentally re-assert; see test_migration_0038_part_line_state_and_
+    warranty.py's own equivalent test for that one."""
     _seed_pre_migration_order_with_parts(pre_0022_db)
-    command.upgrade(Config("alembic.ini"), "head")
+    command.upgrade(Config("alembic.ini"), "0022")
 
     engine = create_engine(pre_0022_db)
     with engine.begin() as conn:

@@ -167,7 +167,7 @@ def test_delivery_protocol_renders_after_delivery(client: TestClient) -> None:
     labor_id = _catalog_item(client, h, kind="labor", name="Смяна на дисплей",
                              sale_price="30.00")
     client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-        "catalog_item_id": part_id, "warranty_months": 3,
+        "catalog_item_id": part_id, "has_warranty": True,
     })
     client.post(f"/api/v1/orders/{oid}/labor-lines", headers=h, json={
         "catalog_item_id": labor_id,
@@ -183,7 +183,7 @@ def test_delivery_protocol_renders_after_delivery(client: TestClient) -> None:
     assert "Иван Петров" in text
     assert "Протокол за предаване" in text
     assert "Дисплей Samsung" in text
-    assert "3 месеца" in text  # part warranty (issue 05: months, not days)
+    assert "гаранция: да" in text  # part warranty (WP-J: boolean, not days)
     assert "180 дни" in text  # labor warranty (unchanged: days)
     assert "Смяна на дисплей" in text
     assert "Падане" in text  # diagnosis cause
@@ -290,25 +290,29 @@ def test_delivery_protocol_snapshot_is_never_rebuilt_on_redelivery(client: TestC
     assert "999 дни" not in text
 
 
-def test_warranty_rendering_null_zero_and_positive(client: TestClient) -> None:
+def test_warranty_rendering_boolean_part_and_legacy_labor_days(client: TestClient) -> None:
+    """order-workflow-revamp WP-J: part warranty is now a plain yes/no flag
+    (Q14) — distinct from labor (order-level) warranty, which keeps its own
+    days-based NULL/0/positive rendering, unchanged by this WP."""
     h = _login(client)
     oid = _order_with_accessories(client, h)
     client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
     no_warranty_id = _catalog_item(client, h, name="Част без гаранция", sale_price="5.00")
-    unspecified_id = _catalog_item(client, h, name="Част неопределена", sale_price="5.00")
+    with_warranty_id = _catalog_item(client, h, name="Част с гаранция", sale_price="5.00")
     client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-        "catalog_item_id": no_warranty_id, "warranty_months": 0,
+        "catalog_item_id": no_warranty_id, "has_warranty": False,
     })
     client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-        "catalog_item_id": unspecified_id,
+        "catalog_item_id": with_warranty_id,
     })
-    _deliver(client, h, oid, warranty_days=0)
+    _deliver(client, h, oid)  # labor warranty_days omitted -> "Не е посочена"
 
     text = _extract_pdf_text(
         client.get(f"/api/v1/orders/{oid}/protocol.pdf?type=delivery").content
     )
-    assert "Без гаранция" in text  # both the 0-day part and labor warranty
-    assert "Не е посочена" in text  # the unspecified part
+    assert "гаранция: не" in text
+    assert "гаранция: да" in text
+    assert "Не е посочена" in text  # labor warranty, unspecified
 
 
 @pytest.mark.xfail(

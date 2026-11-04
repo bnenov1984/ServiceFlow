@@ -2,7 +2,13 @@
  * part/labor line is added — pick a catalog item, no free-text name or
  * price field anywhere. Shared by PartLinesSection and LaborLinesSection
  * (identical picker + qty + inline "Добави в каталога" shortcut; only the
- * `kind` and the resulting line endpoint differ, which the caller owns). */
+ * `kind` and the resulting line endpoint differ, which the caller owns).
+ *
+ * WP-J (Q15b): PartLinesSection needs two distinct add buttons ("От
+ * наличност"/"Поръчай", picking the new line's initial state) instead of
+ * one — `addButtons` lets a caller offer that without forking this
+ * component; LaborLinesSection doesn't pass it and keeps the single default
+ * button exactly as before. */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -22,17 +28,29 @@ export interface CatalogItemOut {
   archived: boolean;
 }
 
+export interface AddButton {
+  variant: string;
+  labelKey: Parameters<typeof t>[0];
+}
+
+const DEFAULT_ADD_BUTTONS: AddButton[] = [{ variant: "default", labelKey: "intake.accessory_add" }];
+
 export function CatalogItemPicker({
   kind,
   disabledHint,
   onAdd,
+  addButtons = DEFAULT_ADD_BUTTONS,
 }: {
   kind: "part" | "labor";
   // When set, the whole add-form is replaced with this explanatory text
   // instead (Q13d: lines are only addable in certain statuses) — never a
   // silent disabled control with no explanation.
   disabledHint: string | null;
-  onAdd: (catalogItemId: string, qty: string) => Promise<void>;
+  onAdd: (catalogItemId: string, qty: string, variant: string) => Promise<void>;
+  // WP-J (Q15b): one button per entry, each submitting with its own
+  // `variant` string — defaults to the single "Добави" button every other
+  // caller (LaborLinesSection) already expects.
+  addButtons?: AddButton[];
 }) {
   const { me } = useAuth();
   const queryClient = useQueryClient();
@@ -61,12 +79,12 @@ export function CatalogItemPicker({
     return <p className="text-sm text-slate-400">{disabledHint}</p>;
   }
 
-  const addLine = async () => {
+  const addLine = async (variant: string) => {
     if (!selectedId || submitting) return;
     setSubmitting(true);
     setError(null);
     try {
-      await onAdd(selectedId, qty);
+      await onAdd(selectedId, qty, variant);
       setSelectedId("");
       setQty("1");
     } catch (err) {
@@ -127,14 +145,17 @@ export function CatalogItemPicker({
           aria-label={t("catalog.qty_label")}
           className="w-20 rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-h-touch"
         />
-        <button
-          type="button"
-          disabled={!selectedId || submitting}
-          onClick={() => void addLine()}
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-50 min-h-touch"
-        >
-          {t("intake.accessory_add")}
-        </button>
+        {addButtons.map((b) => (
+          <button
+            key={b.variant}
+            type="button"
+            disabled={!selectedId || submitting}
+            onClick={() => void addLine(b.variant)}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-50 min-h-touch"
+          >
+            {t(b.labelKey)}
+          </button>
+        ))}
       </div>
       {error && <p role="alert" className="text-xs text-red-700">{error}</p>}
       {items?.length === 0 && (

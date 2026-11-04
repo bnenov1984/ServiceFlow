@@ -112,10 +112,14 @@ def get_user_name(db: Session, company_id: uuid.UUID, user_id: uuid.UUID) -> str
 
 def get_warranty_defaults(db: Session, company_id: uuid.UUID) -> dict[str, int | None]:
     """Cleanup batch (Issue 7): the sanctioned way for `service_orders` to
-    read the company's configured labor/parts warranty defaults so the
-    server — not just the frontend prefill — can apply them when a client
-    omits `warranty_days` at delivery/part-creation time. `{"labor_days":
-    ..., "parts_days": ...}`, each `None` if never configured. Wraps
+    read the company's configured labor warranty default so the server —
+    not just the frontend prefill — can apply it when a client omits
+    `warranty_days` at delivery time. `{"labor_days": ..., "parts_days":
+    ...}`, each `None` if never configured. `parts_days` itself is no
+    longer applied per-line (order-workflow-revamp WP-J replaced that with
+    a plain boolean, `PartLine.has_warranty`) — it still exists here as a
+    company-settings value, surfaced to the frontend for display, and
+    folded into the protocol's company-wide warranty text. Wraps
     `service.get_warranty_defaults`; callers must never read
     `Company.settings` directly."""
     return _service.get_warranty_defaults(db, company_id)

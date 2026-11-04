@@ -11,6 +11,12 @@ its fields onto the new row. Status-gating (Q13d: only while the order is in
 same division of labor `_reject_if_terminal` already has for the terminal
 check: this module enforces the data shape, the router enforces the request
 preconditions.
+
+order-workflow-revamp WP-J (Q5/Q5c/Q14/Q15, #26/#27): part lines gained a
+third state (`PART_STATES`) and a boolean warranty flag (`PartLine.
+has_warranty`); `suggest_status_after_part_add`/`_state_change` compute the
+one-click Чака части/Ремонт nudges the router surfaces on the response, never
+an automatic transition.
 """
 
 import uuid
@@ -20,10 +26,10 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from business_os.identity import contracts as identity_contracts
 from business_os.shared_kernel.db import TenantContext, scoped
 from business_os.shared_kernel.events import DomainEvent, publish
 from serviceflow.catalog.models import CatalogItem
+from serviceflow.service_orders import statuses
 from serviceflow.service_orders.models import (
     AccessoryItem,
     LaborLine,
@@ -32,12 +38,13 @@ from serviceflow.service_orders.models import (
     ServiceOrder,
 )
 
-# Wave 2 Issue 33: simplified V1 model — "ordered" (assigned/requested for
-# this order, regardless of physical stock) and "installed". Migration 0022
-# backfills existing rows (needed/received/removed -> ordered); no inventory/
-# stock tracking is introduced by this simplification. order-workflow-revamp
-# WP-J will revisit this 3-way split (#27); untouched by WP-I.
-PART_STATES = ("ordered", "installed")
+# order-workflow-revamp WP-J (Q15, #27): издадена/поръчана/монтирана — see
+# PartLine.state's own docstring (models.py) for how this relates to the
+# prior 2-state model. A line may only be *added* in one of the first two
+# (Q15b: the add form offers exactly two buttons, "От наличност"/"Поръчай");
+# "installed" is only ever reached via a later PATCH.
+PART_STATES = ("issued", "ordered", "installed")
+ADD_PART_STATES = ("issued", "ordered")
 
 
 def _event(db: Session, ctx: TenantContext, order_id: uuid.UUID, type_: str,
@@ -56,31 +63,60 @@ def list_part_lines(db: Session, ctx: TenantContext, order_id: uuid.UUID) -> lis
 
 def add_part_line(db: Session, ctx: TenantContext, order: ServiceOrder, *,
                   catalog_item: CatalogItem, qty: int,
-                  warranty_days: int | None = None) -> PartLine:
+                  state: str = "issued", has_warranty: bool = True) -> PartLine:
     """Snapshots `catalog_item`'s name/code/price onto the new line (BR-3: a
     later catalog price change never retroactively changes it). The caller
-    has already confirmed `catalog_item.kind == "part"` and it isn't
-    archived — this function trusts that, the same way `add_accessory`
-    below trusts its caller for the order's terminal state."""
-    # Cleanup batch Issue 7: explicit (including 0, "Без гаранция") always
-    # wins; omitted falls back to the company's configured parts default,
-    # if one exists, applied once at creation only — never retroactively
-    # for existing PartLines, and never re-derived later.
-    if warranty_days is None:
-        warranty_days = identity_contracts.get_warranty_defaults(
-            db, ctx.company_id,
-        )["parts_days"]
+    has already confirmed `catalog_item.kind == "part"`, it isn't archived,
+    and `state` is one of `ADD_PART_STATES` — this function trusts that, the
+    same way `add_accessory` below trusts its caller for the order's
+    terminal state."""
     line = PartLine(
         company_id=ctx.company_id, order_id=order.id, catalog_item_id=catalog_item.id,
         name=catalog_item.name, code=catalog_item.code, qty=qty,
         unit_cost=catalog_item.unit_cost or Decimal("0"), unit_price=catalog_item.sale_price,
-        warranty_days=warranty_days,
+        state=state, has_warranty=has_warranty,
     )
     db.add(line)
     db.flush()
     _event(db, ctx, order.id, "part_added", {"name": line.name, "qty": qty})
     db.commit()
     return line
+
+
+def suggest_status_after_part_add(order_status: str, state: str) -> str | None:
+    """Q5: adding a part as поръчана ("ordered" — must be ordered in) from a
+    working status that allows it is a one-click *nudge* toward Чака части,
+    never an automatic transition (docs/02: status changes stay human-
+    initiated). Deliberately scoped to Kind.WORKING sources only (Диагностика/
+    Ремонт) — Чака клиент and Чака части themselves are already a pause, so
+    there's nothing useful to suggest from there."""
+    if state != "ordered":
+        return None
+    if statuses.kind_of(order_status) != statuses.Kind.WORKING:
+        return None
+    if statuses.check_transition(order_status, "waiting_parts") != statuses.OK:
+        return None
+    return "waiting_parts"
+
+
+def suggest_status_after_part_state_change(
+    db: Session, ctx: TenantContext, order: ServiceOrder, new_state: str,
+) -> str | None:
+    """Q5c: the part that just arrived (поръчана -> издадена) was the last
+    one still awaited — suggest returning to Ремонт. Driven by the same
+    transition matrix Q5 above uses rather than a hardcoded source status:
+    in practice this fires from Чака части (the natural result of accepting
+    Q5's own suggestion earlier), but any status the matrix already allows a
+    forward move to Ремонт from (e.g. Диагностика) is offered the nudge too
+    — there's no reason to special-case "the order never actually entered
+    Чака части" into a worse experience."""
+    if new_state != "issued":
+        return None
+    if statuses.check_transition(order.status_code, "repair") != statuses.OK:
+        return None
+    if any(p.state == "ordered" for p in list_part_lines(db, ctx, order.id)):
+        return None
+    return "repair"
 
 
 def get_part_line(db: Session, ctx: TenantContext, line_id: uuid.UUID) -> PartLine | None:
@@ -93,7 +129,9 @@ def update_part_line(db: Session, ctx: TenantContext, line: PartLine,
     for key, value in fields.items():
         setattr(line, key, value)
     if "state" in fields and fields["state"] != prev_state:
-        event_type = {"ordered": "part_ordered"}.get(fields["state"], "part_state_changed")
+        event_type = {"ordered": "part_ordered", "issued": "part_issued"}.get(
+            fields["state"], "part_state_changed",
+        )
         _event(db, ctx, line.order_id, event_type,
               {"name": line.name, "from": prev_state, "to": fields["state"]})
     db.commit()

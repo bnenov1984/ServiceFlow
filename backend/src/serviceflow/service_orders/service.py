@@ -421,8 +421,13 @@ def _build_completion_snapshot(db: Session, ctx: TenantContext,
             for line in _lines.list_labor_lines(db, ctx, order.id)
         ],
         "part_lines": [
+            # order-workflow-revamp WP-J: `has_warranty` (boolean), not the
+            # retired `warranty_days` — a snapshot frozen before this change
+            # still has the old key and keeps printing its months forever
+            # (Q14c); protocol.py's build_delivery_protocol_data() is what
+            # reads both shapes.
             {"name": p.name, "qty": p.qty, "unit_price": str(p.unit_price),
-             "warranty_days": p.warranty_days}
+             "has_warranty": p.has_warranty}
             for p in _lines.list_part_lines(db, ctx, order.id)
         ],
         "accessories": [

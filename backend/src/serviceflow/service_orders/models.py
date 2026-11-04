@@ -159,17 +159,29 @@ class PartLine(Base):
     unit_price: Mapped[Decimal] = mapped_column(
         Numeric(10, 2), default=0, server_default=text("0")
     )
-    # Wave 2 Issue 33: "ordered" is the default active state — a part is
-    # assigned/requested for this order the moment it's added, regardless
-    # of whether it's physically in stock yet (no inventory tracking).
-    # order-workflow-revamp WP-J will revisit this 2-state model (#27);
-    # untouched by WP-I.
-    state: Mapped[str] = mapped_column(default="ordered", server_default="ordered")
-    # Wave 4 PART WARRANTY: NULL = not specified, 0 = explicitly no warranty,
-    # positive = days. No new warranty entity/table — this is the entire
-    # model. order-workflow-revamp WP-J will revisit this (#26); untouched by
-    # WP-I.
-    warranty_days: Mapped[int | None] = mapped_column(default=None)
+    # order-workflow-revamp WP-J (Q15/Q15b, #27): three states — издадена
+    # ("issued", from the shop's own supply, available now), поръчана
+    # ("ordered", must be ordered in from a supplier), монтирана
+    # ("installed"). Replaces Wave 2 Issue 33's 2-state model (migration
+    # 0022: needed/received/removed folded into "ordered"); "ordered" and
+    # "installed" keep their exact meaning and literal DB value from that
+    # model unchanged — only a third value is added, so migration 0038 needs
+    # no data backfill, just a widened CHECK constraint. Still no inventory
+    # tracking (docs/01: no InventoryItem in V1) — "issued" is a line state
+    # only, never a stock movement.
+    state: Mapped[str] = mapped_column(default="issued", server_default="issued")
+    # order-workflow-revamp WP-J (Q14/Q14b/Q14c, #26): a plain yes/no flag —
+    # does not affect price (Q14b), defaults on (Q14c). Replaces Wave 4's
+    # `warranty_days` months-at-the-boundary field entirely; the shop's
+    # warranty *term* is no longer stored per-line — it is the company-wide
+    # text already frozen into the delivery protocol's "Гаранционни условия"
+    # section (protocol.py), so there is nothing new to look up here. A
+    # protocol snapshot frozen before this migration still carries the old
+    # `warranty_days` shape in its own immutable JSON (Q14c: "already-issued
+    # protocols keep printing their stored months") — protocol.py's
+    # `build_delivery_protocol_data` is what reads both shapes; this column
+    # only ever produces the new one.
+    has_warranty: Mapped[bool] = mapped_column(default=True, server_default=text("true"))
 
 
 class LaborLine(Base):

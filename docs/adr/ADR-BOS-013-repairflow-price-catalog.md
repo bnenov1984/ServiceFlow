@@ -94,7 +94,8 @@ hourly labor), all on the common RepairFlow workflow (ADR-BOS-011).
 - Part states (3-way `издадена`/`поръчана`/`монтирана`, #27) and the
   warranty-months-to-checkbox change (#26) are **explicitly out of scope** —
   a separate work package (WP-J); `part_lines.state`/`.warranty_days` are
-  untouched by this change.
+  untouched by this change. *(Applied 05.11.2026 — WP-J landed both: see
+  docs/01 PartLine, docs/02 §7, and migration 0038.)*
 
 ## Reconsideration triggers
 

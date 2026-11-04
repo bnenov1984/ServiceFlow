@@ -85,10 +85,14 @@ gate passes.
 - **part_lines** — order_id, catalog_item_id NULL (migration 0037,
   order-workflow-revamp WP-I — NULL on every line added before it, stays that
   way forever), name/code/unit_cost/unit_price (**snapshotted** from the
-  catalog item at add-time, BR-3), qty, state (ordered|installed — Wave 2
-  Issue 33 simplified from the original needed|ordered|received|installed|
-  removed; a further 3-state split is WP-J, not yet applied), warranty_days
-  NULL.
+  catalog item at add-time, BR-3), qty, state (issued|ordered|installed —
+  migration 0038, WP-J, Q15: a third value, "issued", widened onto Wave 2
+  Issue 33's ordered|installed CHECK with no data backfill needed — the
+  original 5-state needed|ordered|received|installed|removed was already
+  folded into ordered|installed by migration 0022), has_warranty bool NOT
+  NULL DEFAULT true (migration 0038, WP-J, Q14 — replaces the prior
+  warranty_days int NULL column entirely; backfilled false only where the
+  old value was exactly 0, true otherwise).
 - **labor_lines** — order_id, catalog_item_id NULL (migration 0037, WP-I),
   description/code/unit/unit_price/unit_cost (snapshotted, BR-3), qty
   **numeric(10,2)** (migration 0037 — was integer; fractional for an hourly

@@ -47,6 +47,13 @@ const EVENT_LABEL: Record<string, Parameters<typeof t>[0]> = {
   task_created: "order.event_task_created",
   task_completed: "order.event_task_completed",
   part_added: "order.event_part_added",
+  // order-workflow-revamp WP-J: pre-existing gap fixed in passing —
+  // `part_ordered` has been emitted by the backend since before this WP
+  // (lines.update_part_line) but had no label here, so it fell through to
+  // the raw event-type string ("part_ordered" verbatim) in the rendered
+  // timeline. `part_issued` is new this WP.
+  part_ordered: "order.event_part_ordered",
+  part_issued: "order.event_part_issued",
   part_state_changed: "order.event_part_state_changed",
   labor_added: "order.event_labor_added",
   adjustment_added: "order.event_adjustment_added",

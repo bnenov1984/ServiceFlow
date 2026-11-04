@@ -149,9 +149,9 @@ def test_part_lines_lifecycle_and_state_validation(client: TestClient) -> None:
     line_id = r.json()["id"]
     assert r.json()["name"] == "Дисплей"
     assert r.json()["catalog_item_id"] == item_id
-    # Wave 2 Issue 33: "ordered" is the default active state for a newly
-    # created part line (assigned/requested regardless of physical stock).
-    assert r.json()["state"] == "ordered"
+    # order-workflow-revamp WP-J (Q15b): "issued" (от наличност) is the
+    # default when a caller doesn't say otherwise.
+    assert r.json()["state"] == "issued"
 
     r = client.patch(f"/api/v1/part-lines/{line_id}", headers=h, json={"state": "installed"})
     assert r.status_code == 200
@@ -161,8 +161,8 @@ def test_part_lines_lifecycle_and_state_validation(client: TestClient) -> None:
                      json={"state": "not_a_state"})
     assert r.status_code == 400
 
-    # The old 5-state model's values are no longer accepted either — the
-    # simplified V1 model has exactly two active states.
+    # The pre-WP-J 5-state model's retired values are no longer accepted
+    # either — the current model has exactly three active states.
     r = client.patch(f"/api/v1/part-lines/{line_id}", headers=h, json={"state": "needed"})
     assert r.status_code == 400
 
@@ -173,6 +173,104 @@ def test_part_lines_lifecycle_and_state_validation(client: TestClient) -> None:
     events = [e["event_type"] for e in client.get(f"/api/v1/orders/{oid}/timeline").json()]
     assert "part_added" in events
     assert "part_state_changed" in events
+
+
+def test_part_line_add_rejects_installed_as_an_initial_state(client: TestClient) -> None:
+    """order-workflow-revamp WP-J (Q15b): the add form offers exactly two
+    buttons (от наличност/поръчай) — "installed" is only ever reached via a
+    later PATCH, never as the line's starting state."""
+    h = _login(client)
+    oid = _order_for_lines(client, h)
+    item_id = _catalog_item(client, h, name="Дисплей", sale_price="100.00")
+
+    r = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
+        "catalog_item_id": item_id, "state": "installed",
+    })
+    assert r.status_code == 400
+    assert r.json()["detail"]["message_key"] == "errors.part_lines.invalid_state"
+
+
+def test_part_line_ordered_from_diagnostics_suggests_waiting_parts(client: TestClient) -> None:
+    """Q5: marking a part поръчана from a working status that allows a
+    Чака части move is a one-click *nudge*, not an automatic transition —
+    the order's own status is untouched by the add itself."""
+    h = _login(client)
+    oid = _order_for_lines(client, h)
+    item_id = _catalog_item(client, h, name="Дисплей", sale_price="100.00")
+
+    r = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
+        "catalog_item_id": item_id, "state": "ordered",
+    })
+    assert r.status_code == 201, r.text
+    assert r.json()["suggested_status"] == "waiting_parts"
+    assert client.get(f"/api/v1/orders/{oid}").json()["status_code"] == "diagnostics"
+
+
+def test_part_line_issued_from_stock_suggests_nothing(client: TestClient) -> None:
+    h = _login(client)
+    oid = _order_for_lines(client, h)
+    item_id = _catalog_item(client, h, name="Дисплей", sale_price="100.00")
+
+    r = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
+        "catalog_item_id": item_id, "state": "issued",
+    })
+    assert r.status_code == 201, r.text
+    assert r.json()["suggested_status"] is None
+
+
+def test_part_line_arriving_suggests_repair_only_when_last_ordered_line_clears(
+    client: TestClient,
+) -> None:
+    """Q5c: the suggestion only fires once *no* line is still поръчана, and
+    only while the order is actually paused in Чака части."""
+    h = _login(client)
+    oid = _order_for_lines(client, h)
+    display_id = _catalog_item(client, h, name="Дисплей", sale_price="100.00")
+    battery_id = _catalog_item(client, h, name="Батерия", sale_price="20.00")
+
+    display_line = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
+        "catalog_item_id": display_id, "state": "ordered",
+    }).json()
+    battery_line = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
+        "catalog_item_id": battery_id, "state": "ordered",
+    }).json()
+    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "waiting_parts"})
+
+    r1 = client.patch(f"/api/v1/part-lines/{display_line['id']}", headers=h,
+                      json={"state": "issued"})
+    assert r1.status_code == 200
+    assert r1.json()["suggested_status"] is None  # the battery is still поръчана
+
+    r2 = client.patch(f"/api/v1/part-lines/{battery_line['id']}", headers=h,
+                      json={"state": "issued"})
+    assert r2.status_code == 200
+    assert r2.json()["suggested_status"] == "repair"
+
+
+def test_part_line_has_warranty_defaults_to_true_and_can_be_toggled(client: TestClient) -> None:
+    """order-workflow-revamp WP-J (Q14/Q14b/Q14c): a plain on/off flag,
+    defaulting on, that never affects the line's price."""
+    h = _login(client)
+    oid = _order_for_lines(client, h)
+    item_id = _catalog_item(client, h, name="Дисплей", sale_price="100.00")
+
+    r = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
+                    json={"catalog_item_id": item_id})
+    assert r.json()["has_warranty"] is True
+    line_id = r.json()["id"]
+
+    battery_id = _catalog_item(client, h, name="Батерия", sale_price="20.00")
+    r2 = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
+        "catalog_item_id": battery_id, "has_warranty": False,
+    })
+    assert r2.status_code == 201, r2.text
+    assert r2.json()["has_warranty"] is False
+    assert r2.json()["unit_price"] == 20.0  # Q14b: the flag never changes price
+
+    r3 = client.patch(f"/api/v1/part-lines/{line_id}", headers=h, json={"has_warranty": False})
+    assert r3.status_code == 200
+    assert r3.json()["has_warranty"] is False
+    assert r3.json()["unit_price"] == 100.0
 
 
 def test_labor_lines_feed_estimated_total(client: TestClient) -> None:
@@ -344,64 +442,6 @@ def test_aggregate_members_are_tenant_isolated(client: TestClient) -> None:
     h_b = _login(client, "Сервиз Б", "b@b.bg")
     assert client.patch(f"/api/v1/part-lines/{line_id}", headers=h_b,
                         json={"state": "ordered"}).status_code == 404
-
-
-# --- Wave 4 PART WARRANTY (issue 05, 2026-09-25: unit changed to months) --
-# order-workflow-revamp WP-J (not this slice) will revisit the warranty
-# model itself (#26) — these tests only adapt the fixture shape to catalog
-# items, the warranty behavior under test is unchanged.
-
-def test_part_line_warranty_months_persistence_and_validation(client: TestClient) -> None:
-    h = _login(client)
-    oid = _order_for_lines(client, h)
-    item_id = _catalog_item(client, h, name="Дисплей", sale_price="100.00")
-
-    r = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-        "catalog_item_id": item_id, "warranty_months": 3,
-    })
-    assert r.status_code == 201, r.text
-    assert r.json()["warranty_months"] == 3
-    line_id = r.json()["id"]
-
-    # Explicit 0 — "Без гаранция", distinct from never having been set.
-    r2 = client.patch(f"/api/v1/part-lines/{line_id}", headers=h, json={"warranty_months": 0})
-    assert r2.status_code == 200
-    assert r2.json()["warranty_months"] == 0
-
-    battery_id = _catalog_item(client, h, name="Батерия", sale_price="1")
-    r3 = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-        "catalog_item_id": battery_id, "warranty_months": -1,
-    })
-    assert r3.status_code == 400
-    assert r3.json()["message_key"] == "errors.validation"
-
-
-def test_part_line_warranty_months_defaults_to_none(client: TestClient) -> None:
-    h = _login(client)
-    oid = _order_for_lines(client, h)
-    item_id = _catalog_item(client, h, name="Дисплей", sale_price="100.00")
-    r = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
-                    json={"catalog_item_id": item_id})
-    assert r.json()["warranty_months"] is None
-
-
-def test_part_line_warranty_months_round_trips_whole_months(client: TestClient) -> None:
-    """The PO's own examples (12, 6 месеца) — 30-days/month must round-trip
-    these exactly, not just approximately."""
-    h = _login(client)
-    oid = _order_for_lines(client, h)
-    display_id = _catalog_item(client, h, name="Дисплей", sale_price="100.00")
-    battery_id = _catalog_item(client, h, name="Батерия", sale_price="50.00")
-
-    r = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-        "catalog_item_id": display_id, "warranty_months": 12,
-    })
-    assert r.json()["warranty_months"] == 12
-
-    r2 = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-        "catalog_item_id": battery_id, "warranty_months": 6,
-    })
-    assert r2.json()["warranty_months"] == 6
 
 
 # --- Order adjustments (WP-I, Q13, resolves docs/01 OQ-5) -------------------

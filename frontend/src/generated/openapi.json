@@ -9625,18 +9625,15 @@
             "title": "Qty",
             "default": 1
           },
-          "warranty_months": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "maximum": 120.0,
-                "minimum": 0.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Warranty Months"
+          "state": {
+            "type": "string",
+            "title": "State",
+            "default": "issued"
+          },
+          "has_warranty": {
+            "type": "boolean",
+            "title": "Has Warranty",
+            "default": true
           }
         },
         "type": "object",
@@ -9644,7 +9641,7 @@
           "catalog_item_id"
         ],
         "title": "PartLineIn",
-        "description": "order-workflow-revamp WP-I (Q12a): a line is created only from a\ncatalog item — no name/price field exists here at all. `catalog_item_id`\nis resolved against this order's company and `kind=\"part\"` by the\n`add_part_line` endpoint below, which snapshots the item's current\nname/code/price onto the new row."
+        "description": "order-workflow-revamp WP-I (Q12a): a line is created only from a\ncatalog item — no name/price field exists here at all. `catalog_item_id`\nis resolved against this order's company and `kind=\"part\"` by the\n`add_part_line` endpoint below, which snapshots the item's current\nname/code/price onto the new row.\n\nWP-J (Q15b): `state` must be one of `lines.ADD_PART_STATES` (checked by\nthe endpoint, not a pydantic Literal, for the same custom-400-with-\nmessage_key reason `patch_part_line` already validates `PartLinePatch.\nstate` by hand) — the add form always sends one of its two buttons'\nexplicit values; \"issued\" is only the default for callers that don't\noffer that choice (e.g. a fixture creating a line purely for an\nunrelated invoice/payment total)."
       },
       "PartLineOut": {
         "properties": {
@@ -9696,16 +9693,20 @@
             "type": "string",
             "title": "State"
           },
-          "warranty_months": {
+          "has_warranty": {
+            "type": "boolean",
+            "title": "Has Warranty"
+          },
+          "suggested_status": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Warranty Months"
+            "title": "Suggested Status"
           }
         },
         "type": "object",
@@ -9717,7 +9718,8 @@
           "qty",
           "unit_cost",
           "unit_price",
-          "state"
+          "state",
+          "has_warranty"
         ],
         "title": "PartLineOut"
       },
@@ -9735,18 +9737,16 @@
             ],
             "title": "Qty"
           },
-          "warranty_months": {
+          "has_warranty": {
             "anyOf": [
               {
-                "type": "integer",
-                "maximum": 120.0,
-                "minimum": 0.0
+                "type": "boolean"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Warranty Months"
+            "title": "Has Warranty"
           },
           "state": {
             "anyOf": [

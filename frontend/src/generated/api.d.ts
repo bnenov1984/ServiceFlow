@@ -3258,6 +3258,14 @@ export interface components {
          *     is resolved against this order's company and `kind="part"` by the
          *     `add_part_line` endpoint below, which snapshots the item's current
          *     name/code/price onto the new row.
+         *
+         *     WP-J (Q15b): `state` must be one of `lines.ADD_PART_STATES` (checked by
+         *     the endpoint, not a pydantic Literal, for the same custom-400-with-
+         *     message_key reason `patch_part_line` already validates `PartLinePatch.
+         *     state` by hand) — the add form always sends one of its two buttons'
+         *     explicit values; "issued" is only the default for callers that don't
+         *     offer that choice (e.g. a fixture creating a line purely for an
+         *     unrelated invoice/payment total).
          */
         PartLineIn: {
             /**
@@ -3270,8 +3278,16 @@ export interface components {
              * @default 1
              */
             qty: number;
-            /** Warranty Months */
-            warranty_months?: number | null;
+            /**
+             * State
+             * @default issued
+             */
+            state: string;
+            /**
+             * Has Warranty
+             * @default true
+             */
+            has_warranty: boolean;
         };
         /** PartLineOut */
         PartLineOut: {
@@ -3294,8 +3310,10 @@ export interface components {
             unit_price: number;
             /** State */
             state: string;
-            /** Warranty Months */
-            warranty_months?: number | null;
+            /** Has Warranty */
+            has_warranty: boolean;
+            /** Suggested Status */
+            suggested_status?: string | null;
         };
         /**
          * PartLinePatch
@@ -3305,8 +3323,8 @@ export interface components {
         PartLinePatch: {
             /** Qty */
             qty?: number | null;
-            /** Warranty Months */
-            warranty_months?: number | null;
+            /** Has Warranty */
+            has_warranty?: boolean | null;
             /** State */
             state?: string | null;
         };

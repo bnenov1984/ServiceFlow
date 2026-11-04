@@ -50,8 +50,14 @@ start; the generated OpenAPI schema becomes the machine-readable source of truth
   in Диагностика/Чака клиент/Чака части/Ремонт), /accessories (per-asset-type
   gated, 01 BR-9), /adjustments (WP-I, Q13: Owner-only, append-only, resolves
   01 OQ-5), /contact-records
-- PATCH /part-lines/{id} — incl. state changes (ordered→installed; no
-  name/price field — WP-I)
+- PATCH /part-lines/{id} — incl. state changes among издадена/поръчана/
+  монтирана *(WP-J, Q15/Q15b — adding a line via POST only accepts издадена or
+  поръчана as the starting state, "installed" only via this PATCH)*; also
+  `has_warranty` (boolean, WP-J Q14 — no `warranty_months`/`warranty_days`
+  field any more); no name/price field (WP-I). A response to POST or a
+  state-changing PATCH may carry `suggested_status` (WP-J, Q5/Q5c) — a
+  one-click nudge the client still has to confirm via its own
+  POST /orders/{id}/status call, never an automatic transition.
 - POST /orders/{id}/attachments (multipart) · GET /attachments/{id}/file — authorized
   stream (ADR-007), ?thumb= for photos · DELETE — soft
 - GET /orders/{id}/timeline — paged, read-only

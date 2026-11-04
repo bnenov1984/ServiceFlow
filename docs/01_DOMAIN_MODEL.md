@@ -154,17 +154,28 @@ historical task-created/task-completed timeline entries are left as-is.
 
 ### PartLine
 - **Purpose:** a physical component used in this repair. Lightweight by design — no
-  inventory, no reservations in V1 (discovery S5).
+  inventory, no reservations in V1 (discovery S5) — "issued" below is a line state
+  only, never a stock movement.
 - **Attributes:** catalog item reference (0..1 — NULL on every line added before
   WP-I below, which stays that way forever), **snapshot** of name/code/unit cost/
-  unit price taken from the catalog at add-time, quantity, state: **ordered →
-  installed** *(corrected 05.11.2026 — this had drifted to the pre-Issue-33 4-state
-  list; Wave 2 Issue 33 simplified it to these two in migration 0022, unchanged by
-  WP-I)*, warranty flag (months; unchanged by WP-I — see WP-J, not yet applied).
+  unit price taken from the catalog at add-time, quantity, state: **издадена
+  (issued) · поръчана (ordered) · монтирана (installed)** *(amended 05.11.2026 —
+  order-workflow-revamp WP-J, Q15/Q15b: a third state split out of the prior
+  2-state "ordered"/"installed" model — Wave 2 Issue 33/migration 0022 — adding a
+  line offers only "issued" or "ordered" as the starting state, "installed" is
+  reached only via a later transition)*, warranty flag — on/off, defaults on,
+  never affects price; the actual term is the company-wide text already printed
+  on the delivery protocol, not a per-line value *(amended 05.11.2026 — WP-J,
+  Q14/Q14b/Q14c, replaces the prior months-at-the-API-boundary field — migration
+  0025 — entirely; a protocol frozen before this change keeps printing its stored
+  months forever, never retroactively reconstructed)*.
 - **Lifecycle:** added only while the order is in Диагностика, Чака клиент, Чака
   части or Ремонт — never at intake, never once Готова *(amended 05.11.2026 —
   order-workflow-revamp WP-I, Q13d, reverses Wave 2 Issue 29's "addable at
-  intake")*.
+  intake")*. Marking a line поръчана from a working status offers a one-click
+  suggestion to move the order to Чака части; marking the last remaining
+  поръчана line издадена offers a one-click suggestion back to Ремонт — both are
+  nudges only, never an automatic transition (WP-J, Q5/Q5c).
 - **Invariants:** belongs to exactly one order. **Created only from a catalog
   item — no free-typed name or price, for any role** *(amended 05.11.2026 —
   WP-I, Q12a, ADR-BOS-013)*; a later catalog price change never alters an
@@ -365,7 +376,9 @@ while another uploads a photo on the same order.
 
 OrderCreated · DiagnosisRecorded · DiagnosisUpdated · EstimateApprovalRequested ·
 EstimateApproved · EstimateRejected · StatusChanged · TechnicianAssigned ·
-PartAdded / PartOrdered / PartReceived · LaborAdded ·
+PartAdded / PartOrdered / PartIssued *(renamed/extended 05.11.2026 — WP-J, Q15:
+PartReceived is a pre-Issue-33 legacy type, no longer emitted, historical
+entries only)* · LaborAdded ·
 OrderAdjustmentAdded *(new 05.11.2026 — WP-I, Q13)* ·
 TaskCreated / TaskCompleted / TaskReopened (retired WP-H 04.11.2026 — no longer
 emitted, historical timeline entries only) ·

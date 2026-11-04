@@ -994,3 +994,217 @@ repairflow-price-catalog.md` (landed, WP-J carve-out noted in its own
 Consequences section), `docs/business-os/05_DATA_OWNERSHIP.md` (ownership
 rows for `catalog_items`/`order_adjustments`, inventory-ownership note
 amended).
+
+WP-J (part lifecycle states + warranty flag; #26/#27, Q5/Q5c/Q14/Q14b/Q14c/
+Q15/Q15b) implemented 05.11.2026, continuing straight on from WP-I in the
+same `order-workflow-revamp` initiative — the exact boundary WP-I's own
+completion entry above flagged as deliberately deferred.
+
+**Two scope calls made this session, not written down anywhere else at the
+time**:
+1. Q5c ("suggest Ремонт when the last поръчана part arrives") doesn't say
+   the order must currently be in Чака части — only that the matrix already
+   allows a forward move to Ремонт from wherever it is. Implemented
+   literally against the transition matrix (`statuses.check_transition`)
+   rather than hardcoding "only from waiting_parts": in practice this fires
+   from Чака части (the natural result of accepting Q5's own suggestion
+   earlier), but any status the matrix already allows a forward move to
+   Ремонт from (e.g. Диагностика, if a part was marked поръчана without the
+   order ever actually pausing) gets the nudge too. Simpler than adding a
+   source-status allowlist the matrix doesn't itself need, and consistent
+   with how Q5's own suggestion is computed the same way.
+2. Migration 0038's `has_warranty` backfill: `warranty_days IS NULL` or
+   positive → `true`; exactly `0` (an explicit past "Без гаранция") → the
+   only case backfilled `false`. Chosen because Q14c says the new flag
+   "defaults on" for every part, old or new — null (never recorded) isn't
+   evidence of "no warranty" the way an explicit historical 0 is.
+
+**State model**: `PartLine.state` widened from Wave 2 Issue 33's 2-value set
+(`ordered`/`installed`, migration 0022) to 3 (`issued`/`ordered`/
+`installed` — издадена/поръчана/монтирана). Chose to keep "ordered" and
+"installed" as the literal DB values rather than renaming anything, since
+both already carry the exact meaning Q15 wants and every existing row is
+still valid under the widened CHECK constraint — migration 0038 needed no
+data backfill for `state` at all (unlike 0022, which had to fold a 5-value
+set down and therefore backfill before narrowing). Adding a line restricts
+the caller to `issued`/`ordered` only (`lines.ADD_PART_STATES`) — a new 400
+`errors.part_lines.invalid_state` if `installed` is sent at creation —
+"installed" is reached only by a later PATCH, matching Q15b's two-button add
+form exactly.
+
+**Warranty**: `PartLine.warranty_days` (months-at-the-API-boundary, Wave 4
+Issue 05/migration 0025) retired entirely in favor of `has_warranty: bool`
+(Q14/Q14b/Q14c) — on by default, never affects price. The warranty *term*
+itself was never actually a per-part concept worth storing: it's the
+company-wide text (`parts_days`/`standard_term`/etc., already read via
+`identity_contracts.get_warranty_defaults`) that was already being frozen,
+whole, into the delivery protocol's "Гаранционни условия" section — so
+Q14's "term from company settings" needed zero new plumbing, just deleting
+the per-line months field and its router-boundary days↔months conversion
+helpers (`_days_to_months`/`_months_to_days`, both now gone — order-level
+labor warranty was never in scope, stays days end-to-end, untouched).
+Protocol rendering (`protocol.py`) handles both snapshot shapes: a
+`completion_snapshot` frozen after this change carries `has_warranty` and
+renders "(гаранция: да/не)"; one frozen before it still has the old
+`warranty_days` key and keeps printing its stored months forever (Q14c) —
+`_part_warranty_label()` picks the right path by which key is present,
+never reconstructing one shape from the other.
+
+**Q5/Q5c one-click suggestions**: confirmed via direct code reading (not
+assumption) that no existing hook couples part state to order status
+anywhere in `service_orders` — these are new code from scratch, not an
+extension of something that already existed. Implemented as two pure
+functions in `lines.py` (`suggest_status_after_part_add`,
+`suggest_status_after_part_state_change`), both driven by the same
+`statuses.check_transition` matrix the order-status endpoints already use,
+rather than a second hardcoded ruleset. The router attaches the result as a
+new `suggested_status` field on `PartLineOut`, populated only on the add/
+patch response that triggered it (never on a plain GET) — the client still
+has to make its own `POST /orders/{id}/status` call to act on it; nothing
+here auto-transitions anything, preserving "status changes stay human-
+initiated" (docs/02).
+
+**A real bug found via live browser verification, not any test** (the same
+category of thing the `adjustment_added` timeline-allowlist bug was in
+WP-I): none this time — `part_issued` was added to `timeline/service.py`'s
+`KNOWN_EVENT_TYPES` proactively, up front, specifically because the WP-I
+session's postmortem flagged this exact allowlist as the thing to re-check
+whenever something adjacent gets touched. Confirmed live that it renders
+correctly ("Част е издадена") rather than silently vanishing.
+
+**A test bug found in an existing, unrelated test file, by the full suite
+itself** (the same category as WP-I's `test_catalog.py` cookie-ordering
+bug): `test_migration_0022_simplify_part_states.py::test_upgrade_through_
+0022_new_rows_default_to_ordered` migrated all the way to `"head"` rather
+than pinning to `"0022"`, so it was unknowingly asserting 0022's
+column-level `server_default` specifically — which migration 0038
+legitimately changes again (to `"issued"`). Fixed by pinning that one test
+to revision `"0022"`, matching what it actually claims to test; the other
+three tests in that file were unaffected (none of them depend on a default
+that changed, only on literal state values and the CHECK constraint, which
+widening never breaks). Caught on the very first full-suite run after
+implementation — exactly the kind of fallout a plain per-file test run
+wouldn't have surfaced, since `test_order_operations.py`/`test_catalog.py`
+etc. never migrate past whatever `conftest.py`'s shared fixture already
+keeps at head.
+
+**Pre-existing frontend gap fixed in passing**: `TimelineSection.tsx`'s
+`EVENT_LABEL` map had no entry for `part_ordered` — a backend event type
+that's existed since before this session (`lines.update_part_line`) — so a
+"part ordered" timeline row has always rendered the literal English string
+"part_ordered" instead of Bulgarian text. Found while adding the new
+`part_issued` label and fixed alongside it (`order.event_part_ordered`
+added to `bg.ts`), not scoped out as "pre-existing, not this WP's job" the
+way WP-H treated an unrelated docs/15 Settings gap — this one was directly
+adjacent to code already being touched for the same reason.
+
+Backend: migration 0038 (`part_lines`: widened `state` CHECK, new
+`has_warranty` boolean replacing `warranty_days`, no backend code anywhere
+retains the old column). `service_orders/lines.py` (`PART_STATES`,
+`ADD_PART_STATES`, `add_part_line`/`update_part_line` signatures, the two
+suggestion functions), `service_orders/router.py` (`PartLineOut`/`PartLineIn`/
+`PartLinePatch` reshaped, `_days_to_months`/`_months_to_days` deleted,
+add/patch endpoints wired to the suggestion functions and the new
+add-time-state validation), `service_orders/service.py`
+(`_build_completion_snapshot`'s per-part dict), `service_orders/protocol.py`
+(`DeliveryPartLine.warranty_label`, `_part_warranty_label`, legacy
+`_warranty_text_months` kept for old snapshots only), `timeline/service.py`
+(`part_issued` added), `business_os/identity/contracts.py` (stale docstring
+fixed — `get_warranty_defaults` is no longer read at part-creation time).
+
+Backend tests: new `test_migration_0038_part_line_state_and_warranty.py` (5
+tests, same technique as the 0022 regression file — backfill correctness,
+dropped column, preserved state values, widened constraint, new-row
+defaults). Extended `test_order_operations.py` (add-time state validation,
+both suggestion paths including the "suggestion clears once the last
+поръчана line issues" case, warranty toggle + price-independence). Deleted
+5 now-obsolete tests from `test_warranty_defaults_fallback.py` (the whole
+"part inherits company's `parts_days` default" behavior they tested no
+longer exists under the boolean model — replaced by
+`test_order_operations.py`'s own warranty-default test) plus their two
+now-orphaned fixture helpers. Rewrote 3 warranty/rendering assertions in
+`test_protocol.py` for the boolean model, including the one test in that
+file that isn't `xfail` (`test_warranty_rendering_null_zero_and_positive`
+→ renamed, restructured around has_warranty + labor's unchanged days
+rendering — the old "unspecified part warranty" case it tested has no
+boolean equivalent, since there's no third "unspecified" state any more).
+Fixed the `test_migration_0022_*` bug above. First full run: 1 failed (the
+`test_migration_0022_*` bug above), 847 passed, 2 xfailed (same pre-existing
+pair). Second full run, after the fix: 848 passed, 2 xfailed, 0 failed — net
+new vs. WP-I's 846: +10 new WP-J tests (5 in `test_order_operations.py`, 5
+in the new migration file), −5 obsolete ones deleted from
+`test_warranty_defaults_fallback.py`, −3 obsolete ones deleted from
+`test_order_operations.py` (its old warranty-months block), +1 from the
+`test_migration_0022_*` fix going from failing back to passing (not a net-
+new test). ruff/mypy/lint-imports all clean.
+
+Frontend: `CatalogItemPicker.tsx` gained an `addButtons` prop (array of
+`{variant, labelKey}`, defaulting to the single pre-existing "Добави"
+button) so `PartLinesSection` could offer Q15b's two distinct add buttons
+without forking the component or touching `LaborLinesSection.tsx` at all —
+confirmed via typecheck that a 2-param function still structurally satisfies
+the now-3-param `onAdd` callback type (TS's "fewer params" assignability),
+so `LaborLinesSection.tsx` needed zero changes despite sharing the picker.
+`PartLinesSection.tsx` rewritten: `STATES`/`STATE_LABEL` now 3-way, the
+warranty months-input replaced by a plain checkbox (no more company-default-
+in-days→months prefill dance — an entire `useEffect` block gone), new
+local-only `suggestedStatus` state rendering a confirm/dismiss banner,
+`acceptSuggestion` posting directly to `/orders/{id}/status` (no prop-
+threading through `OrderPage.tsx`/`OrderHeader.tsx` — the two components
+stay decoupled, each calling the status endpoint on its own). `bg.ts`:
+removed 8 now-dead keys (grepped for zero references outside `bg.ts` itself
+before removing each) — the 4 warranty-months variants, `part_name_
+placeholder` (an already-dead leftover from the pre-catalog free-text add,
+WP-I), and 3 leftover pre-Issue-33 state labels (`part_state_needed`/
+`_received`/`_removed` — note this is a *different*, unrelated key from the
+`part_received` *timeline event type*, which has no `bg.ts` label at all,
+confirmed it's legacy/unemitted by both this session's and WP-I's code
+reading); added the two add-button labels, the warranty-checkbox label, the
+two suggestion-banner question strings, `common.yes`/`common.no` (didn't
+exist — every other confirm/dismiss UI in this codebase apparently rolled
+its own wording until now), and the `part_ordered`/`part_issued` event
+labels. Regenerated `openapi.json`/`api.d.ts`.
+
+Frontend tests: `PartLinesSection.test.tsx` rewritten in full (17 tests,
+same count as before — net zero across removing the obsolete 6-test
+"Wave 4 PART WARRANTY" describe block and adding 2 to the add-form block
+plus a new 4-test Q5/Q5c describe block). Needed to restore a `useAuth`
+mock the previous version had (removed by mistake on the first pass, since
+`PartLinesSection` itself no longer calls `useAuth` — `CatalogItemPicker`,
+which it renders, still does, for its own Owner-only quick-add shortcut).
+593 passed (unchanged from the pre-WP-J count — exactly as many tests
+removed as added). ruff n/a (no frontend lint script configured, consistent
+with every prior WP); tsc/`npm run build` both clean.
+
+Verified live (dev backend + Vite dev server via `mcp__Claude_Browser__*`,
+after applying migration 0038 to the dev `serviceflow` database, logged in
+as `wph-generic@test.bg`): adding a part as поръчана from Диагностика
+returned `suggested_status: "waiting_parts"` and left the order's status
+untouched; patching that same line to издадена (no other поръчана lines on
+the order) returned `suggested_status: "repair"`, again without touching
+the order's status; a full page reload showed the part row with the 3-way
+state select, the warranty checkbox, and — the main thing this check was
+for — the timeline rendering "Част е издадена" rather than the raw
+`part_issued` string. Delivered the order and confirmed `GET .../protocol.
+pdf?type=delivery` still renders (200, real PDF bytes) under the new
+boolean-warranty snapshot shape. **Not checked live via real UI clicks**:
+same limitation as WP-I and every WP since — `find`+`ref`-based clicks are
+still unreliable in this Browser-pane environment (one attempt this session
+hit "outside viewport" on a scrolled-to, confirmed-visible button, and a
+subsequent screenshot came back solid black for no diagnosable reason);
+every interaction above was driven via `fetch()` through `javascript_tool`
+plus page-text/network-request inspection instead, same workaround as prior
+sessions. The two add-buttons' and the suggestion-banner's actual click
+behavior is covered by `PartLinesSection.test.tsx`'s unit tests, not by
+real-browser clicks.
+
+Docs: docs/01 (PartLine state/warranty attributes rewritten, lifecycle
+sentence for the suggestions, §5 events list `PartIssued`/legacy
+`PartReceived` note), docs/02 (§7 Parts rewritten for the 3-state model +
+the suggestions + the warranty flag), docs/08 (`part_lines` schema row:
+`has_warranty`, widened `state`, migration 0038), docs/09 (PATCH
+/part-lines/{id} description: has_warranty, 3-way state, `suggested_status`
+on POST/PATCH responses), docs/15 (order-page right column: two add
+buttons, warranty checkbox, state select, suggestion banner), `docs/adr/
+ADR-BOS-013-repairflow-price-catalog.md` (forward-pointer note added to its
+WP-J-carve-out Consequences bullet: "Applied 05.11.2026").
