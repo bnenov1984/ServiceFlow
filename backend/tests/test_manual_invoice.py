@@ -205,8 +205,12 @@ def test_manual_and_order_invoices_share_one_continuous_number_sequence(
     oid = client.post("/api/v1/orders", headers=h, json={
         "customer_id": cid1, "asset_id": aid, "complaint": "Тест",
     }).json()["id"]
+    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
+    labor_item_id = client.post("/api/v1/catalog-items", headers=h, json={
+        "kind": "labor", "name": "Труд", "unit": "pcs", "sale_price": "20",
+    }).json()["id"]
     client.post(f"/api/v1/orders/{oid}/labor-lines", headers=h,
-               json={"description": "Труд", "qty": 1, "unit_price": "20"})
+               json={"catalog_item_id": labor_item_id})
     order_invoice_id = client.post(f"/api/v1/orders/{oid}/invoices", headers=h).json()["id"]
     order_invoice_number = _issue(client, h, order_invoice_id).json()["number"]
 

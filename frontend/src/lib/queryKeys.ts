@@ -8,6 +8,8 @@ export const queryKeys = {
   // Under the "orders" prefix, so invalidateOrderViews refreshes it too.
   technicianLoad: ["orders", "technician-load"] as const,
   assetTypes: ["asset-types"] as const,
+  catalogItems: (kind?: string, includeArchived?: boolean) =>
+    ["catalog-items", kind ?? "", includeArchived ?? false] as const,
   // Prefixes for invalidation only (lib/orderQueries.ts) — never a query's own key.
   allOrders: ["orders"] as const,
   allOrderDetails: ["order"] as const,
@@ -17,6 +19,7 @@ export const queryKeys = {
   orderAccessories: (id: string) => ["order", id, "accessories"] as const,
   orderPartLines: (id: string) => ["order", id, "part-lines"] as const,
   orderLaborLines: (id: string) => ["order", id, "labor-lines"] as const,
+  orderAdjustments: (id: string) => ["order", id, "adjustments"] as const,
   orderAttachments: (id: string) => ["order", id, "attachments"] as const,
   orderContacts: (id: string) => ["order", id, "contacts"] as const,
   orderInvoices: (id: string) => ["order", id, "invoices"] as const,

@@ -852,3 +852,145 @@ description, nested-paths list, dashboard "six"→"four", Tasks section
 retired) and docs/15 (frontend design: dashboard widget count/skeleton
 count, intake AccessoriesChecklist note, order-page right column list)
 amended.
+
+WP-I (price catalog, strict catalog-only order lines, order adjustments;
+#28, Q12a/Q12b/Q12d/Q12e/Q12f, Q13/Q13b/Q13c/Q13d) implemented 04.11.2026.
+**Scope narrowed before implementing, not written down anywhere else at the
+time**: the approved proposal text (`proposal-ADR-catalog.md`,
+`proposal-docs01-lines.md`) bundles PartLine's state model (Q15/Q15b, the
+3-way издадена/поръчана/монтирана reversal of the existing 2-state
+ordered/installed) and the warranty-months→checkbox change (Q14/Q14b/Q14c)
+into the same "PartLine amended" text as the catalog/snapshot/status-gating
+changes. §5's WP table splits these into WP-I (#28, catalog — this entry)
+vs WP-J (#26 warranty checkbox, #27 part states, Q5/Q5b/Q5c follow-on
+auto-suggestions). This session treated WP-J's two items as out of scope:
+`PartLine.state` stays `ordered`/`installed`, `PartLine.warranty_days` stays
+a months field. Every doc amendment below says this explicitly inline (grep
+"WP-J" in docs/01, docs/02, `docs/adr/ADR-BOS-013-*.md`) — the next session
+implementing WP-J should keep that boundary unless told otherwise.
+
+Backend: new `serviceflow.catalog` module (`models.py`/`service.py`/
+`router.py`) behind `/api/v1/catalog-items*`, Owner-only mutations
+(Q12b/Q12e), worker read access with `unit_cost` hidden from non-Owner
+responses (Q12f: unit cost is Owner-only). Migration 0037 adds
+`catalog_items` (kind, name, code unique-per-company-nullable, unit,
+sale_price, unit_cost, archived) + `order_adjustments` (signed amount,
+mandatory reason, Owner-only per Q13) tables, `catalog_item_id`+`code`
+snapshot columns on `part_lines`/`labor_lines` (BR-3: price/name snapshotted
+at add-time, immutable after), and `labor_lines.qty`/`invoice_lines.qty`
+int→numeric(10,2) for fractional hourly labor (Q12d). `service_orders/
+lines.py`'s `add_part_line`/`add_labor_line` now take a resolved
+`CatalogItem` and snapshot its fields instead of accepting free text/price
+— the strict-catalog rule (Q12a) is enforced at the service layer, not just
+the UI. New `add_adjustment`. `service_orders/router.py` gained
+`_reject_if_line_creation_not_allowed` (Q13d: lines only addable in
+Диагностика/Чака клиент/Чака части/Ремонт, enforced server-side) and
+`_resolve_catalog_item` (404 unknown id / 400 archived-item) guards, plus
+`/orders/{id}/adjustments` endpoints. `statuses.py` gained
+`LINE_CREATION_STATUSES`. New dependency `openpyxl` (+ dev dep
+`types-openpyxl`) for `.xlsx` catalog import (Q12b's "Excel/CSV import").
+
+**Two real bugs found and fixed during implementation**: `timeline/
+service.py`'s `KNOWN_EVENT_TYPES` was missing `adjustment_added` — without
+it the event was silently dropped from the timeline (not rejected, not
+logged, just absent), caught via live browser verification rather than any
+test, since nothing asserts the allowlist is exhaustive against the set of
+events actually emitted. `catalog/service.py`'s `preview_import` didn't
+guard against two *new* rows (no matching existing code) sharing the same
+code within one uploaded file — both would classify as "insert" and collide
+on the `(company_id, code)` unique index at commit time; found on
+self-review while writing `test_catalog.py`, fixed by detecting in-file
+code collisions during preview and surfacing them as
+`errors.catalog.import_duplicate_code_in_file` rows instead of letting
+commit fail with a raw constraint violation.
+
+**A third bug, in the test file itself, found this session while running
+the suite for the first time**: `test_catalog.py`'s
+`test_worker_can_read_but_not_create` and
+`test_unit_cost_hidden_from_a_non_owner_caller` called `_worker_headers()`
+(which logs the worker in, swapping the shared `TestClient`'s session
+cookie) *before* making calls intended to run as the Owner. Identity in
+this app is carried by the `sf_session` cookie, not the `X-CSRF-Token`
+header — the header is only checked against whatever session the cookie
+currently names — so those later "Owner" calls silently executed as the
+worker and got 403'd, failing the assertions that followed. Fixed by
+reordering each test to do its Owner actions (create, read-as-owner) while
+the Owner's login is still the active cookie, and only calling
+`_worker_headers` right before the worker-perspective assertions — the same
+ordering convention `test_order_operations.py`'s existing multi-user tests
+already follow (see its tenant-isolation test's explicit
+`POST /auth/logout` before switching companies).
+
+Backend tests: new `test_catalog.py` (CRUD, Owner-only gating, code-conflict,
+archive/unarchive roundtrip, kind filter, tenant isolation per docs/12 §1
+P0-9, CSV import preview+commit including the duplicate-code-in-file edge
+case above). Extended `test_order_operations.py` (catalog-only line
+creation, status-gating via `LINE_CREATION_STATUSES`, snapshot-immutability,
+adjustment CRUD + Owner-gating + its timeline event). Mechanically fixed 9
+other test files that created part/labor lines via the old free-text API
+shape (`test_invoice_annul/issue/list/pdf/_invoices.py`,
+`test_manual_invoice.py`, `test_payments.py`, `test_protocol.py`,
+`test_warranty_defaults_fallback.py`) — each needed a catalog-item fixture
+helper plus an explicit status transition to `diagnostics` before adding
+lines, since lines can no longer be added at "received". 846 passed, 2
+xfailed (same pre-existing pair, up from 833 pre-WP-I — net new: 13
+`test_catalog.py` tests). ruff/mypy/lint-imports all clean.
+
+Frontend: new `CatalogItemPicker.tsx` (shared by `PartLinesSection.tsx` and
+`LaborLinesSection.tsx`, both rewritten to drop their free-text add-forms in
+favor of catalog-driven selects), new `AdjustmentSection.tsx`, new Settings
+page `CatalogPage.tsx` (Owner CRUD + CSV/Excel import UI) wired into
+`App.tsx`/`SettingsNav.tsx` at `/settings/catalog`. `OrderPage.tsx` computes
+a `LINE_CREATION_STATUSES`-based blocked-hint string shared by both line
+sections. `OrderStep.tsx`/`IntakePage.tsx` had the parts-at-intake flow
+removed entirely (Q13d reverses Wave 2 Issue 29 — parts/labor can no longer
+be added during intake, only after the order leaves "Приета"). `queryKeys.
+ts`, `TimelineSection.tsx` (new `adjustment_added` label), `bg.ts` (new
+`catalog.*`/`order.adjustment*`/`errors.catalog.*` keys) updated.
+Regenerated `openapi.json`/`api.d.ts`.
+
+**A fourth bug, this one an async-timing race, found writing the frontend
+tests**: the catalog-items query resolves after `CatalogItemPicker`'s
+`<select>` already renders with just its placeholder option, so several
+`PartLinesSection.test.tsx` tests needed an explicit
+`await screen.findByRole("option", {name: ...})` before `selectOptions` —
+without it, `selectOptions` would silently no-op against an option that
+didn't exist yet. New `LaborLinesSection.test.tsx`, `AdjustmentSection.
+test.tsx`, `CatalogPage.test.tsx` follow the same pattern.
+`OrderStep.test.tsx` had its whole "Issue 29 (parts addable at intake)"
+describe block deleted (feature removed) plus a `renderStep`/
+`renderWithFloor` helper simplification (no longer needs to scope queries
+around the now-removed "Части (по избор)" section). 593 passed (no change
+from the prior frontend run — nothing frontend-side changed after that
+clean run). ruff/mypy/lint-imports/tsc all clean.
+
+Verified live (dev backend + Vite dev server via `mcp__Claude_Browser__*`,
+logged in as pre-existing dev company `wph-generic@test.bg`): status-gate
+blocks a line add at "received" (400 w/ `errors.order.line_creation_not_
+allowed`); a part line + two labor lines (one fixed-price, one hourly-
+fractional 1.5h) + an adjustment all post correctly and `estimated_total`
+checks out (85 + 60 + 20 − 10 = 155), confirmed via both raw API JSON and
+the rendered order page; intake step 3 shows no "Части" section at all.
+**Not checked live, by real UI clicks**: the Settings → Catalog page's
+add/archive/import flows (confirmed rendering via `get_page_text` and
+exercised via direct `fetch()` calls from `javascript_tool`, since
+`find`+`ref`-based clicks were intermittently unreliable in the Browser-pane
+environment all session) — the CSV/Excel import UI's file-picker→preview→
+commit path was never driven through the browser at all, only through
+backend pytest. Flagged here so a future session treats the Catalog
+Settings page's click-path as unverified, not as covered.
+
+Docs: docs/01 (PartLine/LaborLine amended, new CatalogItem/OrderAdjustment
+entities, §3 relationships diagram, §4 aggregate table, §5 events list,
+OQ-5 marked resolved, domain-map diagram), docs/02 (§7 Parts, §8 Labor, §11
+invoicing footnote, §12 permission matrix rows), docs/07 (ADR index entry),
+docs/08 (`part_lines`/`labor_lines`/`invoice_lines`/new tables schema rows),
+docs/09 (new `/catalog-items*` section, updated lines/adjustments paths),
+docs/15 (order-page right column, intake step 3 picker note — **did not**
+add a new §6.x for the Settings/Catalog screen itself, since docs/15 already
+has no Settings section for Employees/Company either; a pre-existing gap,
+left as-is rather than introducing asymmetry), `docs/adr/ADR-BOS-013-
+repairflow-price-catalog.md` (landed, WP-J carve-out noted in its own
+Consequences section), `docs/business-os/05_DATA_OWNERSHIP.md` (ownership
+rows for `catalog_items`/`order_adjustments`, inventory-ownership note
+amended).

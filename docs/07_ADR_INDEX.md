@@ -46,6 +46,7 @@ not the V1 change process below.
 | [ADR-BOS-010](adr/ADR-BOS-010-application-entitlement-ownership.md) | Application entitlement ownership | Proposed |
 | [ADR-BOS-011](adr/ADR-BOS-011-repairflow-business-profiles.md) | RepairFlow business profiles | Proposed |
 | [ADR-BOS-012](adr/ADR-BOS-012-subscription-lifecycle-v1-manual.md) | Subscription/licence lifecycle (V1, manually managed) | Proposed |
+| [ADR-BOS-013](adr/ADR-BOS-013-repairflow-price-catalog.md) | RepairFlow price catalog — strict catalog-only order lines, order-level adjustment line | Accepted |
 
 **Pivot amendment 11.07.2026 ([14_WEB_FIRST_PIVOT.md](14_WEB_FIRST_PIVOT.md)):**
 web-first SaaS is the primary edition; the local edition is parked (ADR-002/005/

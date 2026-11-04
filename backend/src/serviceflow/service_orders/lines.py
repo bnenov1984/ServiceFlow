@@ -1,5 +1,17 @@
-"""Part lines, labor lines, accessories — all IN the ServiceOrder aggregate
-(docs/01 §4). Money totals feed the order display; VAT/invoicing is Етап 4."""
+"""Part lines, labor lines, accessories, order adjustments — all IN the
+ServiceOrder aggregate (docs/01 §4). Money totals feed the order display;
+VAT/invoicing is Етап 4.
+
+order-workflow-revamp WP-I (Q12/Q13, ADR-BOS-013): part/labor lines are
+created only from a `catalog.CatalogItem` — `add_part_line`/`add_labor_line`
+take a resolved `CatalogItem` (never a free-typed name/price) and snapshot
+its fields onto the new row. Status-gating (Q13d: only while the order is in
+Диагностика/Чака клиент/Чака части/Ремонт) and catalog-item resolution
+(exists, right company, right `kind`, not archived) are the router's job —
+same division of labor `_reject_if_terminal` already has for the terminal
+check: this module enforces the data shape, the router enforces the request
+preconditions.
+"""
 
 import uuid
 from decimal import Decimal
@@ -11,12 +23,20 @@ from sqlalchemy.orm import Session
 from business_os.identity import contracts as identity_contracts
 from business_os.shared_kernel.db import TenantContext, scoped
 from business_os.shared_kernel.events import DomainEvent, publish
-from serviceflow.service_orders.models import AccessoryItem, LaborLine, PartLine, ServiceOrder
+from serviceflow.catalog.models import CatalogItem
+from serviceflow.service_orders.models import (
+    AccessoryItem,
+    LaborLine,
+    OrderAdjustment,
+    PartLine,
+    ServiceOrder,
+)
 
 # Wave 2 Issue 33: simplified V1 model — "ordered" (assigned/requested for
 # this order, regardless of physical stock) and "installed". Migration 0022
 # backfills existing rows (needed/received/removed -> ordered); no inventory/
-# stock tracking is introduced by this simplification.
+# stock tracking is introduced by this simplification. order-workflow-revamp
+# WP-J will revisit this 3-way split (#27); untouched by WP-I.
 PART_STATES = ("ordered", "installed")
 
 
@@ -34,9 +54,14 @@ def list_part_lines(db: Session, ctx: TenantContext, order_id: uuid.UUID) -> lis
     ))
 
 
-def add_part_line(db: Session, ctx: TenantContext, order: ServiceOrder, *, name: str,
-                  qty: int, unit_cost: Decimal, unit_price: Decimal,
+def add_part_line(db: Session, ctx: TenantContext, order: ServiceOrder, *,
+                  catalog_item: CatalogItem, qty: int,
                   warranty_days: int | None = None) -> PartLine:
+    """Snapshots `catalog_item`'s name/code/price onto the new line (BR-3: a
+    later catalog price change never retroactively changes it). The caller
+    has already confirmed `catalog_item.kind == "part"` and it isn't
+    archived — this function trusts that, the same way `add_accessory`
+    below trusts its caller for the order's terminal state."""
     # Cleanup batch Issue 7: explicit (including 0, "Без гаранция") always
     # wins; omitted falls back to the company's configured parts default,
     # if one exists, applied once at creation only — never retroactively
@@ -45,11 +70,15 @@ def add_part_line(db: Session, ctx: TenantContext, order: ServiceOrder, *, name:
         warranty_days = identity_contracts.get_warranty_defaults(
             db, ctx.company_id,
         )["parts_days"]
-    line = PartLine(company_id=ctx.company_id, order_id=order.id, name=name, qty=qty,
-                    unit_cost=unit_cost, unit_price=unit_price, warranty_days=warranty_days)
+    line = PartLine(
+        company_id=ctx.company_id, order_id=order.id, catalog_item_id=catalog_item.id,
+        name=catalog_item.name, code=catalog_item.code, qty=qty,
+        unit_cost=catalog_item.unit_cost or Decimal("0"), unit_price=catalog_item.sale_price,
+        warranty_days=warranty_days,
+    )
     db.add(line)
     db.flush()
-    _event(db, ctx, order.id, "part_added", {"name": name, "qty": qty})
+    _event(db, ctx, order.id, "part_added", {"name": line.name, "qty": qty})
     db.commit()
     return line
 
@@ -80,15 +109,23 @@ def list_labor_lines(db: Session, ctx: TenantContext, order_id: uuid.UUID) -> li
 
 
 def add_labor_line(db: Session, ctx: TenantContext, order: ServiceOrder, *,
-                   description: str, qty: int, unit_price: Decimal,
+                   catalog_item: CatalogItem, qty: Decimal,
                    duration_min: int | None = None,
                    performed_by: uuid.UUID | None = None) -> LaborLine:
-    line = LaborLine(company_id=ctx.company_id, order_id=order.id, description=description,
-                     qty=qty, unit_price=unit_price, duration_min=duration_min,
-                     performed_by=performed_by)
+    """Same catalog/snapshot discipline as `add_part_line` above. `qty` is a
+    plain count for a `unit="pcs"` item, hours for a `unit="hour"` one — the
+    caller never has to branch, both are the same `Decimal`. `duration_min`
+    is independent of the catalog — an optional "how long did it actually
+    take" note (docs/01 §LaborLine), never a price/name field."""
+    line = LaborLine(
+        company_id=ctx.company_id, order_id=order.id, catalog_item_id=catalog_item.id,
+        description=catalog_item.name, code=catalog_item.code, unit=catalog_item.unit,
+        qty=qty, unit_price=catalog_item.sale_price, unit_cost=catalog_item.unit_cost,
+        duration_min=duration_min, performed_by=performed_by,
+    )
     db.add(line)
     db.flush()
-    _event(db, ctx, order.id, "labor_added", {"description": description})
+    _event(db, ctx, order.id, "labor_added", {"description": line.description})
     db.commit()
     return line
 
@@ -135,6 +172,34 @@ def mark_accessory_returned(db: Session, ctx: TenantContext, item: AccessoryItem
     return item
 
 
+# --- Order adjustments (WP-I, Q13, resolves docs/01 OQ-5) -------------------
+
+def list_adjustments(db: Session, ctx: TenantContext,
+                     order_id: uuid.UUID) -> list[OrderAdjustment]:
+    return list(db.scalars(
+        scoped(select(OrderAdjustment), OrderAdjustment, ctx)
+        .where(OrderAdjustment.order_id == order_id)
+        .order_by(OrderAdjustment.created_at)
+    ))
+
+
+def add_adjustment(db: Session, ctx: TenantContext, order: ServiceOrder, *,
+                   amount: Decimal, reason: str) -> OrderAdjustment:
+    """Append-only (docs/01 OQ-5) — a wrong adjustment is corrected by adding
+    an offsetting one, never by editing/deleting this row. Owner-only is
+    enforced at the router layer (`require_owner`), same as every other
+    Owner-gated mutation."""
+    adjustment = OrderAdjustment(
+        company_id=ctx.company_id, order_id=order.id, amount=amount, reason=reason,
+        created_by=ctx.user_id,
+    )
+    db.add(adjustment)
+    db.flush()
+    _event(db, ctx, order.id, "adjustment_added", {"amount": str(amount), "reason": reason})
+    db.commit()
+    return adjustment
+
+
 # --- Totals (BR-3: always derived, never stored — Етап 4 adds VAT/invoicing) ---
 
 def order_totals(db: Session, ctx: TenantContext, order_id: uuid.UUID) -> Decimal:
@@ -142,4 +207,5 @@ def order_totals(db: Session, ctx: TenantContext, order_id: uuid.UUID) -> Decima
                Decimal("0"))
     labor = sum((line.qty * line.unit_price for line in list_labor_lines(db, ctx, order_id)),
                Decimal("0"))
-    return parts + labor
+    adjustments = sum((a.amount for a in list_adjustments(db, ctx, order_id)), Decimal("0"))
+    return parts + labor + adjustments

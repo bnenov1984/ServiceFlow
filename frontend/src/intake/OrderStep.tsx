@@ -1,7 +1,7 @@
 /**
  * Стъпка 3 ПОРЪЧКА (docs/15 §6.4): оплакване + аксесоари + снимки (optional)
- * + части (optional, Wave 2 Issue 29) + приоритет + техник, after which the
- * submit sequence in IntakePage takes over.
+ * + приоритет + техник, after which the submit sequence in IntakePage takes
+ * over.
  *
  * Wave 2 Issue 25: promised_on is no longer collected here — it only
  * becomes relevant once there's a diagnosis to promise against, so it moved
@@ -13,10 +13,15 @@
  * and shown as a hint; a value below it needs the Owner to tick a
  * confirmation box and type a comment — `service.create()`'s own check is
  * the real, authoritative guard regardless of what this UI allows through.
+ *
+ * order-workflow-revamp WP-I (Q13d): parts are no longer addable at intake
+ * at all (reverses Wave 2 Issue 29) — a line can only be added once the
+ * order has left "Приета" (PartLinesSection/LaborLinesSection on the order
+ * page, catalog-only).
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { t } from "../i18n/bg";
 import { api } from "../lib/api";
@@ -29,16 +34,10 @@ import { PhotoThumbnail } from "./PhotoThumbnail";
 const DELIVERY_METHODS = ["pickup", "courier"] as const;
 export type DeliveryMethod = (typeof DELIVERY_METHODS)[number];
 
-export interface PartLineDraft {
-  name: string;
-  unitPrice: number;
-}
-
 export interface OrderStepValue {
   complaint: string;
   accessories: string[];
   photos: File[];
-  partLines: PartLineDraft[];
   priority: "normal" | "high";
   technicianId: string | null;
   // Wave 3 Issues 21/26/27: only ever populated/shown for vehicle orders —
@@ -93,8 +92,6 @@ export function OrderStep({
   error: string | null;
 }) {
   const { me } = useAuth();
-  const [partName, setPartName] = useState("");
-  const [partPrice, setPartPrice] = useState("");
 
   // Q9: the asset's previously recorded maximum mileage — shown as a hint,
   // and the floor a new value must not go below without the Q10 bypass.
@@ -131,23 +128,6 @@ export function OrderStep({
 
   const removePhoto = (index: number) => {
     onChange((prev) => ({ ...prev, photos: prev.photos.filter((_, i) => i !== index) }));
-  };
-
-  // Issue 29: a part can be added already at intake, reusing the same
-  // draft-list-then-best-effort-POST pattern accessories/photos already use
-  // (IntakePage's submit sequence) — no new part-line shape, no inventory.
-  const addPartLine = () => {
-    if (!partName.trim()) return;
-    const unitPrice = partPrice.trim() ? Number(partPrice) : 0;
-    onChange((prev) => ({
-      ...prev, partLines: [...prev.partLines, { name: partName.trim(), unitPrice }],
-    }));
-    setPartName("");
-    setPartPrice("");
-  };
-
-  const removePartLine = (index: number) => {
-    onChange((prev) => ({ ...prev, partLines: prev.partLines.filter((_, i) => i !== index) }));
   };
 
   return (
@@ -272,44 +252,6 @@ export function OrderStep({
             ))}
           </ul>
         )}
-      </div>
-
-      <div>
-        <label className="mb-1 block text-sm font-medium text-slate-700">
-          {t("intake.parts")}
-        </label>
-        {value.partLines.length > 0 ? (
-          <ul className="mb-2 flex flex-col gap-1">
-            {value.partLines.map((line, index) => (
-              <li key={`${line.name}-${index}`} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-1.5 text-sm">
-                <span>{line.name} · {line.unitPrice.toFixed(2)} €</span>
-                <button type="button" onClick={() => removePartLine(index)} aria-label={t("common.close")}>
-                  ✕
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mb-2 text-sm text-slate-400">{t("intake.parts_none")}</p>
-        )}
-        <div className="flex gap-2">
-          <input
-            type="text" value={partName} onChange={(e) => setPartName(e.target.value)}
-            placeholder={t("order.part_name_placeholder")}
-            className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-h-touch"
-          />
-          <input
-            type="number" min={0} step="0.01" value={partPrice}
-            onChange={(e) => setPartPrice(e.target.value)}
-            placeholder="€" className="w-20 rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-h-touch"
-          />
-          <button
-            type="button" onClick={addPartLine}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 min-h-touch"
-          >
-            {t("intake.accessory_add")}
-          </button>
-        </div>
       </div>
 
       <div>

@@ -1,4 +1,4 @@
-/** Settings sub-nav: both settings screens are Owner-only, single-purpose
+/** Settings sub-nav: every settings screen is Owner-only, single-purpose
  * pages reached via the same "Настройки" shell nav entry - this is the
  * minimal wayfinding between them, not a full settings shell/tab system. */
 
@@ -19,6 +19,9 @@ export function SettingsNav() {
       </NavLink>
       <NavLink to="/settings/company" className={linkClass}>
         {t("settings.nav_company")}
+      </NavLink>
+      <NavLink to="/settings/catalog" className={linkClass}>
+        {t("settings.nav_catalog")}
       </NavLink>
     </nav>
   );

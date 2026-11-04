@@ -132,14 +132,28 @@ class Diagnosis(Base, TimestampMixin):
 
 
 class PartLine(Base):
-    """Lightweight — no inventory, no reservations in V1 (discovery S5)."""
+    """Lightweight — no inventory, no reservations in V1 (discovery S5).
+
+    order-workflow-revamp WP-I (Q12/Q13, ADR-BOS-013): a new line is created
+    only from a `catalog.CatalogItem` — `name`/`unit_cost`/`unit_price` below
+    are the **snapshot** taken at add-time (BR-3: a later catalog price
+    change never retroactively changes an existing line). `catalog_item_id`
+    is nullable because every line that existed before this migration has no
+    catalog item to point to and stays that way forever (Q13c) — it is never
+    required to be non-NULL, not even for new lines (the FK is informational/
+    traceability only; the service layer, not a NOT NULL constraint, is what
+    actually enforces "catalog-only" for lines created after this change)."""
 
     __tablename__ = "part_lines"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=new_id)
     company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("companies.id"))
     order_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("service_orders.id"), index=True)
+    catalog_item_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("catalog_items.id"), default=None,
+    )
     name: Mapped[str]
+    code: Mapped[str | None] = mapped_column(default=None)
     qty: Mapped[int] = mapped_column(default=1, server_default=text("1"))
     unit_cost: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0, server_default=text("0"))
     unit_price: Mapped[Decimal] = mapped_column(
@@ -148,27 +162,69 @@ class PartLine(Base):
     # Wave 2 Issue 33: "ordered" is the default active state — a part is
     # assigned/requested for this order the moment it's added, regardless
     # of whether it's physically in stock yet (no inventory tracking).
+    # order-workflow-revamp WP-J will revisit this 2-state model (#27);
+    # untouched by WP-I.
     state: Mapped[str] = mapped_column(default="ordered", server_default="ordered")
     # Wave 4 PART WARRANTY: NULL = not specified, 0 = explicitly no warranty,
-    # positive = days. No new warranty entity/table — this is the entire model.
+    # positive = days. No new warranty entity/table — this is the entire
+    # model. order-workflow-revamp WP-J will revisit this (#26); untouched by
+    # WP-I.
     warranty_days: Mapped[int | None] = mapped_column(default=None)
 
 
 class LaborLine(Base):
-    """Fixed-price lines (discovery §5.5) — the model this shop actually prices by."""
+    """Priced from the catalog — per operation (unit="pcs") or per hour
+    (unit="hour", Q12d). Same catalog/snapshot discipline as PartLine above —
+    see its docstring."""
 
     __tablename__ = "labor_lines"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=new_id)
     company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("companies.id"))
     order_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("service_orders.id"), index=True)
+    catalog_item_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("catalog_items.id"), default=None,
+    )
     description: Mapped[str]
-    qty: Mapped[int] = mapped_column(default=1, server_default=text("1"))
+    code: Mapped[str | None] = mapped_column(default=None)
+    # "pcs" for every pre-WP-I line (backfilled by migration 0037 — they were
+    # all fixed-price) and for every new fixed-price catalog item; "hour" only
+    # for a new line created from an hourly catalog item.
+    unit: Mapped[str] = mapped_column(default="pcs", server_default="pcs")
+    # Decimal, not int (ADR-BOS-013 §8): hourly labor needs a fractional qty
+    # (1.5 ч.) — a fixed-price ("pcs") line still just uses a whole number.
+    qty: Mapped[Decimal] = mapped_column(
+        Numeric(10, 2), default=Decimal("1"), server_default=text("1"),
+    )
     unit_price: Mapped[Decimal] = mapped_column(
         Numeric(10, 2), default=0, server_default=text("0")
     )
+    # Owner-only visibility (enforced at the API layer), NULL on every line
+    # added before this migration — no cost data was ever captured for labor.
+    unit_cost: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), default=None)
     duration_min: Mapped[int | None] = mapped_column(default=None)
     performed_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+
+
+class OrderAdjustment(Base):
+    """order-workflow-revamp WP-I (Q13, resolves docs/01 OQ-5): the only way
+    to correct an order's price ("направи го 50 €") — a signed amount with a
+    mandatory reason, Owner-only (enforced at the API layer), append-only (no
+    update/delete path — a wrong adjustment is corrected by adding an
+    offsetting one, same discipline as `commercial.Payment`). Feeds
+    `lines.order_totals()` and becomes a `source="adjustment"` line on an
+    invoice draft created from this order (`service_orders.contracts.
+    get_order_lines`)."""
+
+    __tablename__ = "order_adjustments"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=new_id)
+    company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("companies.id"))
+    order_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("service_orders.id"), index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    reason: Mapped[str]
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
 
 
 class AccessoryItem(Base):

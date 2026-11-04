@@ -2738,6 +2738,104 @@
         }
       }
     },
+    "/api/v1/orders/{order_id}/adjustments": {
+      "get": {
+        "tags": [
+          "orders"
+        ],
+        "summary": "List Adjustments",
+        "operationId": "list_adjustments_api_v1_orders__order_id__adjustments_get",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Order Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdjustmentOut"
+                  },
+                  "title": "Response List Adjustments Api V1 Orders  Order Id  Adjustments Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "orders"
+        ],
+        "summary": "Add Adjustment",
+        "operationId": "add_adjustment_api_v1_orders__order_id__adjustments_post",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Order Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdjustmentIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdjustmentOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/orders/{order_id}/protocol.pdf": {
       "get": {
         "tags": [
@@ -2829,6 +2927,329 @@
                     "type": "boolean"
                   },
                   "title": "Response Email Completion Protocol Api V1 Orders  Order Id  Protocol Email Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/catalog-items": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "List Items",
+        "operationId": "list_items_api_v1_catalog_items_get",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "include_archived",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Archived"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CatalogItemOut"
+                  },
+                  "title": "Response List Items Api V1 Catalog Items Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Create Item",
+        "operationId": "create_item_api_v1_catalog_items_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogItemIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogItemOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/catalog-items/{item_id}": {
+      "patch": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Patch Item",
+        "operationId": "patch_item_api_v1_catalog_items__item_id__patch",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogItemPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogItemOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/catalog-items/{item_id}/archive": {
+      "post": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Archive Item",
+        "operationId": "archive_item_api_v1_catalog_items__item_id__archive_post",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogItemOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/catalog-items/{item_id}/unarchive": {
+      "post": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Unarchive Item",
+        "operationId": "unarchive_item_api_v1_catalog_items__item_id__unarchive_post",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogItemOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/catalog-items/import/preview": {
+      "post": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Preview Import",
+        "operationId": "preview_import_api_v1_catalog_items_import_preview_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_preview_import_api_v1_catalog_items_import_preview_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportResultOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/catalog-items/import/commit": {
+      "post": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Commit Import",
+        "operationId": "commit_import_api_v1_catalog_items_import_commit_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_commit_import_api_v1_catalog_items_import_commit_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportResultOut"
                 }
               }
             }
@@ -4959,6 +5380,70 @@
         ],
         "title": "AccessoryPatch"
       },
+      "AdjustmentIn": {
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Amount"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "amount",
+          "reason"
+        ],
+        "title": "AdjustmentIn"
+      },
+      "AdjustmentOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "amount": {
+            "type": "number",
+            "title": "Amount"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Created By"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "amount",
+          "reason",
+          "created_by",
+          "created_at"
+        ],
+        "title": "AdjustmentOut"
+      },
       "AnnulRequest": {
         "properties": {
           "reason": {
@@ -5440,6 +5925,34 @@
         ],
         "title": "AttachmentOut"
       },
+      "Body_commit_import_api_v1_catalog_items_import_commit_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_commit_import_api_v1_catalog_items_import_commit_post"
+      },
+      "Body_preview_import_api_v1_catalog_items_import_preview_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_preview_import_api_v1_catalog_items_import_preview_post"
+      },
       "Body_upload_attachment_api_v1_orders__order_id__attachments_post": {
         "properties": {
           "file": {
@@ -5463,6 +5976,225 @@
           "file"
         ],
         "title": "Body_upload_attachment_api_v1_orders__order_id__attachments_post"
+      },
+      "CatalogItemIn": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "pattern": "^(part|labor)$",
+            "title": "Kind"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "unit": {
+            "type": "string",
+            "pattern": "^(pcs|hour)$",
+            "title": "Unit"
+          },
+          "sale_price": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Sale Price"
+          },
+          "unit_cost": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Cost"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "unit",
+          "sale_price"
+        ],
+        "title": "CatalogItemIn"
+      },
+      "CatalogItemOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "unit": {
+            "type": "string",
+            "title": "Unit"
+          },
+          "sale_price": {
+            "type": "number",
+            "title": "Sale Price"
+          },
+          "unit_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Cost"
+          },
+          "archived": {
+            "type": "boolean",
+            "title": "Archived"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "code",
+          "unit",
+          "sale_price",
+          "unit_cost",
+          "archived"
+        ],
+        "title": "CatalogItemOut"
+      },
+      "CatalogItemPatch": {
+        "properties": {
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(part|labor)$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(pcs|hour)$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "sale_price": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sale Price"
+          },
+          "unit_cost": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Cost"
+          }
+        },
+        "type": "object",
+        "title": "CatalogItemPatch"
       },
       "ClientCreate": {
         "properties": {
@@ -7028,6 +7760,111 @@
         ],
         "title": "HealthReport"
       },
+      "ImportResultOut": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ImportRowOut"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "insert_count": {
+            "type": "integer",
+            "title": "Insert Count"
+          },
+          "update_count": {
+            "type": "integer",
+            "title": "Update Count"
+          },
+          "error_count": {
+            "type": "integer",
+            "title": "Error Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rows",
+          "insert_count",
+          "update_count",
+          "error_count"
+        ],
+        "title": "ImportResultOut"
+      },
+      "ImportRowOut": {
+        "properties": {
+          "row_number": {
+            "type": "integer",
+            "title": "Row Number"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "unit": {
+            "type": "string",
+            "title": "Unit"
+          },
+          "sale_price": {
+            "type": "string",
+            "title": "Sale Price"
+          },
+          "unit_cost": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Cost"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "row_number",
+          "action",
+          "kind",
+          "name",
+          "code",
+          "unit",
+          "sale_price",
+          "unit_cost",
+          "error"
+        ],
+        "title": "ImportRowOut"
+      },
       "InvoiceDetailOut": {
         "properties": {
           "id": {
@@ -7242,10 +8079,18 @@
             "title": "Description"
           },
           "qty": {
-            "type": "integer",
-            "minimum": 1.0,
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
             "title": "Qty",
-            "default": 1
+            "default": "1"
           },
           "unit_price": {
             "anyOf": [
@@ -7302,7 +8147,7 @@
             "title": "Description"
           },
           "qty": {
-            "type": "integer",
+            "type": "number",
             "title": "Qty"
           },
           "unit_price": {
@@ -7470,31 +8315,24 @@
       },
       "LaborLineIn": {
         "properties": {
-          "description": {
+          "catalog_item_id": {
             "type": "string",
-            "maxLength": 500,
-            "minLength": 1,
-            "title": "Description"
+            "format": "uuid",
+            "title": "Catalog Item Id"
           },
           "qty": {
-            "type": "integer",
-            "minimum": 1.0,
-            "title": "Qty",
-            "default": 1
-          },
-          "unit_price": {
             "anyOf": [
               {
                 "type": "number",
-                "minimum": 0.0
+                "exclusiveMinimum": 0.0
               },
               {
                 "type": "string",
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
               }
             ],
-            "title": "Unit Price",
-            "default": "0"
+            "title": "Qty",
+            "default": "1"
           },
           "duration_min": {
             "anyOf": [
@@ -7523,9 +8361,10 @@
         },
         "type": "object",
         "required": [
-          "description"
+          "catalog_item_id"
         ],
-        "title": "LaborLineIn"
+        "title": "LaborLineIn",
+        "description": "Same catalog-only discipline as PartLineIn above. `duration_min`\n(Wave informational field, docs/01 §LaborLine) stays free entry — it was\nnever a price/name field, just an optional \"how long did it actually\ntake\" note."
       },
       "LaborLineOut": {
         "properties": {
@@ -7534,12 +8373,39 @@
             "format": "uuid",
             "title": "Id"
           },
+          "catalog_item_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalog Item Id"
+          },
           "description": {
             "type": "string",
             "title": "Description"
           },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "unit": {
+            "type": "string",
+            "title": "Unit"
+          },
           "qty": {
-            "type": "integer",
+            "type": "number",
             "title": "Qty"
           },
           "unit_price": {
@@ -7573,7 +8439,10 @@
         "type": "object",
         "required": [
           "id",
+          "catalog_item_id",
           "description",
+          "code",
+          "unit",
           "qty",
           "unit_price",
           "duration_min",
@@ -7583,36 +8452,11 @@
       },
       "LaborLinePatch": {
         "properties": {
-          "description": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 500,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
           "qty": {
             "anyOf": [
               {
-                "type": "integer",
-                "minimum": 1.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Qty"
-          },
-          "unit_price": {
-            "anyOf": [
-              {
                 "type": "number",
-                "minimum": 0.0
+                "exclusiveMinimum": 0.0
               },
               {
                 "type": "string",
@@ -7622,7 +8466,7 @@
                 "type": "null"
               }
             ],
-            "title": "Unit Price"
+            "title": "Qty"
           },
           "duration_min": {
             "anyOf": [
@@ -8099,6 +8943,13 @@
             "type": "array",
             "title": "Accessories"
           },
+          "adjustments": {
+            "items": {
+              "$ref": "#/components/schemas/AdjustmentOut"
+            },
+            "type": "array",
+            "title": "Adjustments"
+          },
           "estimated_total": {
             "type": "number",
             "title": "Estimated Total"
@@ -8134,6 +8985,7 @@
           "part_lines",
           "labor_lines",
           "accessories",
+          "adjustments",
           "estimated_total",
           "paid_amount",
           "balance"
@@ -8762,45 +9614,16 @@
       },
       "PartLineIn": {
         "properties": {
-          "name": {
+          "catalog_item_id": {
             "type": "string",
-            "maxLength": 300,
-            "minLength": 1,
-            "title": "Name"
+            "format": "uuid",
+            "title": "Catalog Item Id"
           },
           "qty": {
             "type": "integer",
             "minimum": 1.0,
             "title": "Qty",
             "default": 1
-          },
-          "unit_cost": {
-            "anyOf": [
-              {
-                "type": "number",
-                "minimum": 0.0
-              },
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              }
-            ],
-            "title": "Unit Cost",
-            "default": "0"
-          },
-          "unit_price": {
-            "anyOf": [
-              {
-                "type": "number",
-                "minimum": 0.0
-              },
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              }
-            ],
-            "title": "Unit Price",
-            "default": "0"
           },
           "warranty_months": {
             "anyOf": [
@@ -8818,9 +9641,10 @@
         },
         "type": "object",
         "required": [
-          "name"
+          "catalog_item_id"
         ],
-        "title": "PartLineIn"
+        "title": "PartLineIn",
+        "description": "order-workflow-revamp WP-I (Q12a): a line is created only from a\ncatalog item — no name/price field exists here at all. `catalog_item_id`\nis resolved against this order's company and `kind=\"part\"` by the\n`add_part_line` endpoint below, which snapshots the item's current\nname/code/price onto the new row."
       },
       "PartLineOut": {
         "properties": {
@@ -8829,9 +9653,32 @@
             "format": "uuid",
             "title": "Id"
           },
+          "catalog_item_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalog Item Id"
+          },
           "name": {
             "type": "string",
             "title": "Name"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
           },
           "qty": {
             "type": "integer",
@@ -8864,7 +9711,9 @@
         "type": "object",
         "required": [
           "id",
+          "catalog_item_id",
           "name",
+          "code",
           "qty",
           "unit_cost",
           "unit_price",
@@ -8874,19 +9723,6 @@
       },
       "PartLinePatch": {
         "properties": {
-          "name": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 300,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
-          },
           "qty": {
             "anyOf": [
               {
@@ -8912,38 +9748,6 @@
             ],
             "title": "Warranty Months"
           },
-          "unit_cost": {
-            "anyOf": [
-              {
-                "type": "number",
-                "minimum": 0.0
-              },
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unit Cost"
-          },
-          "unit_price": {
-            "anyOf": [
-              {
-                "type": "number",
-                "minimum": 0.0
-              },
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unit Price"
-          },
           "state": {
             "anyOf": [
               {
@@ -8957,7 +9761,8 @@
           }
         },
         "type": "object",
-        "title": "PartLinePatch"
+        "title": "PartLinePatch",
+        "description": "No name/price field (Q12a: \"no price/name field on order-line create\nor edit, for any role\") — only what was never a catalog concern."
       },
       "PaymentIn": {
         "properties": {

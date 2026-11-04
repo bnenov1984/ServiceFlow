@@ -17,6 +17,7 @@ license, see assets/DejaVuSans-LICENSE.txt.
 
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +42,12 @@ class ProtocolData:
     accessories: list[str] = field(default_factory=list)
     company_address: str = ""
     company_phone: str = ""
+
+
+def _qty_label(qty: Decimal) -> str:
+    """A whole qty prints without decimals ("2"); a fractional one (hourly
+    labor, 1.5 ч.) keeps up to 2 (order-workflow-revamp WP-I, ADR-BOS-013 §8)."""
+    return str(qty.to_integral_value()) if qty == qty.to_integral_value() else f"{qty:.2f}"
 
 
 def _pdf_with_fonts() -> FPDF:
@@ -117,7 +124,13 @@ def generate_intake_protocol(data: ProtocolData) -> bytes:
 @dataclass(frozen=True)
 class DeliveryLaborLine:
     description: str
-    qty: int
+    # str, not int (order-workflow-revamp WP-I): the frozen snapshot stores
+    # qty as a string (`Decimal` isn't JSON-serializable) — a snapshot built
+    # before this change still has a plain int here, and `Decimal(...)`
+    # accepts either at render time, so no migration of old snapshots is
+    # needed (same "never rewrite a frozen snapshot" discipline as the rest
+    # of this module).
+    qty: str
     unit_price: str
 
 
@@ -317,7 +330,8 @@ def generate_delivery_protocol(
     _section("Труд")
     if data.labor_lines:
         for line in data.labor_lines:
-            qty = f" x{line.qty}" if line.qty > 1 else ""
+            line_qty = Decimal(line.qty)
+            qty = f" x{_qty_label(line_qty)}" if line_qty > 1 else ""
             pdf.cell(0, 6, f"- {line.description}{qty} — {line.unit_price} €",
                      new_x="LMARGIN", new_y="NEXT")
     else:

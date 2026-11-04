@@ -56,6 +56,21 @@ def _order(client: TestClient, h: dict[str, str], cid: str, aid: str) -> str:
     return str(r.json()["id"])
 
 
+def _order_for_lines(client: TestClient, h: dict[str, str], cid: str, aid: str) -> str:
+    oid = _order(client, h, cid, aid)
+    r = client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
+    assert r.status_code == 200, r.text
+    return oid
+
+
+def _catalog_item(client: TestClient, h: dict[str, str], *,
+                  name: str = "Дисплей", sale_price: str = "100.00") -> str:
+    r = client.post("/api/v1/catalog-items", headers=h,
+                    json={"kind": "part", "name": name, "unit": "pcs", "sale_price": sale_price})
+    assert r.status_code == 201, r.text
+    return str(r.json()["id"])
+
+
 def _deliver(client: TestClient, h: dict[str, str], oid: str,
             warranty_days: int | None = None, skip: bool = True) -> "object":
     for to in ("diagnostics", "repair", "ready"):
@@ -161,10 +176,11 @@ def test_omitted_part_warranty_uses_company_parts_default(client: TestClient) ->
     h = _login(client)
     _set_warranty_defaults(client, h, parts_days=180)
     cid, aid = _customer_and_asset(client, h)
-    oid = _order(client, h, cid, aid)
+    oid = _order_for_lines(client, h, cid, aid)
+    item_id = _catalog_item(client, h)
 
     resp = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-        "name": "Дисплей", "qty": 1, "unit_cost": "60", "unit_price": "100",
+        "catalog_item_id": item_id,
     })
     assert resp.status_code == 201, resp.text
     assert resp.json()["warranty_months"] == 6
@@ -176,11 +192,11 @@ def test_explicit_part_warranty_zero_is_preserved_not_replaced_by_default(
     h = _login(client)
     _set_warranty_defaults(client, h, parts_days=180)
     cid, aid = _customer_and_asset(client, h)
-    oid = _order(client, h, cid, aid)
+    oid = _order_for_lines(client, h, cid, aid)
+    item_id = _catalog_item(client, h)
 
     resp = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-        "name": "Дисплей", "qty": 1, "unit_cost": "60", "unit_price": "100",
-        "warranty_months": 0,
+        "catalog_item_id": item_id, "warranty_months": 0,
     })
     assert resp.status_code == 201, resp.text
     assert resp.json()["warranty_months"] == 0
@@ -190,11 +206,11 @@ def test_explicit_positive_part_warranty_wins_over_default(client: TestClient) -
     h = _login(client)
     _set_warranty_defaults(client, h, parts_days=180)
     cid, aid = _customer_and_asset(client, h)
-    oid = _order(client, h, cid, aid)
+    oid = _order_for_lines(client, h, cid, aid)
+    item_id = _catalog_item(client, h)
 
     resp = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-        "name": "Дисплей", "qty": 1, "unit_cost": "60", "unit_price": "100",
-        "warranty_months": 13,
+        "catalog_item_id": item_id, "warranty_months": 13,
     })
     assert resp.status_code == 201, resp.text
     assert resp.json()["warranty_months"] == 13
@@ -203,10 +219,11 @@ def test_explicit_positive_part_warranty_wins_over_default(client: TestClient) -
 def test_omitted_part_warranty_stays_null_when_no_company_default(client: TestClient) -> None:
     h = _login(client)
     cid, aid = _customer_and_asset(client, h)
-    oid = _order(client, h, cid, aid)
+    oid = _order_for_lines(client, h, cid, aid)
+    item_id = _catalog_item(client, h)
 
     resp = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-        "name": "Дисплей", "qty": 1, "unit_cost": "60", "unit_price": "100",
+        "catalog_item_id": item_id,
     })
     assert resp.status_code == 201, resp.text
     assert resp.json()["warranty_months"] is None
@@ -218,10 +235,11 @@ def test_later_company_default_change_does_not_mutate_existing_part_line(
     h = _login(client)
     _set_warranty_defaults(client, h, parts_days=180)
     cid, aid = _customer_and_asset(client, h)
-    oid = _order(client, h, cid, aid)
+    oid = _order_for_lines(client, h, cid, aid)
+    display_id = _catalog_item(client, h, name="Дисплей")
 
     resp = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-        "name": "Дисплей", "qty": 1, "unit_cost": "60", "unit_price": "100",
+        "catalog_item_id": display_id,
     })
     line_id = resp.json()["id"]
     assert resp.json()["warranty_months"] == 6
@@ -234,7 +252,8 @@ def test_later_company_default_change_does_not_mutate_existing_part_line(
 
     # A new part line added after the change picks up the new default —
     # proving the earlier line's value wasn't just coincidentally unchanged.
+    battery_id = _catalog_item(client, h, name="Батерия", sale_price="40.00")
     resp2 = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-        "name": "Батерия", "qty": 1, "unit_cost": "20", "unit_price": "40",
+        "catalog_item_id": battery_id,
     })
     assert resp2.json()["warranty_months"] == 12

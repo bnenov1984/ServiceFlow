@@ -53,6 +53,11 @@ OPEN = set(STATUSES) - TERMINAL
 # (WP-F, PO decision Q22): actively being worked on, not waiting or ready.
 TECHNICIAN_LOAD = {"diagnostics", "repair"}
 
+# order-workflow-revamp WP-I (Q13d): a part/labor line may only be added
+# while the order is in one of these statuses — never at intake (reverses
+# Issue 29), never on "received"/"ready" or any terminal status.
+LINE_CREATION_STATUSES = {"diagnostics", "waiting_customer", "waiting_parts", "repair"}
+
 OK = "ok"
 WARN = "warn"  # allowed with a skip warning (docs/02 §2)
 NO = "no"

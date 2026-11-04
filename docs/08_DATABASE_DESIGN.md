@@ -82,11 +82,28 @@ gate passes.
   approval jsonb NULL {approved bool, by_user, at, channel, amount}.
 - **tasks** — order_id NULL (company-level allowed), title, is_done, assignee_id
   NULL, due_on NULL, note, is_call bool, completed_by/at.
-- **part_lines** — order_id, name, qty, unit_cost, unit_price, state
-  (needed|ordered|received|installed|removed).
-- **labor_lines** — order_id, description, qty, unit_price, duration_min NULL,
-  performed_by NULL.
+- **part_lines** — order_id, catalog_item_id NULL (migration 0037,
+  order-workflow-revamp WP-I — NULL on every line added before it, stays that
+  way forever), name/code/unit_cost/unit_price (**snapshotted** from the
+  catalog item at add-time, BR-3), qty, state (ordered|installed — Wave 2
+  Issue 33 simplified from the original needed|ordered|received|installed|
+  removed; a further 3-state split is WP-J, not yet applied), warranty_days
+  NULL.
+- **labor_lines** — order_id, catalog_item_id NULL (migration 0037, WP-I),
+  description/code/unit/unit_price/unit_cost (snapshotted, BR-3), qty
+  **numeric(10,2)** (migration 0037 — was integer; fractional for an hourly
+  catalog item, ADR-BOS-013 §8), duration_min NULL, performed_by NULL.
 - **accessory_items** — order_id, name, qty, returned bool.
+- **order_adjustments** — order_id, amount numeric(10,2) (signed), reason,
+  created_by, created_at (migration 0037, WP-I — resolves 01 OQ-5;
+  append-only, no UPDATE/DELETE path in the service layer).
+
+### catalog *(new module, order-workflow-revamp WP-I, ADR-BOS-013)*
+- **catalog_items** — company_id, kind (part|labor), name, code NULL (unique
+  per company when set), unit (pcs|hour), sale_price numeric(10,2),
+  unit_cost numeric(10,2) NULL (Owner-only visibility, API layer), archived_at
+  NULL (archived, never deleted — part_lines/labor_lines may still reference
+  it). Migration 0037.
 
 ### contacts
 - **contact_records** — customer_id, order_id NULL, type (call|email|message|visit),
@@ -107,8 +124,10 @@ gate passes.
   documents), vat_mode (registered|not_registered), totals (net, vat, gross — stored
   at issue, frozen), currency, annuls_invoice_id NULL, annul_reason NULL,
   pdf_storage_key NULL.
-- **invoice_lines** — invoice_id, description, qty, unit_price, vat_rate,
-  source (labor|part|manual|adjustment), sort.
+- **invoice_lines** — invoice_id, description, qty **numeric(10,2)**
+  (migration 0037, order-workflow-revamp WP-I — was integer; carries an
+  hourly LaborLine's fractional hours through to the invoice), unit_price,
+  vat_rate, source (labor|part|manual|adjustment), sort.
 - **payments** — order_id, invoice_id NULL, amount, method (cash|card|bank),
   is_refund bool, note, received_by, received_at.
 - **document_sequences** — company_id, kind (invoice|order), current bigint.

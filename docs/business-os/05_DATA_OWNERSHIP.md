@@ -40,6 +40,8 @@ brevity.
 | `part_lines` | service_orders | SF: Service Operations | Service Ops; Commercial contract (billable lines) | service_orders service | none | Recommended |
 | `labor_lines` | service_orders | SF: Service Operations | same as part_lines | service_orders service | none | Recommended |
 | `accessory_items` | service_orders | SF: Service Operations | Service Ops | service_orders service | none | Recommended |
+| `catalog_items` | catalog | SF: Service Operations | Service Ops (`part_lines`/`labor_lines` creation reads it directly — same within-vertical sharing as `asset_types`, no contract needed); Commercial never reads it (invoice lines only ever see the snapshot already copied onto a line) | catalog service only, Owner-gated at the API layer (ADR-BOS-013) | `(company_id, code)` partial unique index WHERE code IS NOT NULL; items are archived, never deleted — `part_lines.catalog_item_id`/`labor_lines.catalog_item_id` must keep resolving | Implemented (order-workflow-revamp WP-I, 05.11.2026) |
+| `order_adjustments` | service_orders | SF: Service Operations | Service Ops; Commercial via `service_orders.contracts.get_order_lines` (same path part/labor lines already use to prefill an invoice draft, source="adjustment") | service_orders service only, Owner-gated at the API layer, append-only (ADR-BOS-013) | `order_id` FK to `service_orders.id`; `created_by` FK to `users.id` | Implemented (order-workflow-revamp WP-I, 05.11.2026) |
 | `tasks` | tasks | SF: Service Operations | Service Ops (incl. dashboard) | tasks service | `order_id` FK is the coupling to undo *if* tasks ever generalize — not planned | Recommended (stays in SF) |
 | `attachments` | attachments | SF: Service Operations | Service Ops | attachments service | `order_id` NOT NULL — generalizing means a polymorphic parent (Deferred) | Recommended (stays in SF) |
 | `contact_records` | contacts | SF: Service Operations | Service Ops | contacts service | customer + order FKs | Recommended (stays in SF) |
@@ -116,10 +118,14 @@ Payment recording — `invoice_id` nullable, no FK until Etap 4's `invoices`
 table exists; a payment never requires an invoice, docs/01 §Payment).
 
 **Inventory ownership.** Nothing to own — `part_lines` are deliberately
-inventory-free free-text lines (model docstring; discovery S5; docs/08 §4 "no
-multi-warehouse/inventory tables"). If StockFlow materializes it owns all
-inventory tables, and ServiceFlow *optionally* consumes a stock contract from
-it. Status: Confirmed (absent) + Deferred (StockFlow).
+inventory-free (model docstring; discovery S5; docs/08 §4 "no
+multi-warehouse/inventory tables"). *(Amended 05.11.2026 — order-workflow-
+revamp WP-I, ADR-BOS-013):* lines are no longer free-text, but `catalog_items`
+is a flat price list (name/code/unit/price), not inventory — no stock
+levels, no quantities-on-hand, no suppliers; ADR-BOS-013 §7 names this limit
+explicitly. If StockFlow materializes it owns all inventory tables, and
+ServiceFlow *optionally* consumes a stock contract from it. Status:
+Confirmed (absent) + Deferred (StockFlow).
 
 **Task ownership.** `tasks` stay in Service Operations. They are shop-floor
 checklist items (`is_call`, order-scoped, dashboard "my tasks"), not project

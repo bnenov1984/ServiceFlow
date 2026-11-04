@@ -25,6 +25,14 @@ def _login(client: TestClient, company: str = "Сервиз Компютри О�
     return {"X-CSRF-Token": str(me["csrf_token"])}
 
 
+def _catalog_item(client: TestClient, h: dict[str, str], *, kind: str = "part",
+                  name: str, sale_price: str) -> str:
+    r = client.post("/api/v1/catalog-items", headers=h,
+                    json={"kind": kind, "name": name, "unit": "pcs", "sale_price": sale_price})
+    assert r.status_code == 201, r.text
+    return str(r.json()["id"])
+
+
 def _order_with_accessories(client: TestClient, h: dict[str, str]) -> str:
     cid = client.post("/api/v1/customers", headers=h,
                       json={"name": "Иван Петров", "phone": "0888111222"}).json()["id"]
@@ -154,11 +162,15 @@ def test_delivery_protocol_renders_after_delivery(client: TestClient) -> None:
         "observed": "Счупен екран", "cause": "Падане",
         "recommendation": "Смяна на дисплей",
     })
+    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
+    part_id = _catalog_item(client, h, name="Дисплей Samsung", sale_price="120.00")
+    labor_id = _catalog_item(client, h, kind="labor", name="Смяна на дисплей",
+                             sale_price="30.00")
     client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-        "name": "Дисплей Samsung", "unit_price": "120.00", "warranty_months": 3,
+        "catalog_item_id": part_id, "warranty_months": 3,
     })
     client.post(f"/api/v1/orders/{oid}/labor-lines", headers=h, json={
-        "description": "Смяна на дисплей", "unit_price": "30.00",
+        "catalog_item_id": labor_id,
     })
     _deliver(client, h, oid, warranty_days=180)
 
@@ -281,11 +293,14 @@ def test_delivery_protocol_snapshot_is_never_rebuilt_on_redelivery(client: TestC
 def test_warranty_rendering_null_zero_and_positive(client: TestClient) -> None:
     h = _login(client)
     oid = _order_with_accessories(client, h)
+    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
+    no_warranty_id = _catalog_item(client, h, name="Част без гаранция", sale_price="5.00")
+    unspecified_id = _catalog_item(client, h, name="Част неопределена", sale_price="5.00")
     client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-        "name": "Част без гаранция", "unit_price": "5.00", "warranty_months": 0,
+        "catalog_item_id": no_warranty_id, "warranty_months": 0,
     })
     client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-        "name": "Част неопределена", "unit_price": "5.00",
+        "catalog_item_id": unspecified_id,
     })
     _deliver(client, h, oid, warranty_days=0)
 

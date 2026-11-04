@@ -950,6 +950,24 @@ export interface paths {
         patch: operations["patch_accessory_api_v1_accessories__item_id__patch"];
         trace?: never;
     };
+    "/api/v1/orders/{order_id}/adjustments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Adjustments */
+        get: operations["list_adjustments_api_v1_orders__order_id__adjustments_get"];
+        put?: never;
+        /** Add Adjustment */
+        post: operations["add_adjustment_api_v1_orders__order_id__adjustments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/orders/{order_id}/protocol.pdf": {
         parameters: {
             query?: never;
@@ -978,6 +996,109 @@ export interface paths {
         put?: never;
         /** Email Completion Protocol */
         post: operations["email_completion_protocol_api_v1_orders__order_id__protocol_email_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Items */
+        get: operations["list_items_api_v1_catalog_items_get"];
+        put?: never;
+        /** Create Item */
+        post: operations["create_item_api_v1_catalog_items_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog-items/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Item */
+        patch: operations["patch_item_api_v1_catalog_items__item_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/catalog-items/{item_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive Item */
+        post: operations["archive_item_api_v1_catalog_items__item_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog-items/{item_id}/unarchive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unarchive Item */
+        post: operations["unarchive_item_api_v1_catalog_items__item_id__unarchive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog-items/import/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Import */
+        post: operations["preview_import_api_v1_catalog_items_import_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog-items/import/commit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Commit Import */
+        post: operations["commit_import_api_v1_catalog_items_import_commit_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1634,6 +1755,35 @@ export interface components {
             /** Returned */
             returned: boolean;
         };
+        /** AdjustmentIn */
+        AdjustmentIn: {
+            /** Amount */
+            amount: number | string;
+            /** Reason */
+            reason: string;
+        };
+        /** AdjustmentOut */
+        AdjustmentOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Amount */
+            amount: number;
+            /** Reason */
+            reason: string;
+            /**
+             * Created By
+             * Format: uuid
+             */
+            created_by: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** AnnulRequest */
         AnnulRequest: {
             /** Reason */
@@ -1848,6 +1998,16 @@ export interface components {
             /** Display Name */
             display_name: string;
         };
+        /** Body_commit_import_api_v1_catalog_items_import_commit_post */
+        Body_commit_import_api_v1_catalog_items_import_commit_post: {
+            /** File */
+            file: string;
+        };
+        /** Body_preview_import_api_v1_catalog_items_import_preview_post */
+        Body_preview_import_api_v1_catalog_items_import_preview_post: {
+            /** File */
+            file: string;
+        };
         /** Body_upload_attachment_api_v1_orders__order_id__attachments_post */
         Body_upload_attachment_api_v1_orders__order_id__attachments_post: {
             /** File */
@@ -1862,6 +2022,58 @@ export interface components {
              * @default
              */
             caption: string;
+        };
+        /** CatalogItemIn */
+        CatalogItemIn: {
+            /** Kind */
+            kind: string;
+            /** Name */
+            name: string;
+            /** Code */
+            code?: string | null;
+            /** Unit */
+            unit: string;
+            /** Sale Price */
+            sale_price: number | string;
+            /** Unit Cost */
+            unit_cost?: number | string | null;
+        };
+        /** CatalogItemOut */
+        CatalogItemOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Name */
+            name: string;
+            /** Code */
+            code: string | null;
+            /** Unit */
+            unit: string;
+            /** Sale Price */
+            sale_price: number;
+            /** Unit Cost */
+            unit_cost: number | null;
+            /** Archived */
+            archived: boolean;
+        };
+        /** CatalogItemPatch */
+        CatalogItemPatch: {
+            /** Kind */
+            kind?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Code */
+            code?: string | null;
+            /** Unit */
+            unit?: string | null;
+            /** Sale Price */
+            sale_price?: number | string | null;
+            /** Unit Cost */
+            unit_cost?: number | string | null;
         };
         /** ClientCreate */
         ClientCreate: {
@@ -2414,6 +2626,38 @@ export interface components {
                 [key: string]: "ok" | "warn" | "fail" | "not_configured";
             };
         };
+        /** ImportResultOut */
+        ImportResultOut: {
+            /** Rows */
+            rows: components["schemas"]["ImportRowOut"][];
+            /** Insert Count */
+            insert_count: number;
+            /** Update Count */
+            update_count: number;
+            /** Error Count */
+            error_count: number;
+        };
+        /** ImportRowOut */
+        ImportRowOut: {
+            /** Row Number */
+            row_number: number;
+            /** Action */
+            action: string;
+            /** Kind */
+            kind: string;
+            /** Name */
+            name: string;
+            /** Code */
+            code: string | null;
+            /** Unit */
+            unit: string;
+            /** Sale Price */
+            sale_price: string;
+            /** Unit Cost */
+            unit_cost: string | null;
+            /** Error */
+            error: string | null;
+        };
         /** InvoiceDetailOut */
         InvoiceDetailOut: {
             /**
@@ -2470,7 +2714,7 @@ export interface components {
              * Qty
              * @default 1
              */
-            qty: number;
+            qty: number | string;
             /**
              * Unit Price
              * @default 0
@@ -2540,20 +2784,24 @@ export interface components {
              */
             tax_event_date: string;
         };
-        /** LaborLineIn */
+        /**
+         * LaborLineIn
+         * @description Same catalog-only discipline as PartLineIn above. `duration_min`
+         *     (Wave informational field, docs/01 §LaborLine) stays free entry — it was
+         *     never a price/name field, just an optional "how long did it actually
+         *     take" note.
+         */
         LaborLineIn: {
-            /** Description */
-            description: string;
+            /**
+             * Catalog Item Id
+             * Format: uuid
+             */
+            catalog_item_id: string;
             /**
              * Qty
              * @default 1
              */
-            qty: number;
-            /**
-             * Unit Price
-             * @default 0
-             */
-            unit_price: number | string;
+            qty: number | string;
             /** Duration Min */
             duration_min?: number | null;
             /** Performed By */
@@ -2566,8 +2814,14 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Catalog Item Id */
+            catalog_item_id: string | null;
             /** Description */
             description: string;
+            /** Code */
+            code: string | null;
+            /** Unit */
+            unit: string;
             /** Qty */
             qty: number;
             /** Unit Price */
@@ -2579,12 +2833,8 @@ export interface components {
         };
         /** LaborLinePatch */
         LaborLinePatch: {
-            /** Description */
-            description?: string | null;
             /** Qty */
-            qty?: number | null;
-            /** Unit Price */
-            unit_price?: number | string | null;
+            qty?: number | string | null;
             /** Duration Min */
             duration_min?: number | null;
         };
@@ -2790,6 +3040,8 @@ export interface components {
             labor_lines: components["schemas"]["LaborLineOut"][];
             /** Accessories */
             accessories: components["schemas"]["AccessoryOut"][];
+            /** Adjustments */
+            adjustments: components["schemas"]["AdjustmentOut"][];
             /** Estimated Total */
             estimated_total: number;
             /** Paid Amount */
@@ -2999,25 +3251,25 @@ export interface components {
              */
             assign_technician: boolean;
         };
-        /** PartLineIn */
+        /**
+         * PartLineIn
+         * @description order-workflow-revamp WP-I (Q12a): a line is created only from a
+         *     catalog item — no name/price field exists here at all. `catalog_item_id`
+         *     is resolved against this order's company and `kind="part"` by the
+         *     `add_part_line` endpoint below, which snapshots the item's current
+         *     name/code/price onto the new row.
+         */
         PartLineIn: {
-            /** Name */
-            name: string;
+            /**
+             * Catalog Item Id
+             * Format: uuid
+             */
+            catalog_item_id: string;
             /**
              * Qty
              * @default 1
              */
             qty: number;
-            /**
-             * Unit Cost
-             * @default 0
-             */
-            unit_cost: number | string;
-            /**
-             * Unit Price
-             * @default 0
-             */
-            unit_price: number | string;
             /** Warranty Months */
             warranty_months?: number | null;
         };
@@ -3028,8 +3280,12 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Catalog Item Id */
+            catalog_item_id: string | null;
             /** Name */
             name: string;
+            /** Code */
+            code: string | null;
             /** Qty */
             qty: number;
             /** Unit Cost */
@@ -3041,18 +3297,16 @@ export interface components {
             /** Warranty Months */
             warranty_months?: number | null;
         };
-        /** PartLinePatch */
+        /**
+         * PartLinePatch
+         * @description No name/price field (Q12a: "no price/name field on order-line create
+         *     or edit, for any role") — only what was never a catalog concern.
+         */
         PartLinePatch: {
-            /** Name */
-            name?: string | null;
             /** Qty */
             qty?: number | null;
             /** Warranty Months */
             warranty_months?: number | null;
-            /** Unit Cost */
-            unit_cost?: number | string | null;
-            /** Unit Price */
-            unit_price?: number | string | null;
             /** State */
             state?: string | null;
         };
@@ -5402,6 +5656,72 @@ export interface operations {
             };
         };
     };
+    list_adjustments_api_v1_orders__order_id__adjustments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdjustmentOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_adjustment_api_v1_orders__order_id__adjustments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdjustmentIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdjustmentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     order_protocol_api_v1_orders__order_id__protocol_pdf_get: {
         parameters: {
             query?: {
@@ -5459,6 +5779,234 @@ export interface operations {
                     "application/json": {
                         [key: string]: boolean;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_items_api_v1_catalog_items_get: {
+        parameters: {
+            query?: {
+                kind?: string | null;
+                include_archived?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogItemOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_item_api_v1_catalog_items_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CatalogItemIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_item_api_v1_catalog_items__item_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CatalogItemPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_item_api_v1_catalog_items__item_id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unarchive_item_api_v1_catalog_items__item_id__unarchive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_import_api_v1_catalog_items_import_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_preview_import_api_v1_catalog_items_import_preview_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportResultOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    commit_import_api_v1_catalog_items_import_commit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_commit_import_api_v1_catalog_items_import_commit_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportResultOut"];
                 };
             };
             /** @description Validation Error */

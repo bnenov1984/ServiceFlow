@@ -37,7 +37,7 @@ start; the generated OpenAPI schema becomes the machine-readable source of truth
 ### Service orders
 - POST /orders — intake payload (find-or-create customer + asset inline, 02 §3)
 - GET /orders — filters: status, technician, overdue, priority, q
-- GET /orders/{id} — full detail (lines, diagnosis, accessories, timeline page 1)
+- GET /orders/{id} — full detail (lines, diagnosis, accessories, adjustments, timeline page 1)
 - PATCH /orders/{id} — fields per edit rules (row_version)
 - POST /orders/{id}/status — {to, reason?, approval?} — the **only** way any client
   (incl. Kanban DnD) changes status; server enforces the matrix (02 §2)
@@ -45,12 +45,26 @@ start; the generated OpenAPI schema becomes the machine-readable source of truth
   creates linked order
 - GET /orders/{id}/protocol.pdf — intake/delivery variants (?type=)
 - CRUD nested, flat paths: /orders/{id}/diagnosis (PUT — single record),
-  /part-lines, /labor-lines, /accessories (per-asset-type gated, 01 BR-9),
-  /contact-records
-- PATCH /part-lines/{id} — incl. state changes (needed→ordered→received…)
+  /part-lines, /labor-lines (order-workflow-revamp WP-I, Q12a/Q13d: created
+  only from a `catalog_item_id`, no name/price field; only while the order is
+  in Диагностика/Чака клиент/Чака части/Ремонт), /accessories (per-asset-type
+  gated, 01 BR-9), /adjustments (WP-I, Q13: Owner-only, append-only, resolves
+  01 OQ-5), /contact-records
+- PATCH /part-lines/{id} — incl. state changes (ordered→installed; no
+  name/price field — WP-I)
 - POST /orders/{id}/attachments (multipart) · GET /attachments/{id}/file — authorized
   stream (ADR-007), ?thumb= for photos · DELETE — soft
 - GET /orders/{id}/timeline — paged, read-only
+
+### Catalog *(order-workflow-revamp WP-I, ADR-BOS-013)*
+- GET /catalog-items (?kind=, ?include_archived=) — open to any active user
+  (the line picker needs it); `unit_cost` only populated for an Owner caller
+- POST /catalog-items · PATCH /catalog-items/{id} · POST /catalog-items/{id}/archive
+  · POST /catalog-items/{id}/unarchive — Owner-only; items are archived, never
+  deleted (lines keep a reference)
+- POST /catalog-items/import/preview · POST /catalog-items/import/commit
+  (multipart file, CSV or .xlsx) — Owner-only; preview is a pure dry-run, never
+  writes; match by `code` when present → update, else insert
 
 ### Tasks — retired
 *(Retired 04.11.2026 — order-workflow-revamp WP-H, Q17/Q17b.)* `/tasks`,

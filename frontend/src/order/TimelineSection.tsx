@@ -49,6 +49,7 @@ const EVENT_LABEL: Record<string, Parameters<typeof t>[0]> = {
   part_added: "order.event_part_added",
   part_state_changed: "order.event_part_state_changed",
   labor_added: "order.event_labor_added",
+  adjustment_added: "order.event_adjustment_added",
   accessory_added: "order.event_accessory_added",
   accessory_returned_changed: "order.event_accessory_returned",
   attachment_added: "order.event_attachment_added",

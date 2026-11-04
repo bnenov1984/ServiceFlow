@@ -21,6 +21,7 @@ from professional_services.clients.router import router as ps_clients_router
 from serviceflow import __version__
 from serviceflow.assets.router import router as assets_router
 from serviceflow.attachments.router import router as attachments_router
+from serviceflow.catalog.router import router as catalog_router
 from serviceflow.commercial.contracts import get_payment_summary
 from serviceflow.commercial.router import router as commercial_router
 from serviceflow.config import Settings, get_settings
@@ -130,6 +131,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(customers_router, prefix="/api/v1/customers", tags=["customers"])
     app.include_router(assets_router, prefix="/api/v1", tags=["assets"])
     app.include_router(orders_router, prefix="/api/v1", tags=["orders"])
+    app.include_router(catalog_router, prefix="/api/v1", tags=["catalog"])
     app.include_router(commercial_router, prefix="/api/v1", tags=["commercial"])
     # order-workflow-revamp WP-H (Q17/Q17b): tasks removed entirely from the
     # product (order checklist, dashboard widgets, company-level tasks) —

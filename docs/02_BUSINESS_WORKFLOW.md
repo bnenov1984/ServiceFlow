@@ -140,19 +140,32 @@ evidence, not a legal signature (protocol carries signatures).
 
 ## 7. Parts — V1 flow
 
-Anyone may add part lines during diagnosis/repair; states: **needed → ordered →
-received → installed** (+ removed). „Чака части" is used when the order is blocked;
-part receipt is recorded by whoever unpacks the delivery. Repair may proceed before
-all parts arrive (partial work is real). No reservations, no stock, no returns-to-
-inventory in V1 (no inventory exists); unused part lines are removed with timeline
-trace.
+*(Amended 05.11.2026 — order-workflow-revamp WP-I, Q12a/Q13d, ADR-BOS-013.)*
+Anyone may add part lines, but **only from the shop's own price list** (the
+catalog — Owner-maintained in Settings, ADR-BOS-013) — no hand-typed name or
+price, for any role. Lines are
+addable only while the order is in Диагностика, Чака клиент, Чака части or
+Ремонт — never at intake, never once Готова (reverses the earlier
+"addable at intake" design). States: **ordered → installed** *(correction:
+this had drifted to a stale 4-state "needed → ordered → received →
+installed" list — Wave 2 Issue 33 simplified it to these two well before
+this amendment; a further 3-state split is WP-J, not yet applied)*. „Чака
+части" is used when the order is blocked. Repair may proceed before all
+parts arrive (partial work is real). No reservations, no stock levels, no
+returns-to-inventory in V1 (no inventory exists; the catalog is a price
+list, not stock) — unused part lines are removed with timeline trace.
 
 ## 8. Labor
 
-Fixed-price lines (description × qty × unit price), matching how Bulgarian shops
-price (per operation / price-list mentality). Optional informational duration.
-Recorded by the performing technician or the Owner. Time tracking, timers, hourly
-billing: future (V2+), the line model already accommodates them.
+*(Amended 05.11.2026 — order-workflow-revamp WP-I, Q12d, ADR-BOS-013.)*
+Lines are priced **from the same catalog** as parts — either fixed-price
+(unit бр., description × qty × unit price, matching how Bulgarian shops
+price per operation) or **hourly** (unit час, qty a decimal number of
+hours × hourly rate) — the Owner decides per catalog item which. Optional
+informational duration stays free entry (never a catalog field). Recorded
+by the performing technician or the Owner. Full time tracking/timers
+remain future (V2+); the hourly unit above is the pricing half of that,
+already real.
 
 ## 9. Photos & Attachments
 
@@ -178,6 +191,12 @@ day, then frozen (OQ-1, pending PO).
 Корекция: Анулиране (причина) → нова чернова → ново издаване
 ```
 
+*(Amended 05.11.2026 — order-workflow-revamp WP-I, Q13, resolves docs/01 OQ-5:)*
+"корекция/отстъпка с причина" above is the `OrderAdjustment` entity — added on
+the **order**, Owner-only, signed amount + mandatory reason; it flows into the
+invoice draft as a `source="adjustment"` line the same way part/labor lines do,
+never edited as a bare invoice-line price.
+
 - Worker may create drafts and record payments; **issuing and annulling are
   Owner-only by default** (per-company toggle to allow Workers — many 2-person shops
   need it). Pending PO confirmation (OQ-W1).
@@ -196,8 +215,10 @@ emerge from the one mechanism. Corrections by offsetting record.
 
 | Action | Owner | Worker |
 |---|---|---|
-| Customers/assets/orders: create, edit, statuses, parts, labor, photos, contacts | ✔ | ✔ |
+| Customers/assets/orders: create, edit, statuses, parts, labor (from the catalog), photos, contacts | ✔ | ✔ |
 | Анулирана transition, unarchive, bulk reassignment | ✔ | — |
+| Price catalog: create/edit/archive/import *(WP-I, Q12b)* | ✔ | — (reads it to add lines) |
+| Order adjustment (price correction) *(WP-I, Q13)* | ✔ | — |
 | Invoice draft + payments | ✔ | ✔ |
 | Invoice issue/annul | ✔ | toggle |
 | Company settings, users, requisites, subscription/license | ✔ | — |

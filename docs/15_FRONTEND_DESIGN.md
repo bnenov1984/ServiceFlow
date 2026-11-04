@@ -173,10 +173,14 @@ OrderPage
 │    Отключи (unlock) / Ново гаранционно / Архивирай)
 ├─ лява колона: CustomerCard (tel: link) · AssetCard (идентификатори) ·
 │    ComplaintBlock (inline edit) · DiagnosisCard (inline form; approval блок
-│    когато approval_required) · MoneyCard (parts+labor изчислени; редове
-│    добавяне inline; „Фактура" бутон disabled с „Етап 4")
-├─ дясна колона: PartLines (state chips
-│    needed→ordered→received→installed) · LaborLines · AccessoriesList
+│    когато approval_required) · AdjustmentSection (Owner-only add form,
+│    signed amount + reason — WP-I, Q13) · MoneyCard (parts+labor+adjustments
+│    изчислени; „Фактура" бутон disabled с „Етап 4")
+├─ дясна колона: PartLines (CatalogItemPicker — избор от каталога, без
+│    свободен текст; state chips ordered→installed; add-form заменен с
+│    текст-обяснение извън Диагностика/Чака клиент/Чака части/Ремонт —
+│    WP-I, Q12a/Q13d) · LaborLines (същият picker; количество дробно за
+│    часови артикули) · AccessoriesList
 │    (returned checkbox; add-form hidden when the asset type's `accessories`
 │    flag is false — WP-H, Q16/Q16b) · PhotosGrid (stage tabs; upload; lightbox) ·
 │    ContactsList (+ добавяне: тип/посока/резюме; editable до края на деня)

@@ -28,6 +28,7 @@ KNOWN_EVENT_TYPES = frozenset({
     "order_unlocked", "warranty_return_opened", "order_archived",
     "mileage_override_confirmed",
     "part_added", "part_ordered", "part_received", "part_state_changed", "labor_added",
+    "adjustment_added",
     "task_created", "task_completed", "task_reopened",
     "attachment_added", "attachment_deleted",
     "note_or_contact_recorded",

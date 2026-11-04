@@ -27,27 +27,62 @@ beforeEach(() => {
 
 interface Line {
   id: string;
+  catalog_item_id: string | null;
   name: string;
+  code: string | null;
   qty: number;
   unit_cost: number;
   unit_price: number;
   state: string;
+  warranty_months?: number | null;
+}
+
+interface CatalogItem {
+  id: string;
+  kind: "part" | "labor";
+  name: string;
+  code: string | null;
+  unit: "pcs" | "hour";
+  sale_price: number;
+  unit_cost: number | null;
+  archived: boolean;
 }
 
 const DISPLAY = { name: "Дисплей Samsung A52", unit_price: 85, state: "ordered" };
 const BATTERY = { name: "Батерия", unit_price: 32, state: "installed" };
 
 function line(overrides: Partial<Line> & { id: string }): Line {
-  return { name: "Част", qty: 1, unit_cost: 0, unit_price: 0, state: "ordered", ...overrides };
+  return {
+    catalog_item_id: "cat-1", code: null, name: "Част", qty: 1, unit_cost: 0, unit_price: 0,
+    state: "ordered", ...overrides,
+  };
 }
 
-function renderSection(initialLines: Line[]) {
-  vi.mocked(api.get).mockResolvedValue(initialLines);
+function catalogItem(overrides: Partial<CatalogItem> & { id: string; name: string }): CatalogItem {
+  return {
+    kind: "part", code: null, unit: "pcs", sale_price: 0, unit_cost: null, archived: false,
+    ...overrides,
+  };
+}
+
+// One catalog item ("Дисплей Samsung A52", 85 €) — enough for every test
+// below that adds a new line via the picker.
+const DEFAULT_CATALOG = [catalogItem({ id: "cat-1", name: "Дисплей Samsung A52", sale_price: 85 })];
+
+function mockGet(lines: Line[], catalogItems: CatalogItem[] = DEFAULT_CATALOG) {
+  vi.mocked(api.get).mockImplementation((path: string) => {
+    if (path.startsWith("/catalog-items")) return Promise.resolve(catalogItems);
+    return Promise.resolve(lines);
+  });
+}
+
+function renderSection(initialLines: Line[], addLineBlockedHint: string | null = null) {
+  mockGet(initialLines);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
       <ToastProvider>
-        <PartLinesSection orderId="order-1" />
+        <PartLinesSection orderId="order-1" addLineBlockedHint={addLineBlockedHint} />
       </ToastProvider>
     </QueryClientProvider>,
   );
@@ -98,7 +133,7 @@ describe("PartLinesSection — status selector", () => {
     vi.mocked(api.patch).mockResolvedValue({});
     renderSection([line({ id: "p1", ...DISPLAY })]);
 
-    vi.mocked(api.get).mockResolvedValue([line({ id: "p1", ...DISPLAY, state: "installed" })]);
+    mockGet([line({ id: "p1", ...DISPLAY, state: "installed" })]);
 
     const select = await screen.findByRole("combobox", { name: /Дисплей Samsung A52/ });
     await user.selectOptions(select, "Монтирана");
@@ -160,20 +195,39 @@ describe("PartLinesSection — status selector", () => {
     // bound to the last known-good state from the server.
     expect(select).toHaveValue("ordered");
   });
+});
 
-  it("still supports adding a new part line", async () => {
+describe("PartLinesSection — WP-I (catalog-only add, Q12a/Q13d)", () => {
+  it("adds a line by picking a catalog item, no free-text name/price field anywhere", async () => {
     const user = userEvent.setup();
     vi.mocked(api.post).mockResolvedValue({});
     renderSection([]);
 
     await screen.findByText("Няма добавени части.");
-    await user.type(screen.getByPlaceholderText("Име на частта…"), "USB-C конектор");
-    await user.type(screen.getByPlaceholderText("€"), "18");
+    expect(screen.queryByPlaceholderText("Име на частта…")).not.toBeInTheDocument();
+
+    await screen.findByRole("option", { name: /Дисплей Samsung A52/ });
+    await user.selectOptions(screen.getByRole("combobox"), "cat-1");
     await user.click(screen.getByRole("button", { name: "Добави" }));
 
     expect(api.post).toHaveBeenCalledWith("/orders/order-1/part-lines", {
-      name: "USB-C конектор", unit_price: 18, warranty_months: null,
+      catalog_item_id: "cat-1", qty: 1, warranty_months: null,
     });
+  });
+
+  it("shows the blocked hint instead of the picker when the order's status disallows new lines", async () => {
+    renderSection([], "Редове могат да се добавят само в статус Диагностика…");
+
+    expect(await screen.findByText("Редове могат да се добавят само в статус Диагностика…"))
+      .toBeInTheDocument();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+  });
+
+  it("existing lines still render while the add-form is blocked", async () => {
+    renderSection([line({ id: "p1", ...DISPLAY })], "заблокирано");
+
+    expect(await screen.findByText(/Дисплей Samsung A52/)).toBeInTheDocument();
+    expect(screen.getByText("заблокирано")).toBeInTheDocument();
   });
 });
 
@@ -184,12 +238,12 @@ describe("PartLinesSection — Wave 4 PART WARRANTY (issue 05: months, not days)
   // months, chosen so the conversion is visibly non-trivial in assertions.
   function renderWithDaysDefault(partsDefaultDays: number | null) {
     mockUseAuth.mockReturnValue({ me: { warranty_defaults: { parts_days: partsDefaultDays } } });
-    vi.mocked(api.get).mockResolvedValue([]);
+    mockGet([]);
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     return render(
       <QueryClientProvider client={client}>
         <ToastProvider>
-          <PartLinesSection orderId="order-1" />
+          <PartLinesSection orderId="order-1" addLineBlockedHint={null} />
         </ToastProvider>
       </QueryClientProvider>,
     );
@@ -210,11 +264,12 @@ describe("PartLinesSection — Wave 4 PART WARRANTY (issue 05: months, not days)
     vi.mocked(api.post).mockResolvedValue({});
     renderWithDaysDefault(90);
 
-    await user.type(await screen.findByPlaceholderText("Име на частта…"), "Дисплей");
+    await screen.findByRole("option", { name: /Дисплей Samsung A52/ });
+    await user.selectOptions(screen.getByRole("combobox"), "cat-1");
     await user.click(screen.getByRole("button", { name: "Добави" }));
 
     expect(api.post).toHaveBeenCalledWith("/orders/order-1/part-lines", {
-      name: "Дисплей", unit_price: 0, warranty_months: 3,
+      catalog_item_id: "cat-1", qty: 1, warranty_months: 3,
     });
   });
 
@@ -226,11 +281,12 @@ describe("PartLinesSection — Wave 4 PART WARRANTY (issue 05: months, not days)
     const warrantyInput = await screen.findByLabelText("Гаранция (месеци)");
     await user.clear(warrantyInput);
     await user.type(warrantyInput, "0");
-    await user.type(screen.getByPlaceholderText("Име на частта…"), "Батерия");
+    await screen.findByRole("option", { name: /Дисплей Samsung A52/ });
+    await user.selectOptions(screen.getByRole("combobox"), "cat-1");
     await user.click(screen.getByRole("button", { name: "Добави" }));
 
     expect(api.post).toHaveBeenCalledWith("/orders/order-1/part-lines", {
-      name: "Батерия", unit_price: 0, warranty_months: 0,
+      catalog_item_id: "cat-1", qty: 1, warranty_months: 0,
     });
   });
 
@@ -242,7 +298,8 @@ describe("PartLinesSection — Wave 4 PART WARRANTY (issue 05: months, not days)
     const warrantyInput = await screen.findByLabelText("Гаранция (месеци)");
     await user.clear(warrantyInput);
     await user.type(warrantyInput, "12");
-    await user.type(screen.getByPlaceholderText("Име на частта…"), "Дисплей");
+    await screen.findByRole("option", { name: /Дисплей Samsung A52/ });
+    await user.selectOptions(screen.getByRole("combobox"), "cat-1");
     await user.click(screen.getByRole("button", { name: "Добави" }));
 
     expect(warrantyInput).toHaveValue(3);
@@ -250,17 +307,17 @@ describe("PartLinesSection — Wave 4 PART WARRANTY (issue 05: months, not days)
 
   it("renders each warranty state distinctly: none shown, explicit zero, singular and plural months", async () => {
     mockUseAuth.mockReturnValue({ me: { warranty_defaults: { parts_days: null } } });
-    vi.mocked(api.get).mockResolvedValue([
-      { id: "p1", name: "Част А", qty: 1, unit_cost: 0, unit_price: 10, state: "ordered", warranty_months: null },
-      { id: "p2", name: "Част Б", qty: 1, unit_cost: 0, unit_price: 10, state: "ordered", warranty_months: 0 },
-      { id: "p3", name: "Част В", qty: 1, unit_cost: 0, unit_price: 10, state: "ordered", warranty_months: 12 },
-      { id: "p4", name: "Част Г", qty: 1, unit_cost: 0, unit_price: 10, state: "ordered", warranty_months: 1 },
+    mockGet([
+      line({ id: "p1", name: "Част А", unit_price: 10, warranty_months: null }),
+      line({ id: "p2", name: "Част Б", unit_price: 10, warranty_months: 0 }),
+      line({ id: "p3", name: "Част В", unit_price: 10, warranty_months: 12 }),
+      line({ id: "p4", name: "Част Г", unit_price: 10, warranty_months: 1 }),
     ]);
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={client}>
         <ToastProvider>
-          <PartLinesSection orderId="order-1" />
+          <PartLinesSection orderId="order-1" addLineBlockedHint={null} />
         </ToastProvider>
       </QueryClientProvider>,
     );

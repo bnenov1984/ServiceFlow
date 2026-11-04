@@ -414,7 +414,9 @@ def _build_completion_snapshot(db: Session, ctx: TenantContext,
             "recommendation": diagnosis.recommendation,
         } if diagnosis is not None else None,
         "labor_lines": [
-            {"description": line.description, "qty": line.qty,
+            # qty is Decimal (order-workflow-revamp WP-I) — not JSON-
+            # serializable directly, same reason unit_price is already str().
+            {"description": line.description, "qty": str(line.qty),
              "unit_price": str(line.unit_price)}
             for line in _lines.list_labor_lines(db, ctx, order.id)
         ],

@@ -41,7 +41,7 @@ interface CustomerDetailOut {
 }
 
 const DEFAULT_ORDER_VALUE: OrderStepValue = {
-  complaint: "", accessories: [], photos: [], partLines: [],
+  complaint: "", accessories: [], photos: [],
   priority: "normal", technicianId: null, mileage: "",
   mileageConfirmedLower: false, mileageOverrideComment: "",
   deliveryMethod: "pickup", deliveryAddress: "",
@@ -140,27 +140,11 @@ export function IntakePage() {
         }
       }
 
-      // Issue 29: parts already known at intake, same best-effort pattern —
-      // a failed part line never loses the created order.
-      let partFailures = 0;
-      for (const line of orderValue.partLines) {
-        try {
-          await api.post(`/orders/${order.id}/part-lines`, {
-            name: line.name, unit_price: line.unitPrice,
-          });
-        } catch {
-          partFailures++;
-        }
-      }
-
       if (accessoryFailures > 0) {
         pushToast("error", t("intake.accessories_failed", { count: accessoryFailures }));
       }
       if (photoFailures > 0) {
         pushToast("error", t("intake.photos_failed", { count: photoFailures }));
-      }
-      if (partFailures > 0) {
-        pushToast("error", t("intake.parts_failed", { count: partFailures }));
       }
 
       void invalidateOrderViews(queryClient, order.id);

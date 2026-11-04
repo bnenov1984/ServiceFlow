@@ -1,5 +1,7 @@
-"""Diagnosis (in-place edit + approval persistence), part/labor lines, accessories —
-the ServiceOrder aggregate members (docs/01 §4), embedded in GET /orders/{id}."""
+"""Diagnosis (in-place edit + approval persistence), part/labor lines
+(order-workflow-revamp WP-I: catalog-only creation, status-gated, BR-3
+snapshot), order adjustments, accessories — the ServiceOrder aggregate
+members (docs/01 §4), embedded in GET /orders/{id}."""
 
 import os
 
@@ -35,6 +37,30 @@ def _order(client: TestClient, h: dict[str, str]) -> str:
     }).json()["id"])
 
 
+def _order_for_lines(client: TestClient, h: dict[str, str]) -> str:
+    """order-workflow-revamp WP-I (Q13d): a line can only be added once the
+    order has left „Приета" — every test below that adds a part/labor line
+    needs this instead of the bare `_order()`."""
+    oid = _order(client, h)
+    r = client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
+    assert r.status_code == 200, r.text
+    return oid
+
+
+def _catalog_item(client: TestClient, h: dict[str, str], *, kind: str = "part",
+                  name: str = "Дисплей", unit: str = "pcs", sale_price: str = "100.00",
+                  unit_cost: str | None = None, code: str | None = None) -> str:
+    body: dict[str, object] = {"kind": kind, "name": name, "unit": unit,
+                               "sale_price": sale_price}
+    if unit_cost is not None:
+        body["unit_cost"] = unit_cost
+    if code is not None:
+        body["code"] = code
+    r = client.post("/api/v1/catalog-items", headers=h, json=body)
+    assert r.status_code == 201, r.text
+    return str(r.json()["id"])
+
+
 def test_order_detail_embeds_empty_aggregate_by_default(client: TestClient) -> None:
     h = _login(client)
     oid = _order(client, h)
@@ -43,6 +69,7 @@ def test_order_detail_embeds_empty_aggregate_by_default(client: TestClient) -> N
     assert detail["part_lines"] == []
     assert detail["labor_lines"] == []
     assert detail["accessories"] == []
+    assert detail["adjustments"] == []
     assert detail["estimated_total"] == 0.0
 
 
@@ -112,13 +139,16 @@ def test_rejection_persists_to_diagnosis_record(client: TestClient) -> None:
 
 def test_part_lines_lifecycle_and_state_validation(client: TestClient) -> None:
     h = _login(client)
-    oid = _order(client, h)
+    oid = _order_for_lines(client, h)
+    item_id = _catalog_item(client, h, name="Дисплей", sale_price="100.00")
 
     r = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-        "name": "Дисплей", "qty": 1, "unit_cost": "60.00", "unit_price": "100.00",
+        "catalog_item_id": item_id, "qty": 1,
     })
-    assert r.status_code == 201
+    assert r.status_code == 201, r.text
     line_id = r.json()["id"]
+    assert r.json()["name"] == "Дисплей"
+    assert r.json()["catalog_item_id"] == item_id
     # Wave 2 Issue 33: "ordered" is the default active state for a newly
     # created part line (assigned/requested regardless of physical stock).
     assert r.json()["state"] == "ordered"
@@ -147,15 +177,105 @@ def test_part_lines_lifecycle_and_state_validation(client: TestClient) -> None:
 
 def test_labor_lines_feed_estimated_total(client: TestClient) -> None:
     h = _login(client)
-    oid = _order(client, h)
+    oid = _order_for_lines(client, h)
+    part_id = _catalog_item(client, h, kind="part", name="Дисплей", sale_price="100")
+    labor_id = _catalog_item(client, h, kind="labor", name="Смяна на дисплей", sale_price="50")
     client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
-               json={"name": "Дисплей", "qty": 1, "unit_cost": "60", "unit_price": "100"})
+               json={"catalog_item_id": part_id, "qty": 1})
     client.post(f"/api/v1/orders/{oid}/labor-lines", headers=h,
-               json={"description": "Смяна на дисплей", "qty": 1, "unit_price": "50"})
+               json={"catalog_item_id": labor_id, "qty": "1"})
 
     detail = client.get(f"/api/v1/orders/{oid}").json()
     assert detail["estimated_total"] == 150.0
     assert detail["labor_lines"][0]["description"] == "Смяна на дисплей"
+
+
+def test_labor_line_hourly_fractional_qty(client: TestClient) -> None:
+    """ADR-BOS-013 §8: an hourly catalog item (unit="hour") accepts a
+    fractional qty — 1.5 ч. × 40 lv/ч. = 60 lv."""
+    h = _login(client)
+    oid = _order_for_lines(client, h)
+    labor_id = _catalog_item(client, h, kind="labor", name="Труд (час)",
+                             unit="hour", sale_price="40.00")
+
+    r = client.post(f"/api/v1/orders/{oid}/labor-lines", headers=h,
+                    json={"catalog_item_id": labor_id, "qty": "1.5"})
+    assert r.status_code == 201, r.text
+    assert r.json()["qty"] == 1.5
+    assert r.json()["unit"] == "hour"
+
+    detail = client.get(f"/api/v1/orders/{oid}").json()
+    assert detail["estimated_total"] == 60.0
+
+
+def test_part_line_catalog_item_snapshotted_not_live(client: TestClient) -> None:
+    """BR-3: a later catalog price change must never retroactively change an
+    already-added line (ADR-BOS-013 §4)."""
+    h = _login(client)
+    oid = _order_for_lines(client, h)
+    item_id = _catalog_item(client, h, name="Дисплей", sale_price="100.00")
+
+    line = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
+                       json={"catalog_item_id": item_id, "qty": 1}).json()
+    assert line["unit_price"] == 100.0
+
+    patched = client.patch(f"/api/v1/catalog-items/{item_id}", headers=h,
+                           json={"sale_price": "150.00"})
+    assert patched.status_code == 200, patched.text
+
+    detail = client.get(f"/api/v1/orders/{oid}").json()
+    assert detail["part_lines"][0]["unit_price"] == 100.0
+
+
+def test_part_line_rejects_unknown_catalog_item(client: TestClient) -> None:
+    h = _login(client)
+    oid = _order_for_lines(client, h)
+    r = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
+                    json={"catalog_item_id": "01968f3e-0000-7000-8000-000000000000", "qty": 1})
+    assert r.status_code == 404
+    assert r.json()["detail"]["message_key"] == "errors.catalog.not_found"
+
+
+def test_part_line_rejects_wrong_kind_catalog_item(client: TestClient) -> None:
+    h = _login(client)
+    oid = _order_for_lines(client, h)
+    labor_id = _catalog_item(client, h, kind="labor", name="Труд")
+    r = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
+                    json={"catalog_item_id": labor_id, "qty": 1})
+    assert r.status_code == 400
+    assert r.json()["detail"]["message_key"] == "errors.catalog.wrong_kind"
+
+
+def test_part_line_rejects_archived_catalog_item(client: TestClient) -> None:
+    h = _login(client)
+    oid = _order_for_lines(client, h)
+    item_id = _catalog_item(client, h, name="Дисплей")
+    client.post(f"/api/v1/catalog-items/{item_id}/archive", headers=h)
+
+    r = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
+                    json={"catalog_item_id": item_id, "qty": 1})
+    assert r.status_code == 400
+    assert r.json()["detail"]["message_key"] == "errors.catalog.archived"
+
+
+def test_line_creation_blocked_outside_allowed_statuses(client: TestClient) -> None:
+    """order-workflow-revamp WP-I (Q13d): лини само в Диагностика/Чака
+    клиент/Чака части/Ремонт — never at intake ("received"), never "ready"."""
+    h = _login(client)
+    oid = _order(client, h)  # stays "received" — no transition
+    item_id = _catalog_item(client, h, name="Дисплей")
+
+    r = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
+                    json={"catalog_item_id": item_id, "qty": 1})
+    assert r.status_code == 400
+    assert r.json()["detail"]["message_key"] == "errors.orders.lines_not_allowed_in_status"
+
+    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
+    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "ready"})
+    r2 = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
+                     json={"catalog_item_id": item_id, "qty": 1})
+    assert r2.status_code == 400
+    assert r2.json()["detail"]["message_key"] == "errors.orders.lines_not_allowed_in_status"
 
 
 def test_accessories_returned_flag(client: TestClient) -> None:
@@ -214,9 +334,10 @@ def test_accessory_add_rejected_for_asset_type_with_accessories_disabled(
 
 def test_aggregate_members_are_tenant_isolated(client: TestClient) -> None:
     h_a = _login(client, "Сервиз А", "a@a.bg")
-    oid = _order(client, h_a)
+    oid = _order_for_lines(client, h_a)
+    item_id = _catalog_item(client, h_a, name="Дисплей", sale_price="1")
     line_id = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h_a, json={
-        "name": "Дисплей", "qty": 1, "unit_cost": "1", "unit_price": "1",
+        "catalog_item_id": item_id, "qty": 1,
     }).json()["id"]
     client.post("/api/v1/auth/logout", headers=h_a)
 
@@ -226,13 +347,17 @@ def test_aggregate_members_are_tenant_isolated(client: TestClient) -> None:
 
 
 # --- Wave 4 PART WARRANTY (issue 05, 2026-09-25: unit changed to months) --
+# order-workflow-revamp WP-J (not this slice) will revisit the warranty
+# model itself (#26) — these tests only adapt the fixture shape to catalog
+# items, the warranty behavior under test is unchanged.
 
 def test_part_line_warranty_months_persistence_and_validation(client: TestClient) -> None:
     h = _login(client)
-    oid = _order(client, h)
+    oid = _order_for_lines(client, h)
+    item_id = _catalog_item(client, h, name="Дисплей", sale_price="100.00")
 
     r = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-        "name": "Дисплей", "unit_price": "100.00", "warranty_months": 3,
+        "catalog_item_id": item_id, "warranty_months": 3,
     })
     assert r.status_code == 201, r.text
     assert r.json()["warranty_months"] == 3
@@ -243,8 +368,9 @@ def test_part_line_warranty_months_persistence_and_validation(client: TestClient
     assert r2.status_code == 200
     assert r2.json()["warranty_months"] == 0
 
+    battery_id = _catalog_item(client, h, name="Батерия", sale_price="1")
     r3 = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-        "name": "Батерия", "unit_price": "1", "warranty_months": -1,
+        "catalog_item_id": battery_id, "warranty_months": -1,
     })
     assert r3.status_code == 400
     assert r3.json()["message_key"] == "errors.validation"
@@ -252,9 +378,10 @@ def test_part_line_warranty_months_persistence_and_validation(client: TestClient
 
 def test_part_line_warranty_months_defaults_to_none(client: TestClient) -> None:
     h = _login(client)
-    oid = _order(client, h)
+    oid = _order_for_lines(client, h)
+    item_id = _catalog_item(client, h, name="Дисплей", sale_price="100.00")
     r = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
-                    json={"name": "Дисплей", "unit_price": "100.00"})
+                    json={"catalog_item_id": item_id})
     assert r.json()["warranty_months"] is None
 
 
@@ -262,17 +389,89 @@ def test_part_line_warranty_months_round_trips_whole_months(client: TestClient) 
     """The PO's own examples (12, 6 месеца) — 30-days/month must round-trip
     these exactly, not just approximately."""
     h = _login(client)
-    oid = _order(client, h)
+    oid = _order_for_lines(client, h)
+    display_id = _catalog_item(client, h, name="Дисплей", sale_price="100.00")
+    battery_id = _catalog_item(client, h, name="Батерия", sale_price="50.00")
 
     r = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-        "name": "Дисплей", "unit_price": "100.00", "warranty_months": 12,
+        "catalog_item_id": display_id, "warranty_months": 12,
     })
     assert r.json()["warranty_months"] == 12
 
     r2 = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-        "name": "Батерия", "unit_price": "50.00", "warranty_months": 6,
+        "catalog_item_id": battery_id, "warranty_months": 6,
     })
     assert r2.json()["warranty_months"] == 6
+
+
+# --- Order adjustments (WP-I, Q13, resolves docs/01 OQ-5) -------------------
+
+def test_adjustment_feeds_estimated_total(client: TestClient) -> None:
+    h = _login(client)
+    oid = _order_for_lines(client, h)
+    item_id = _catalog_item(client, h, name="Дисплей", sale_price="100.00")
+    client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
+               json={"catalog_item_id": item_id, "qty": 1})
+
+    r = client.post(f"/api/v1/orders/{oid}/adjustments", headers=h,
+                    json={"amount": "-20.00", "reason": "Лоялен клиент"})
+    assert r.status_code == 201, r.text
+    assert r.json()["amount"] == -20.0
+    assert r.json()["reason"] == "Лоялен клиент"
+
+    detail = client.get(f"/api/v1/orders/{oid}").json()
+    assert detail["estimated_total"] == 80.0
+    assert detail["adjustments"][0]["reason"] == "Лоялен клиент"
+
+    events = [e["event_type"] for e in client.get(f"/api/v1/orders/{oid}/timeline").json()]
+    assert "adjustment_added" in events
+
+
+def test_adjustment_requires_owner(client: TestClient) -> None:
+    from business_os.identity import security
+    from business_os.identity.models import User
+    from business_os.shared_kernel.db import open_session
+
+    h = _login(client)
+    oid = _order_for_lines(client, h)
+
+    for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
+        from sqlalchemy import select
+        owner = db.scalar(select(User).where(User.email == "a@a.bg"))
+        assert owner is not None
+        worker = User(company_id=owner.company_id, name="Иво", email="ivo@a.bg",
+                      password_hash=security.hash_secret("парола-123"))
+        db.add(worker)
+        db.commit()
+
+    h_worker = {"X-CSRF-Token": str(client.post(
+        "/api/v1/auth/login", json={"email": "ivo@a.bg", "password": "парола-123"},
+    ).json()["csrf_token"])}
+
+    r = client.post(f"/api/v1/orders/{oid}/adjustments", headers=h_worker,
+                    json={"amount": "-10.00", "reason": "x"})
+    assert r.status_code == 403
+
+
+def test_adjustment_requires_reason(client: TestClient) -> None:
+    h = _login(client)
+    oid = _order_for_lines(client, h)
+    r = client.post(f"/api/v1/orders/{oid}/adjustments", headers=h,
+                    json={"amount": "-10.00", "reason": ""})
+    assert r.status_code == 400
+    assert r.json()["message_key"] == "errors.validation"
+
+
+def test_adjustment_rejected_on_terminal_order(client: TestClient) -> None:
+    h = _login(client)
+    oid = _order_for_lines(client, h)
+    client.post(f"/api/v1/orders/{oid}/status", headers=h,
+               json={"to": "cancelled", "reason": "дубликат"})
+
+    r = client.post(f"/api/v1/orders/{oid}/adjustments", headers=h,
+                    json={"amount": "-10.00", "reason": "x"})
+    assert r.status_code == 409
+    assert r.json()["detail"]["message_key"] == "errors.orders.terminal_readonly"
 
 
 # --- Wave 4 TERMINAL ORDER IMMUTABILITY ----------------------------------
@@ -296,14 +495,15 @@ def test_terminal_order_rejects_diagnosis_mutation(client: TestClient) -> None:
 
 def test_terminal_order_rejects_part_line_add_and_patch(client: TestClient) -> None:
     h = _login(client)
-    oid = _order(client, h)
+    oid = _order_for_lines(client, h)
+    item_id = _catalog_item(client, h, name="Дисплей", sale_price="100.00")
     line_id = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-        "name": "Дисплей", "unit_price": "100.00",
+        "catalog_item_id": item_id,
     }).json()["id"]
     _cancel(client, h, oid)
 
     r_add = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
-                        json={"name": "Батерия", "unit_price": "1"})
+                        json={"catalog_item_id": item_id})
     assert r_add.status_code == 409
     assert r_add.json()["detail"]["message_key"] == "errors.orders.terminal_readonly"
 
@@ -315,19 +515,20 @@ def test_terminal_order_rejects_part_line_add_and_patch(client: TestClient) -> N
 
 def test_terminal_order_rejects_labor_line_add_and_patch(client: TestClient) -> None:
     h = _login(client)
-    oid = _order(client, h)
+    oid = _order_for_lines(client, h)
+    item_id = _catalog_item(client, h, kind="labor", name="Диагностика", sale_price="20")
     line_id = client.post(f"/api/v1/orders/{oid}/labor-lines", headers=h, json={
-        "description": "Диагностика", "unit_price": "20",
+        "catalog_item_id": item_id,
     }).json()["id"]
     _cancel(client, h, oid)
 
     r_add = client.post(f"/api/v1/orders/{oid}/labor-lines", headers=h,
-                        json={"description": "Ремонт", "unit_price": "50"})
+                        json={"catalog_item_id": item_id})
     assert r_add.status_code == 409
     assert r_add.json()["detail"]["message_key"] == "errors.orders.terminal_readonly"
 
     r_patch = client.patch(f"/api/v1/labor-lines/{line_id}", headers=h,
-                           json={"unit_price": "99"})
+                           json={"duration_min": 30})
     assert r_patch.status_code == 409
     assert r_patch.json()["detail"]["message_key"] == "errors.orders.terminal_readonly"
 
@@ -353,9 +554,10 @@ def test_terminal_order_read_endpoints_remain_unaffected(client: TestClient) -> 
     """Only mutation is blocked — GET must keep working exactly as before,
     otherwise the order page itself couldn't render a terminal order."""
     h = _login(client)
-    oid = _order(client, h)
+    oid = _order_for_lines(client, h)
+    item_id = _catalog_item(client, h, name="Дисплей", sale_price="100.00")
     client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
-               json={"name": "Дисплей", "unit_price": "100.00"})
+               json={"catalog_item_id": item_id})
     _cancel(client, h, oid)
 
     detail = client.get(f"/api/v1/orders/{oid}").json()
@@ -370,9 +572,10 @@ def test_documented_terminal_exceptions_are_unaffected_by_the_new_guard(
     balance, and archiving — those two are deliberately NOT routed through
     _reject_if_terminal and must keep working exactly as before."""
     h = _login(client)
-    oid = _order(client, h)
+    oid = _order_for_lines(client, h)
+    item_id = _catalog_item(client, h, name="Дисплей", sale_price="100.00")
     client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
-               json={"name": "Дисплей", "unit_price": "100.00"})
+               json={"catalog_item_id": item_id})
     _cancel(client, h, oid)
 
     payment = client.post(f"/api/v1/orders/{oid}/payments", headers=h,

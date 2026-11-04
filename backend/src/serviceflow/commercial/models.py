@@ -112,7 +112,11 @@ class InvoiceLine(Base):
     company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("companies.id"))
     invoice_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("invoices.id"), index=True)
     description: Mapped[str]
-    qty: Mapped[int] = mapped_column(default=1, server_default="1")
+    # Decimal, not int (order-workflow-revamp WP-I, ADR-BOS-013 §8): a line
+    # prefilled from an hourly LaborLine carries a fractional qty (1.5 ч.).
+    qty: Mapped[Decimal] = mapped_column(
+        Numeric(10, 2), default=Decimal("1"), server_default="1",
+    )
     unit_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0, server_default="0")
     vat_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), default=None)
     source: Mapped[str]

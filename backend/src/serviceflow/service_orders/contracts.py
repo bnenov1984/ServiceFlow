@@ -103,24 +103,27 @@ def get_order_total(db: Session, ctx: TenantContext, order_id: uuid.UUID) -> Dec
 
 @dataclass(frozen=True)
 class OrderLineSummary:
-    """One billable line, sourced from either a PartLine or a LaborLine —
-    the shape commercial needs to prefill an invoice draft (docs/09: "draft
-    prefilled from lines"), never the ORM rows themselves."""
+    """One billable line, sourced from a PartLine, a LaborLine, or an
+    OrderAdjustment — the shape commercial needs to prefill an invoice draft
+    (docs/09: "draft prefilled from lines"), never the ORM rows themselves."""
 
     description: str
-    qty: int
+    # Decimal, not int (order-workflow-revamp WP-I, ADR-BOS-013 §8): a
+    # LaborLine's qty may be fractional (hours); PartLine's own int qty and
+    # an adjustment's fixed qty=1 both fit the same Decimal shape.
+    qty: Decimal
     unit_price: Decimal
-    source: str  # "part" | "labor" — matches invoice_lines.source (docs/08)
+    source: str  # "part" | "labor" | "adjustment" — matches invoice_lines.source (docs/08)
 
 
 def get_order_lines(db: Session, ctx: TenantContext,
                     order_id: uuid.UUID) -> list[OrderLineSummary]:
-    """Part + labor lines, in the order they'd prefill an invoice draft.
-    Read-only snapshot at call time — the caller decides whether/when to
-    copy these into its own records; this function does not persist
-    anything."""
+    """Part + labor lines + adjustments, in the order they'd prefill an
+    invoice draft. Read-only snapshot at call time — the caller decides
+    whether/when to copy these into its own records; this function does not
+    persist anything."""
     parts = [
-        OrderLineSummary(description=p.name, qty=p.qty, unit_price=p.unit_price,
+        OrderLineSummary(description=p.name, qty=Decimal(p.qty), unit_price=p.unit_price,
                          source="part")
         for p in _lines.list_part_lines(db, ctx, order_id)
     ]
@@ -129,7 +132,15 @@ def get_order_lines(db: Session, ctx: TenantContext,
                          unit_price=line.unit_price, source="labor")
         for line in _lines.list_labor_lines(db, ctx, order_id)
     ]
-    return parts + labor
+    # An adjustment is its own one-line "unit price" (the signed amount
+    # itself) at qty=1 — mirrors how `order_totals` adds it in directly
+    # rather than qty×price.
+    adjustments = [
+        OrderLineSummary(description=a.reason, qty=Decimal("1"), unit_price=a.amount,
+                         source="adjustment")
+        for a in _lines.list_adjustments(db, ctx, order_id)
+    ]
+    return parts + labor + adjustments
 
 
 def get_next_invoice_number(db: Session, ctx: TenantContext) -> str:

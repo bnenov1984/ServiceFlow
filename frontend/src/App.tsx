@@ -19,6 +19,7 @@ import { OrderPage } from "./order/OrderPage";
 import { OrdersPage } from "./orders/OrdersPage";
 import { PsPage } from "./ps/PsPage";
 import { WorkflowTemplatesPage } from "./ps/WorkflowTemplatesPage";
+import { CatalogPage } from "./settings/CatalogPage";
 import { CompanyRequisitesPage } from "./settings/CompanyRequisitesPage";
 import { EmployeesPage } from "./settings/EmployeesPage";
 import { AppChooserPage, NoActiveAppsPage } from "./shell/AppChooser";
@@ -117,6 +118,7 @@ export function App() {
         <Route path="settings" element={<Navigate to="/settings/employees" replace />} />
         <Route path="settings/employees" element={<EmployeesPage />} />
         <Route path="settings/company" element={<CompanyRequisitesPage />} />
+        <Route path="settings/catalog" element={<CatalogPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
 

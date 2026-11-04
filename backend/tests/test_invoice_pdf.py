@@ -66,12 +66,23 @@ def _order(client: TestClient, h: dict[str, str], *,
     }).json()["id"])
 
 
+def _catalog_item(client: TestClient, h: dict[str, str], *, kind: str,
+                  name: str, sale_price: str) -> str:
+    r = client.post("/api/v1/catalog-items", headers=h,
+                    json={"kind": kind, "name": name, "unit": "pcs", "sale_price": sale_price})
+    assert r.status_code == 201, r.text
+    return str(r.json()["id"])
+
+
 def _order_with_lines(client: TestClient, h: dict[str, str], **kwargs: object) -> str:
     oid = _order(client, h, **kwargs)  # type: ignore[arg-type]
+    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
+    part_id = _catalog_item(client, h, kind="part", name="Дисплей", sale_price="100")
+    labor_id = _catalog_item(client, h, kind="labor", name="Смяна на дисплей", sale_price="50")
     client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
-               json={"name": "Дисплей", "qty": 1, "unit_cost": "60", "unit_price": "100"})
+               json={"catalog_item_id": part_id})
     client.post(f"/api/v1/orders/{oid}/labor-lines", headers=h,
-               json={"description": "Смяна на дисплей", "qty": 1, "unit_price": "50"})
+               json={"catalog_item_id": labor_id})
     return oid
 
 
@@ -432,9 +443,11 @@ def test_multiple_lines_all_rendered(client: TestClient) -> None:
     h = _login(client)
     _ready_seller(client, h)
     oid = _order(client, h)
+    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
     for i in range(5):
+        item_id = _catalog_item(client, h, kind="part", name=f"Част {i}", sale_price="10")
         client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
-                   json={"name": f"Част {i}", "qty": 1, "unit_cost": "1", "unit_price": "10"})
+                   json={"catalog_item_id": item_id})
     invoice_id = _draft(client, h, oid)
     _issue(client, h, invoice_id)
 
@@ -468,13 +481,15 @@ def test_long_description_wraps_without_failing(client: TestClient) -> None:
     h = _login(client)
     _ready_seller(client, h)
     oid = _order(client, h)
+    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
     long_description = (
         "Много дълго описание на извършена дейност, което трябва да се пренесе на "
         "няколко реда в таблицата на фактурата, без да преля извън страницата или "
         "да развали PDF документа по какъвто и да е начин."
     )
+    labor_id = _catalog_item(client, h, kind="labor", name=long_description, sale_price="10")
     client.post(f"/api/v1/orders/{oid}/labor-lines", headers=h,
-               json={"description": long_description, "qty": 1, "unit_price": "10"})
+               json={"catalog_item_id": labor_id})
     invoice_id = _draft(client, h, oid)
     _issue(client, h, invoice_id)
 
@@ -489,11 +504,13 @@ def test_large_invoice_paginates_without_corrupting_pdf(client: TestClient) -> N
     h = _login(client)
     _ready_seller(client, h)
     oid = _order(client, h)
+    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
     for i in range(60):
-        client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={
-            "name": f"Компонент номер {i:03d} за тестова страница", "qty": 1,
-            "unit_cost": "1", "unit_price": "5",
-        })
+        item_id = _catalog_item(client, h, kind="part",
+                                name=f"Компонент номер {i:03d} за тестова страница",
+                                sale_price="5")
+        client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
+                   json={"catalog_item_id": item_id})
     invoice_id = _draft(client, h, oid)
     _issue(client, h, invoice_id)
 

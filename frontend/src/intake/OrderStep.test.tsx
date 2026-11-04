@@ -32,7 +32,7 @@ vi.mock("../auth/AuthContext", () => ({
 }));
 
 const DEFAULT_VALUE: OrderStepValue = {
-  complaint: "", accessories: [], photos: [], partLines: [],
+  complaint: "", accessories: [], photos: [],
   priority: "normal", technicianId: null, mileage: "",
   mileageConfirmedLower: false, mileageOverrideComment: "",
   deliveryMethod: "pickup", deliveryAddress: "",
@@ -79,10 +79,10 @@ function renderStep(
       />
     </QueryClientProvider>,
   );
-  // The "Добави" accessible name is reused by AccessoriesChecklist's own add
-  // button on this same screen — scope every query to the parts section's
-  // own container so the two never collide.
-  return within(screen.getByText("Части (по избор)").closest("div") as HTMLElement);
+  // order-workflow-revamp WP-I removed the parts-at-intake section (Issue
+  // 29 reversed, Q13d) — AccessoriesChecklist's "Добави" is the only one on
+  // this screen now, so no scoping/disambiguation is needed any more.
+  return screen;
 }
 
 describe("OrderStep — Issue 25 (no promised date at intake)", () => {
@@ -161,7 +161,7 @@ describe("OrderStep — WP-D (Q9/Q10: mileage floor + Owner-only lower-reading b
         <Harness assetTypeCode="vehicle" />
       </QueryClientProvider>,
     );
-    return within(screen.getByText("Части (по избор)").closest("div") as HTMLElement);
+    return screen;
   }
 
   it("shows the previously recorded mileage as a hint", async () => {
@@ -325,66 +325,5 @@ describe("OrderStep — WP-E #10/#12 (camera/folder capture buttons, client thum
     await user.click(within(thumb.closest("li") as HTMLElement).getByLabelText("Затвори"));
 
     expect(screen.queryByAltText("photo.jpg")).not.toBeInTheDocument();
-  });
-});
-
-describe("OrderStep — Issue 29 (parts addable at intake)", () => {
-  it("shows the parts section with an empty-state message by default", () => {
-    const parts = renderStep();
-    expect(parts.getByText("Няма добавени части.")).toBeInTheDocument();
-  });
-
-  it("adding a part line shows it in the list with name and price", async () => {
-    const user = userEvent.setup();
-    const parts = renderStep();
-
-    await user.type(parts.getByPlaceholderText("Име на частта…"), "Дисплей");
-    await user.type(parts.getByPlaceholderText("€"), "85");
-    await user.click(parts.getByRole("button", { name: "Добави" }));
-
-    expect(parts.getByText("Дисплей · 85.00 €")).toBeInTheDocument();
-    expect(parts.queryByText("Няма добавени части.")).not.toBeInTheDocument();
-  });
-
-  it("clears the name/price inputs after adding", async () => {
-    const user = userEvent.setup();
-    const parts = renderStep();
-
-    await user.type(parts.getByPlaceholderText("Име на частта…"), "Дисплей");
-    await user.type(parts.getByPlaceholderText("€"), "85");
-    await user.click(parts.getByRole("button", { name: "Добави" }));
-
-    expect(parts.getByPlaceholderText("Име на частта…")).toHaveValue("");
-    expect(parts.getByPlaceholderText("€")).toHaveValue(null);
-  });
-
-  it("added part lines render pre-seeded, and can be removed", async () => {
-    const user = userEvent.setup();
-    const parts = renderStep({ ...DEFAULT_VALUE, partLines: [{ name: "Батерия", unitPrice: 32 }] });
-
-    expect(parts.getByText("Батерия · 32.00 €")).toBeInTheDocument();
-    await user.click(parts.getByLabelText("Затвори"));
-    expect(parts.queryByText("Батерия · 32.00 €")).not.toBeInTheDocument();
-    expect(parts.getByText("Няма добавени части.")).toBeInTheDocument();
-  });
-
-  it("does not add an empty-name part line", async () => {
-    const user = userEvent.setup();
-    const parts = renderStep();
-
-    await user.type(parts.getByPlaceholderText("€"), "10");
-    await user.click(parts.getByRole("button", { name: "Добави" }));
-
-    expect(parts.getByText("Няма добавени части.")).toBeInTheDocument();
-  });
-
-  it("defaults an omitted price to 0", async () => {
-    const user = userEvent.setup();
-    const parts = renderStep();
-
-    await user.type(parts.getByPlaceholderText("Име на частта…"), "Винт");
-    await user.click(parts.getByRole("button", { name: "Добави" }));
-
-    expect(parts.getByText("Винт · 0.00 €")).toBeInTheDocument();
   });
 });

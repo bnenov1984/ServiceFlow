@@ -2,7 +2,12 @@
  * cycling) - Wave 2 Issue 33 simplified V1 model: ordered/installed only, no
  * server-side transition restriction (docs/02 §7 — no inventory, states are
  * presentation only). "ordered" means assigned/requested for this order,
- * regardless of whether it's physically in stock yet. */
+ * regardless of whether it's physically in stock yet.
+ *
+ * order-workflow-revamp WP-I (Q12a/Q13d): a line is added only by picking a
+ * catalog item (CatalogItemPicker) — no free-text name/price field, and only
+ * while the order is in one of the allowed statuses (`addLineBlockedHint`,
+ * passed in by OrderPage from the order's own status_code). */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -11,10 +16,13 @@ import { useToast } from "../components/Toast";
 import { t } from "../i18n/bg";
 import { ApiError, api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
+import { CatalogItemPicker } from "./CatalogItemPicker";
 
 interface PartLineOut {
   id: string;
+  catalog_item_id: string | null;
   name: string;
+  code: string | null;
   qty: number;
   unit_cost: number;
   unit_price: number;
@@ -43,7 +51,17 @@ const STATE_LABEL: Record<string, Parameters<typeof t>[0]> = {
   installed: "order.part_state_installed",
 };
 
-export function PartLinesSection({ orderId }: { orderId: string }) {
+export function PartLinesSection({
+  orderId,
+  addLineBlockedHint,
+}: {
+  orderId: string;
+  // order-workflow-revamp WP-I (Q13d): non-null while the order's status
+  // doesn't allow new lines — shown in place of the picker, never a blanket
+  // hidden section (OrderPage still renders this card for its existing
+  // lines; see CatalogItemPicker).
+  addLineBlockedHint: string | null;
+}) {
   const { me } = useAuth();
   // Wave 4 Issue 38: prefill new parts from the company default — never
   // forced, the field stays a plain editable number input either way.
@@ -55,8 +73,6 @@ export function PartLinesSection({ orderId }: { orderId: string }) {
   const partsDefaultMonths = partsDefaultDays !== null ? Math.round(partsDefaultDays / 30) : null;
   const defaultInput = partsDefaultMonths !== null ? String(partsDefaultMonths) : "";
 
-  const [name, setName] = useState("");
-  const [price, setPrice] = useState("");
   const [warrantyMonths, setWarrantyMonths] = useState(defaultInput);
   // Tracked per line-id so one row's in-flight mutation never disables or
   // otherwise affects any other row's selector.
@@ -83,13 +99,12 @@ export function PartLinesSection({ orderId }: { orderId: string }) {
       queryClient.invalidateQueries({ queryKey: queryKeys.order(orderId) }),
     ]);
 
-  const addLine = async () => {
-    if (!name.trim()) return;
+  const addLine = async (catalogItemId: string, qty: string) => {
     await api.post(`/orders/${orderId}/part-lines`, {
-      name: name.trim(), unit_price: price.trim() ? Number(price) : 0,
+      catalog_item_id: catalogItemId, qty: qty.trim() ? Number(qty) : 1,
       warranty_months: warrantyMonths.trim() ? Number(warrantyMonths) : null,
     });
-    setName(""); setPrice(""); setWarrantyMonths(defaultInput);
+    setWarrantyMonths(defaultInput);
     await invalidate();
   };
 
@@ -144,31 +159,17 @@ export function PartLinesSection({ orderId }: { orderId: string }) {
         ))}
         {lines?.length === 0 && <p className="text-sm text-slate-400">{t("order.part_lines_none")}</p>}
       </ul>
-      <div className="flex gap-2">
-        <input
-          type="text" value={name} onChange={(e) => setName(e.target.value)}
-          placeholder={t("order.part_name_placeholder")}
-          className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-h-touch"
-        />
-        <input
-          type="number" min={0} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)}
-          placeholder="€" className="w-20 rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-h-touch"
-        />
+      {addLineBlockedHint === null && (
         <input
           type="number" min={0} value={warrantyMonths}
           onChange={(e) => setWarrantyMonths(e.target.value)}
           aria-label={t("order.part_warranty_months_label")}
           title={t("order.part_warranty_months_label")}
           placeholder={t("order.part_warranty_months_label")}
-          className="w-24 rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-h-touch"
+          className="mb-2 w-32 rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-h-touch"
         />
-        <button
-          type="button" onClick={() => void addLine()}
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 min-h-touch"
-        >
-          {t("intake.accessory_add")}
-        </button>
-      </div>
+      )}
+      <CatalogItemPicker kind="part" disabledHint={addLineBlockedHint} onAdd={addLine} />
     </div>
   );
 }

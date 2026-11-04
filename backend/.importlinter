@@ -33,6 +33,7 @@ source_modules =
     serviceflow.contacts
     serviceflow.search
     serviceflow.tasks
+    serviceflow.catalog
     serviceflow.dashboard
 forbidden_modules =
     business_os.platform
@@ -56,6 +57,7 @@ forbidden_modules =
     serviceflow.contacts
     serviceflow.search
     serviceflow.tasks
+    serviceflow.catalog
     serviceflow.dashboard
     serviceflow.main
     serviceflow.config
@@ -85,6 +87,7 @@ forbidden_modules =
     serviceflow.contacts
     serviceflow.search
     serviceflow.tasks
+    serviceflow.catalog
     serviceflow.dashboard
     professional_services
 
@@ -130,6 +133,7 @@ forbidden_modules =
     serviceflow.contacts
     serviceflow.search
     serviceflow.tasks
+    serviceflow.catalog
     serviceflow.dashboard
 
 ; Invoice decision checkpoint, boundary repair (docs/business-os/04 rule R4 —
@@ -212,6 +216,7 @@ forbidden_modules =
     serviceflow.contacts
     serviceflow.search
     serviceflow.tasks
+    serviceflow.catalog
     serviceflow.dashboard
     professional_services
 

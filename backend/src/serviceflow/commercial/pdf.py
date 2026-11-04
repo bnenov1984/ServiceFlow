@@ -56,7 +56,9 @@ _CURRENCY_SYMBOLS = {"EUR": "€"}
 @dataclass(frozen=True)
 class InvoicePdfLine:
     description: str
-    qty: int
+    # Decimal, not int (order-workflow-revamp WP-I): hourly labor carries a
+    # fractional qty (1.5 ч.).
+    qty: Decimal
     unit_price: Decimal
 
 
@@ -145,6 +147,13 @@ def _money(amount: Decimal, currency: str) -> str:
     return f"{amount:.2f} {symbol}"
 
 
+def _qty_label(qty: Decimal) -> str:
+    """A whole qty (the overwhelming majority — parts, fixed-price labor)
+    prints without decimals ("2"); a fractional one (hourly labor, 1.5 ч.)
+    keeps up to 2 (ADR-BOS-013 §8)."""
+    return str(qty.to_integral_value()) if qty == qty.to_integral_value() else f"{qty:.2f}"
+
+
 def _pdf_with_fonts() -> FPDF:
     pdf = FPDF(format="A4", unit="mm")
     pdf.add_font("DejaVu", "", str(_FONT_REGULAR))
@@ -224,7 +233,7 @@ def generate_invoice_pdf(data: InvoicePdfData) -> bytes:
             row = table.row()
             row.cell(str(i))
             row.cell(line.description)
-            row.cell(str(line.qty))
+            row.cell(_qty_label(line.qty))
             row.cell(_money(line.unit_price, data.currency))
             row.cell(_money(line.qty * line.unit_price, data.currency))
 

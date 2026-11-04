@@ -12,6 +12,7 @@ import { ApiError, api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
 import { isTerminal } from "../lib/statusMatrix";
 import { AccessoriesListSection } from "./AccessoriesListSection";
+import { AdjustmentSection } from "./AdjustmentSection";
 import { AssetCard } from "./AssetCard";
 import { ComplaintBlock } from "./ComplaintBlock";
 import { ContactsSection } from "./ContactsSection";
@@ -62,6 +63,17 @@ interface CustomerOut {
   name: string;
   phone: string;
 }
+
+// order-workflow-revamp WP-I (Q13d): mirrors the backend's
+// `statuses.LINE_CREATION_STATUSES` — a part/labor line may only be added
+// while the order is in one of these. Duplicated here (not generated, unlike
+// the transition matrix) because it's four static strings, not a decision
+// rule worth a codegen step for — same "documented duplicate simpler than
+// coupling" precedent the rest of this codebase already uses for small,
+// stable constants shared across the API boundary.
+const LINE_CREATION_STATUSES = new Set([
+  "diagnostics", "waiting_customer", "waiting_parts", "repair",
+]);
 
 interface AssetOut {
   id: string;
@@ -147,6 +159,9 @@ export function OrderPage() {
   // only, and every other section (accessories, photos, invoice,
   // timeline) keeps working exactly as it does for any other open order.
   const isReady = order.status_code === "ready";
+  // order-workflow-revamp WP-I (Q13d) — see LINE_CREATION_STATUSES above.
+  const addLineBlockedHint = LINE_CREATION_STATUSES.has(order.status_code)
+    ? null : t("order.add_line_blocked_hint");
 
   return (
     <div className="flex flex-col gap-4">
@@ -197,8 +212,8 @@ export function OrderPage() {
         <div className="flex flex-col gap-4">
           {!isReady && (
             <>
-              <PartLinesSection orderId={order.id} />
-              <LaborLinesSection orderId={order.id} />
+              <PartLinesSection orderId={order.id} addLineBlockedHint={addLineBlockedHint} />
+              <LaborLinesSection orderId={order.id} addLineBlockedHint={addLineBlockedHint} />
             </>
           )}
           <AccessoriesListSection orderId={order.id} accessoriesEnabled={asset?.accessories ?? true} />
@@ -212,11 +227,14 @@ export function OrderPage() {
               between Parts/Labor and them. Ready orders skip this entirely
               (ReadySummary above already shows the same three figures). */}
           {!isReady && (
-            <MoneyCard
-              estimatedTotal={order.estimated_total}
-              paidAmount={order.paid_amount}
-              balance={order.balance}
-            />
+            <>
+              <AdjustmentSection orderId={order.id} />
+              <MoneyCard
+                estimatedTotal={order.estimated_total}
+                paidAmount={order.paid_amount}
+                balance={order.balance}
+              />
+            </>
           )}
         </div>
       </div>

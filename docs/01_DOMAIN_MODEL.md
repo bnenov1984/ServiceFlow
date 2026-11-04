@@ -17,9 +17,10 @@ customer's asset?"**
 │                        SERVICE OPERATIONS (core)                    │
 │                                                                     │
 │   ServiceOrder ──┬── Diagnosis (0..1)                               │
-│    (center of    ├── PartLine (0..*)                                │
-│                  ├── LaborLine (0..*)                               │
+│    (center of    ├── PartLine (0..*) ─┐                             │
+│                  ├── LaborLine (0..*) ┤→ CatalogItem (0..1, snapshot)│
 │                  ├── AccessoryItem (0..*)                           │
+│                  ├── OrderAdjustment (0..*)                         │
 │                  ├── Attachment (0..*)                              │
 │                  ├── ContactRecord (0..*)                           │
 │                  └── TimelineEvent (append-only, 1..*)              │
@@ -30,6 +31,7 @@ customer's asset?"**
 │  Customer ── Asset  │              │  Invoice ── InvoiceLine         │
 │      │        │     │              │  Payment                        │
 │      └── AssetType  │              │  DocumentSequence               │
+│  CatalogItem (WP-I) │              │                                 │
 └─────────────────────┘              └─────────────────────────────────┘
 ┌─────────────────────┐              ┌─────────────────────────────────┐
 │ IDENTITY & ACCESS   │              │ PLATFORM SERVICES (product,     │
@@ -39,7 +41,7 @@ customer's asset?"**
 ```
 
 Four business areas + one platform area. Nothing bypasses the Service Order: parts,
-labor, tasks, photos, communication and invoices all attach to it.
+labor, photos, communication and invoices all attach to it.
 
 ## 2. Entity Definitions
 
@@ -153,19 +155,54 @@ historical task-created/task-completed timeline entries are left as-is.
 ### PartLine
 - **Purpose:** a physical component used in this repair. Lightweight by design — no
   inventory, no reservations in V1 (discovery S5).
-- **Attributes:** name (free text), quantity, unit cost (what we pay), unit price
-  (what we charge), state: needed → ordered → received → installed (or removed).
-- **Lifecycle:** added during diagnosis/repair; states drive the Чака части flow.
-- **Invariants:** belongs to exactly one order. Money totals feed the order and the
-  invoice draft.
+- **Attributes:** catalog item reference (0..1 — NULL on every line added before
+  WP-I below, which stays that way forever), **snapshot** of name/code/unit cost/
+  unit price taken from the catalog at add-time, quantity, state: **ordered →
+  installed** *(corrected 05.11.2026 — this had drifted to the pre-Issue-33 4-state
+  list; Wave 2 Issue 33 simplified it to these two in migration 0022, unchanged by
+  WP-I)*, warranty flag (months; unchanged by WP-I — see WP-J, not yet applied).
+- **Lifecycle:** added only while the order is in Диагностика, Чака клиент, Чака
+  части or Ремонт — never at intake, never once Готова *(amended 05.11.2026 —
+  order-workflow-revamp WP-I, Q13d, reverses Wave 2 Issue 29's "addable at
+  intake")*.
+- **Invariants:** belongs to exactly one order. **Created only from a catalog
+  item — no free-typed name or price, for any role** *(amended 05.11.2026 —
+  WP-I, Q12a, ADR-BOS-013)*; a later catalog price change never alters an
+  already-added line (BR-3). Money totals feed the order and the invoice draft.
 
 ### LaborLine
-- **Purpose:** work performed, priced per operation (fixed-price model — discovery
-  §5.5; time-based labor is a future option, the model reserves an optional
-  informational duration field).
-- **Attributes:** description, quantity (default 1), unit price, optional duration
-  info, performed by (0..1).
-- **Invariants:** belongs to exactly one order; feeds order totals and invoice draft.
+- **Purpose:** work performed, priced **from the catalog** — per operation (unit
+  бр.) or per hour (unit час) *(amended 05.11.2026 — WP-I, Q12d, supersedes the
+  25.09.2026 fixed-price-only framing)*.
+- **Attributes:** catalog item reference (0..1), snapshot of description/code/
+  unit/unit price/unit cost taken from the catalog at add-time, quantity
+  (decimal — fractional for an hourly item, e.g. 1.5 ч.), optional duration info
+  (unchanged — never a catalog field), performed by (0..1).
+- **Lifecycle:** same allowed statuses and intake exclusion as PartLine above
+  (Q13d).
+- **Invariants:** belongs to exactly one order; created only from a catalog item,
+  same discipline as PartLine (Q12a); feeds order totals and invoice draft; a
+  later catalog price change never alters an already-added line (BR-3).
+
+### CatalogItem *(new — order-workflow-revamp WP-I, Q12, ADR-BOS-013)*
+- **Purpose:** one entry of the shop's own price list — what PartLine/LaborLine
+  are created from. Flat, no categories/variants.
+- **Attributes:** kind (част/труд), name, code (optional, unique per company when
+  set), unit (бр./час), sale price (net), unit cost (optional, Owner-only
+  visibility), archived flag.
+- **Lifecycle:** Owner creates/edits/imports (CSV/Excel, dry-run preview)/
+  archives; **never deleted** — existing lines keep a reference to it.
+- **Owner module:** `serviceflow.catalog` (not part of the ServiceOrder
+  aggregate — referenced and snapshotted, never contained).
+
+### OrderAdjustment *(new — order-workflow-revamp WP-I, Q13, resolves OQ-5 below)*
+- **Purpose:** the only way to correct an order's price (e.g. "направи го 50 €").
+- **Attributes:** signed amount, mandatory reason, created by (Owner).
+- **Lifecycle:** append-only — a wrong adjustment is corrected by adding an
+  offsetting one, never edited or deleted.
+- **Invariants:** Owner-only; feeds derived totals (BR-3); becomes a
+  `source="adjustment"` line on an invoice draft created from this order;
+  timeline-logged.
 
 ### AccessoryItem
 - **Purpose:** what arrived with the asset at intake (charger, SIM, case, keys…) —
@@ -290,9 +327,11 @@ Notification, InventoryItem, Supplier — extension points only; no V1 behavior.
 ```
 Company 1──* User
 Company 1──* Customer 1──* Asset *──1 AssetType
+Company 1──* CatalogItem                        (order-workflow-revamp WP-I)
 Customer 1──* ServiceOrder *──1 Asset          (order's asset belongs to its customer)
 ServiceOrder 1──0..1 Diagnosis
-ServiceOrder 1──* PartLine | LaborLine | AccessoryItem | Attachment
+ServiceOrder 1──* PartLine | LaborLine | AccessoryItem | Attachment | OrderAdjustment
+PartLine | LaborLine *──0..1 CatalogItem        (snapshotted at add-time, BR-3)
 ServiceOrder 1──* TimelineEvent | ContactRecord(optional link)
 ServiceOrder 1──* Payment *──0..1 Invoice
 ServiceOrder 1──* Invoice (typically 0..1 active; annulled predecessors retained)
@@ -309,7 +348,8 @@ aggregates are proposed, not assumed).
 
 | Aggregate root | Contains | Why this boundary |
 |---|---|---|
-| **ServiceOrder** | Diagnosis, PartLines, LaborLines, AccessoryItems, status | These change together under one business action (estimate, parts arrival, repair) and share invariants (totals, status rules). Single-user-at-a-time editing per order is realistic for 1–20 person shops; optimistic concurrency with clear conflict messages. |
+| **ServiceOrder** | Diagnosis, PartLines, LaborLines, AccessoryItems, OrderAdjustments, status | These change together under one business action (estimate, parts arrival, repair, price correction) and share invariants (totals, status rules). Single-user-at-a-time editing per order is realistic for 1–20 person shops; optimistic concurrency with clear conflict messages. |
+| **CatalogItem** *(WP-I)* | — | Referenced, not contained — PartLine/LaborLine snapshot its fields at add-time (BR-3) rather than live-joining it; a later catalog edit must never retroactively change an existing order. |
 | **Invoice** | InvoiceLines | Immutability after issue + gapless numbering demand a hard boundary; issue is its own transaction against DocumentSequence. |
 | **Customer** | — (Assets referenced, not contained) | Assets have independent lifecycles and are referenced by orders; containing them would drag order history into customer edits. |
 | **Asset** | field values | Simple entity-as-aggregate. |
@@ -325,7 +365,8 @@ while another uploads a photo on the same order.
 
 OrderCreated · DiagnosisRecorded · DiagnosisUpdated · EstimateApprovalRequested ·
 EstimateApproved · EstimateRejected · StatusChanged · TechnicianAssigned ·
-PartAdded / PartOrdered / PartReceived ·
+PartAdded / PartOrdered / PartReceived · LaborAdded ·
+OrderAdjustmentAdded *(new 05.11.2026 — WP-I, Q13)* ·
 TaskCreated / TaskCompleted / TaskReopened (retired WP-H 04.11.2026 — no longer
 emitted, historical timeline entries only) ·
 NoteOrContactRecorded · AttachmentAdded · OrderReady · OrderDelivered ·
@@ -388,7 +429,9 @@ notification surface (V1.5+) without implementing it.
 - OQ-4 Asset ownership transfer (customer sold the phone): keep as simple owner edit
   with timeline note — accept?
 - OQ-5 Order-level discount/adjustment line: single signed amount with reason —
-  accept? (Keeps BR-3 while matching counter reality.)
+  accept? (Keeps BR-3 while matching counter reality.) **Implemented
+  05.11.2026** (order-workflow-revamp WP-I, Q13) as `OrderAdjustment` — see
+  its own entity section above.
 
 **Stop.** Awaiting review together with 02_BUSINESS_WORKFLOW.md before Architecture
 Discovery (Part 6).

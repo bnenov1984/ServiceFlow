@@ -122,7 +122,9 @@ def add_payment(order_id: uuid.UUID, body: PaymentIn, db: TenantDbDep,
 
 class InvoiceLineIn(BaseModel):
     description: str = Field(min_length=1, max_length=500)
-    qty: int = Field(default=1, ge=1)
+    # Decimal, not int (order-workflow-revamp WP-I, ADR-BOS-013 §8): a manual
+    # line may itself need a fractional qty (hours), same as a prefilled one.
+    qty: Decimal = Field(default=Decimal("1"), gt=0)
     unit_price: Decimal = Field(default=Decimal("0"), ge=0)
     vat_rate: Decimal | None = Field(default=None, ge=0)
     source: str = Field(pattern="^(labor|part|manual|adjustment)$")
@@ -131,7 +133,7 @@ class InvoiceLineIn(BaseModel):
 class InvoiceLineOut(BaseModel):
     id: uuid.UUID
     description: str
-    qty: int
+    qty: float
     unit_price: float
     vat_rate: float | None
     source: str
@@ -139,7 +141,7 @@ class InvoiceLineOut(BaseModel):
     @staticmethod
     def of(line: InvoiceLine) -> "InvoiceLineOut":
         return InvoiceLineOut(
-            id=line.id, description=line.description, qty=line.qty,
+            id=line.id, description=line.description, qty=float(line.qty),
             unit_price=float(line.unit_price),
             vat_rate=float(line.vat_rate) if line.vat_rate is not None else None,
             source=line.source,

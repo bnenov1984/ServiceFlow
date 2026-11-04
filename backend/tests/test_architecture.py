@@ -28,6 +28,7 @@ from professional_services.catalog import models as _ps_catalog_models  # noqa: 
 from professional_services.clients import models as _ps_clients_models  # noqa: F401
 from serviceflow.assets import models as _assets_models  # noqa: F401
 from serviceflow.attachments import models as _attachments_models  # noqa: F401
+from serviceflow.catalog import models as _catalog_models  # noqa: F401
 from serviceflow.commercial import models as _commercial_models  # noqa: F401
 from serviceflow.contacts import models as _contacts_models  # noqa: F401
 from serviceflow.customers import models as _customers_models  # noqa: F401
@@ -65,6 +66,8 @@ TABLE_OWNERS = {
     "part_lines": "serviceflow.service_orders",
     "labor_lines": "serviceflow.service_orders",
     "accessory_items": "serviceflow.service_orders",
+    "order_adjustments": "serviceflow.service_orders",
+    "catalog_items": "serviceflow.catalog",
     "payments": "serviceflow.commercial",
     "invoices": "serviceflow.commercial",
     "invoice_lines": "serviceflow.commercial",

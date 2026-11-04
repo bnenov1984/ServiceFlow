@@ -36,10 +36,20 @@ def _order(client: TestClient, h: dict[str, str]) -> str:
     }).json()["id"])
 
 
+def _catalog_item(client: TestClient, h: dict[str, str], *, kind: str = "labor",
+                  name: str = "Труд", sale_price: str = "100.00") -> str:
+    r = client.post("/api/v1/catalog-items", headers=h,
+                    json={"kind": kind, "name": name, "unit": "pcs", "sale_price": sale_price})
+    assert r.status_code == 201, r.text
+    return str(r.json()["id"])
+
+
 def _order_with_total(client: TestClient, h: dict[str, str], total: str) -> str:
     oid = _order(client, h)
+    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
+    item_id = _catalog_item(client, h, sale_price=total)
     client.post(f"/api/v1/orders/{oid}/labor-lines", headers=h,
-               json={"description": "Труд", "qty": 1, "unit_price": total})
+               json={"catalog_item_id": item_id})
     return oid
 
 
@@ -128,10 +138,13 @@ def test_balance_reuses_canonical_order_total(client: TestClient) -> None:
     estimated_total (lines.order_totals) — not a second money formula."""
     h = _login(client)
     oid = _order(client, h)
+    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
+    part_id = _catalog_item(client, h, kind="part", name="Дисплей", sale_price="100")
+    labor_id = _catalog_item(client, h, kind="labor", name="Труд", sale_price="50")
     client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
-               json={"name": "Дисплей", "qty": 1, "unit_cost": "60", "unit_price": "100"})
+               json={"catalog_item_id": part_id})
     client.post(f"/api/v1/orders/{oid}/labor-lines", headers=h,
-               json={"description": "Труд", "qty": 1, "unit_price": "50"})
+               json={"catalog_item_id": labor_id})
     client.post(f"/api/v1/orders/{oid}/payments", headers=h,
                json={"amount": "40.00", "method": "cash"})
 

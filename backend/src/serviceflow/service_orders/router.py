@@ -16,10 +16,13 @@ from business_os.identity.deps import (
     TenantDbDep,
     TenantDep,
     require_csrf,
+    require_owner,
     require_repairflow_active,
     require_subscription_ok,
 )
 from serviceflow.assets import service as assets_service
+from serviceflow.catalog import service as catalog_service
+from serviceflow.catalog.models import CatalogItem
 from serviceflow.customers import service as customers_service
 from serviceflow.service_orders import contracts as orders_contracts
 from serviceflow.service_orders import lines, protocol, service, statuses
@@ -28,6 +31,7 @@ from serviceflow.service_orders.models import (
     AccessoryItem,
     Diagnosis,
     LaborLine,
+    OrderAdjustment,
     PartLine,
     ServiceOrder,
 )
@@ -202,7 +206,9 @@ def _months_to_days(months: int | None) -> int | None:
 
 class PartLineOut(BaseModel):
     id: uuid.UUID
+    catalog_item_id: uuid.UUID | None
     name: str
+    code: str | None
     qty: int
     unit_cost: float
     unit_price: float
@@ -212,55 +218,68 @@ class PartLineOut(BaseModel):
 
     @staticmethod
     def of(p: PartLine) -> "PartLineOut":
-        return PartLineOut(id=p.id, name=p.name, qty=p.qty,
-                           unit_cost=float(p.unit_cost), unit_price=float(p.unit_price),
+        return PartLineOut(id=p.id, catalog_item_id=p.catalog_item_id, name=p.name, code=p.code,
+                           qty=p.qty, unit_cost=float(p.unit_cost), unit_price=float(p.unit_price),
                            state=p.state, warranty_months=_days_to_months(p.warranty_days))
 
 
 class PartLineIn(BaseModel):
-    name: str = Field(min_length=1, max_length=300)
+    """order-workflow-revamp WP-I (Q12a): a line is created only from a
+    catalog item — no name/price field exists here at all. `catalog_item_id`
+    is resolved against this order's company and `kind="part"` by the
+    `add_part_line` endpoint below, which snapshots the item's current
+    name/code/price onto the new row."""
+
+    catalog_item_id: uuid.UUID
     qty: int = Field(default=1, ge=1)
-    unit_cost: Decimal = Field(default=Decimal("0"), ge=0)
-    unit_price: Decimal = Field(default=Decimal("0"), ge=0)
     warranty_months: int | None = Field(default=None, ge=0, le=120)
 
 
 class PartLinePatch(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=300)
+    """No name/price field (Q12a: "no price/name field on order-line create
+    or edit, for any role") — only what was never a catalog concern."""
+
     qty: int | None = Field(default=None, ge=1)
     warranty_months: int | None = Field(default=None, ge=0, le=120)
-    unit_cost: Decimal | None = Field(default=None, ge=0)
-    unit_price: Decimal | None = Field(default=None, ge=0)
     state: str | None = None
 
 
 class LaborLineOut(BaseModel):
     id: uuid.UUID
+    catalog_item_id: uuid.UUID | None
     description: str
-    qty: int
+    code: str | None
+    unit: str
+    qty: float
     unit_price: float
     duration_min: int | None
     performed_by: uuid.UUID | None
 
     @staticmethod
     def of(line: LaborLine) -> "LaborLineOut":
-        return LaborLineOut(id=line.id, description=line.description, qty=line.qty,
-                            unit_price=float(line.unit_price),
-                            duration_min=line.duration_min, performed_by=line.performed_by)
+        return LaborLineOut(
+            id=line.id, catalog_item_id=line.catalog_item_id, description=line.description,
+            code=line.code, unit=line.unit, qty=float(line.qty),
+            unit_price=float(line.unit_price), duration_min=line.duration_min,
+            performed_by=line.performed_by,
+        )
 
 
 class LaborLineIn(BaseModel):
-    description: str = Field(min_length=1, max_length=500)
-    qty: int = Field(default=1, ge=1)
-    unit_price: Decimal = Field(default=Decimal("0"), ge=0)
+    """Same catalog-only discipline as PartLineIn above. `duration_min`
+    (Wave informational field, docs/01 §LaborLine) stays free entry — it was
+    never a price/name field, just an optional "how long did it actually
+    take" note."""
+
+    catalog_item_id: uuid.UUID
+    # Decimal, not int (ADR-BOS-013 §8): hours for an hourly item.
+    qty: Decimal = Field(default=Decimal("1"), gt=0)
     duration_min: int | None = Field(default=None, ge=0)
     performed_by: uuid.UUID | None = None
 
 
 class LaborLinePatch(BaseModel):
-    description: str | None = Field(default=None, min_length=1, max_length=500)
-    qty: int | None = Field(default=None, ge=1)
-    unit_price: Decimal | None = Field(default=None, ge=0)
+    qty: Decimal | None = Field(default=None, gt=0)
     duration_min: int | None = Field(default=None, ge=0)
 
 
@@ -284,6 +303,24 @@ class AccessoryPatch(BaseModel):
     returned: bool
 
 
+class AdjustmentOut(BaseModel):
+    id: uuid.UUID
+    amount: float
+    reason: str
+    created_by: uuid.UUID
+    created_at: datetime
+
+    @staticmethod
+    def of(a: OrderAdjustment) -> "AdjustmentOut":
+        return AdjustmentOut(id=a.id, amount=float(a.amount), reason=a.reason,
+                             created_by=a.created_by, created_at=a.created_at)
+
+
+class AdjustmentIn(BaseModel):
+    amount: Decimal
+    reason: str = Field(min_length=1, max_length=1000)
+
+
 class OrderDetailOut(OrderOut):
     """The docs/09 'full detail' shape — aggregate members only (docs/01 §4);
     tasks/attachments/contacts/timeline are outside the aggregate, fetched
@@ -293,6 +330,7 @@ class OrderDetailOut(OrderOut):
     part_lines: list[PartLineOut]
     labor_lines: list[LaborLineOut]
     accessories: list[AccessoryOut]
+    adjustments: list[AdjustmentOut]
     estimated_total: float
     paid_amount: float
     balance: float
@@ -375,6 +413,46 @@ def _reject_if_terminal(order: ServiceOrder) -> None:
             "code": "terminal", "message_key": "errors.orders.terminal_readonly",
             "params": {},
         })
+
+
+def _reject_if_line_creation_not_allowed(order: ServiceOrder) -> None:
+    """order-workflow-revamp WP-I (Q13d): a new part/labor line may only be
+    added while the order is in Диагностика/Чака клиент/Чака части/Ремонт —
+    never at intake (`received`), never on a "ready"/terminal order. Checked
+    in addition to, not instead of, `_reject_if_terminal` above (a terminal
+    order would already be `received`-adjacent-excluded by this check alone,
+    but the terminal check's distinct 409 message stays the one a client
+    sees for that case — this function only ever fires for a *non-terminal*
+    status outside the allowed set, i.e. "received" or "ready")."""
+    if order.status_code not in statuses.LINE_CREATION_STATUSES:
+        raise HTTPException(status_code=400, detail={
+            "code": "lines_not_allowed_in_status",
+            "message_key": "errors.orders.lines_not_allowed_in_status", "params": {},
+        })
+
+
+def _resolve_catalog_item(db: TenantDbDep, tenant: TenantDep, catalog_item_id: uuid.UUID,
+                          kind: str) -> CatalogItem:
+    """The authoritative "this is a real, usable, right-kind catalog item"
+    check every line-creation endpoint needs — 404 if it doesn't exist (or
+    belongs to another tenant, same as any other scoped lookup), 400 if it
+    exists but can't be used for this kind of line (ADR-BOS-013 §4: a line
+    is created only from a catalog item, and only a matching, non-archived
+    one)."""
+    item = catalog_service.get(db, tenant, catalog_item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail={
+            "code": "not_found", "message_key": "errors.catalog.not_found", "params": {},
+        })
+    if item.kind != kind:
+        raise HTTPException(status_code=400, detail={
+            "code": "wrong_kind", "message_key": "errors.catalog.wrong_kind", "params": {},
+        })
+    if item.archived_at is not None:
+        raise HTTPException(status_code=400, detail={
+            "code": "archived", "message_key": "errors.catalog.archived", "params": {},
+        })
+    return item
 
 
 def _order_for_line(db: TenantDbDep, tenant: TenantDep, order_id: uuid.UUID) -> ServiceOrder:
@@ -501,6 +579,7 @@ def get_order(order_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep) -> OrderD
         labor_lines=[LaborLineOut.of(line)
                     for line in lines.list_labor_lines(db, tenant, order_id)],
         accessories=[AccessoryOut.of(a) for a in lines.list_accessories(db, tenant, order_id)],
+        adjustments=[AdjustmentOut.of(a) for a in lines.list_adjustments(db, tenant, order_id)],
         estimated_total=float(lines.order_totals(db, tenant, order_id)),
         paid_amount=float(payment_summary.paid_amount),
         balance=float(payment_summary.balance),
@@ -663,8 +742,9 @@ def add_part_line(order_id: uuid.UUID, body: PartLineIn, db: TenantDbDep,
                   tenant: TenantDep) -> PartLineOut:
     order = _get_or_404(db, tenant, order_id)
     _reject_if_terminal(order)
-    line = lines.add_part_line(db, tenant, order, name=body.name, qty=body.qty,
-                               unit_cost=body.unit_cost, unit_price=body.unit_price,
+    _reject_if_line_creation_not_allowed(order)
+    item = _resolve_catalog_item(db, tenant, body.catalog_item_id, "part")
+    line = lines.add_part_line(db, tenant, order, catalog_item=item, qty=body.qty,
                                warranty_days=_months_to_days(body.warranty_months))
     return PartLineOut.of(line)
 
@@ -711,10 +791,10 @@ def add_labor_line(order_id: uuid.UUID, body: LaborLineIn, db: TenantDbDep,
                    tenant: TenantDep) -> LaborLineOut:
     order = _get_or_404(db, tenant, order_id)
     _reject_if_terminal(order)
-    line = lines.add_labor_line(db, tenant, order, description=body.description,
-                                qty=body.qty, unit_price=body.unit_price,
-                                duration_min=body.duration_min,
-                                performed_by=body.performed_by)
+    _reject_if_line_creation_not_allowed(order)
+    item = _resolve_catalog_item(db, tenant, body.catalog_item_id, "labor")
+    line = lines.add_labor_line(db, tenant, order, catalog_item=item, qty=body.qty,
+                                duration_min=body.duration_min, performed_by=body.performed_by)
     return LaborLineOut.of(line)
 
 
@@ -778,6 +858,27 @@ def patch_accessory(item_id: uuid.UUID, body: AccessoryPatch, db: TenantDbDep,
     _reject_if_terminal(_order_for_line(db, tenant, item.order_id))
     item = lines.mark_accessory_returned(db, tenant, item, body.returned)
     return AccessoryOut.of(item)
+
+
+# --- Order adjustments (WP-I, Q13, resolves docs/01 OQ-5) -------------------
+
+@router.get("/orders/{order_id}/adjustments")
+def list_adjustments(order_id: uuid.UUID, db: TenantDbDep,
+                     tenant: TenantDep) -> list[AdjustmentOut]:
+    _get_or_404(db, tenant, order_id)
+    return [AdjustmentOut.of(a) for a in lines.list_adjustments(db, tenant, order_id)]
+
+
+@router.post("/orders/{order_id}/adjustments",
+            dependencies=[Depends(require_csrf), Depends(require_owner),
+                         Depends(require_subscription_ok)],
+            status_code=201)
+def add_adjustment(order_id: uuid.UUID, body: AdjustmentIn, db: TenantDbDep,
+                   tenant: TenantDep) -> AdjustmentOut:
+    order = _get_or_404(db, tenant, order_id)
+    _reject_if_terminal(order)
+    adjustment = lines.add_adjustment(db, tenant, order, amount=body.amount, reason=body.reason)
+    return AdjustmentOut.of(adjustment)
 
 
 # --- Protocol (приемо-предавателен протокол) --------------------------------
