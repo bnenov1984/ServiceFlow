@@ -1039,6 +1039,13 @@ existing documents; the PO decided each before any code was written:
    parametrized "every profile seeds identical content" test this point
    describes was rewritten to assert the opposite
    (`tests/test_repairflow_business_profiles.py`).
+
+   **Further superseded 04.11.2026** (order-workflow-revamp WP-H, Q16/Q16b,
+   migration 0036): each seeded type also carries an `accessories: bool`
+   flag, false only for automotive's "vehicle" type — another instance of
+   the per-profile variation this point originally anticipated, this time
+   moving `accessories` out of ADR-BOS-011 §Decision 8's "stays common"
+   list rather than adding a new field_defs entry.
 2. **A single clean migration, not §6.4's additive-first recommendation.**
    That recommendation (new table alongside the old, cut over, drop the old
    one in a second migration) is written for a scenario with real

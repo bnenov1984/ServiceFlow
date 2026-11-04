@@ -31,7 +31,6 @@ from serviceflow.logging_setup import setup_logging
 from serviceflow.search.router import router as search_router
 from serviceflow.service_orders.contracts import register_payment_summary_provider
 from serviceflow.service_orders.router import router as orders_router
-from serviceflow.tasks.router import router as tasks_router
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +131,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(assets_router, prefix="/api/v1", tags=["assets"])
     app.include_router(orders_router, prefix="/api/v1", tags=["orders"])
     app.include_router(commercial_router, prefix="/api/v1", tags=["commercial"])
-    app.include_router(tasks_router, prefix="/api/v1", tags=["tasks"])
+    # order-workflow-revamp WP-H (Q17/Q17b): tasks removed entirely from the
+    # product (order checklist, dashboard widgets, company-level tasks) —
+    # unmounted rather than deleted; `serviceflow.tasks`'s table/model stay
+    # for a later, separate drop-table migration.
     app.include_router(attachments_router, prefix="/api/v1", tags=["attachments"])
     app.include_router(contacts_router, prefix="/api/v1", tags=["contacts"])
     app.include_router(users_router, prefix="/api/v1/users", tags=["users"])

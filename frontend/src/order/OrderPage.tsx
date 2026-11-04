@@ -25,7 +25,6 @@ import { PartLinesSection } from "./PartLinesSection";
 import { PhotosGrid } from "./PhotosGrid";
 import { PromisedDateBlock } from "./PromisedDateBlock";
 import { ReadySummary } from "./ReadySummary";
-import { TasksChecklist } from "./TasksChecklist";
 import { TimelineSection } from "./TimelineSection";
 import { VehicleHistorySection } from "./VehicleHistorySection";
 
@@ -69,6 +68,9 @@ interface AssetOut {
   asset_type_code: string;
   label: string;
   field_values: Record<string, unknown>;
+  // order-workflow-revamp WP-H (Q16/Q16b): false only for automotive's
+  // "vehicle" type — gates AccessoriesListSection's add-new form below.
+  accessories: boolean;
 }
 
 export function OrderPage() {
@@ -142,7 +144,7 @@ export function OrderPage() {
   // (move the order back to "repair" first via OrderHeader's status menu,
   // unchanged), not an edit control here. Nothing about the underlying
   // stored order/diagnosis/part/labor data changes — this is presentation
-  // only, and every other section (tasks, accessories, photos, invoice,
+  // only, and every other section (accessories, photos, invoice,
   // timeline) keeps working exactly as it does for any other open order.
   const isReady = order.status_code === "ready";
 
@@ -193,14 +195,13 @@ export function OrderPage() {
         </div>
 
         <div className="flex flex-col gap-4">
-          <TasksChecklist orderId={order.id} />
           {!isReady && (
             <>
               <PartLinesSection orderId={order.id} />
               <LaborLinesSection orderId={order.id} />
             </>
           )}
-          <AccessoriesListSection orderId={order.id} />
+          <AccessoriesListSection orderId={order.id} accessoriesEnabled={asset?.accessories ?? true} />
           <PhotosGrid orderId={order.id} />
           {/* Issue 34: history lives in the timeline below now — this stays
               only as the add-a-contact form, no duplicate list. */}

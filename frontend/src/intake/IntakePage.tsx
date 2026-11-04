@@ -206,6 +206,7 @@ export function IntakePage() {
             value={orderValue}
             assetId={asset.id}
             assetTypeCode={asset.assetTypeCode}
+            accessoriesEnabled={asset.accessories}
             defaultDeliveryAddress={
               customerDetail?.delivery_address?.address
               ?? (customerDetail?.is_company

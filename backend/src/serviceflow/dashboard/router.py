@@ -1,8 +1,12 @@
-"""GET /dashboard — the six widget counts in one call (docs/02 §15, docs/09).
+"""GET /dashboard — the four widget counts in one call (docs/02 §15, docs/09).
 
 „Готови над N дни": OQ-W2 approved default is 5 работни дни; computed in Python
 over the (small) set of ready orders — честно преброяване на работни дни, не
 календарно приближение.
+
+order-workflow-revamp WP-H (Q17b): the former today_tasks/call_tasks widgets
+are gone along with the rest of the tasks feature — the "Готови от над N
+работни дни" highlight above already covers the same reminder need.
 """
 
 from datetime import UTC, date, datetime, timedelta
@@ -15,7 +19,6 @@ from business_os.identity.deps import TenantDbDep, TenantDep, require_repairflow
 from business_os.shared_kernel.db import TenantContext, scoped
 from serviceflow.service_orders import statuses
 from serviceflow.service_orders.models import ServiceOrder
-from serviceflow.tasks.models import Task
 
 router = APIRouter(dependencies=[Depends(require_repairflow_active)])
 
@@ -32,8 +35,6 @@ class DashboardOut(BaseModel):
     waiting_parts: int
     ready: ReadyWidget
     overdue: int
-    today_tasks: int
-    call_tasks: int
 
 
 def _business_days_between(start: date, end: date) -> int:
@@ -80,17 +81,8 @@ def dashboard(db: TenantDbDep, tenant: TenantDep) -> DashboardOut:
         ServiceOrder.status_code.in_(active_kinds),
     )
 
-    def _count_tasks(*conditions: object) -> int:
-        stmt = scoped(select(func.count()).select_from(Task), Task, tenant).where(
-            Task.is_done.is_(False), *conditions  # type: ignore[arg-type]
-        )
-        return db.scalar(stmt) or 0
-
-    today_tasks = _count_tasks(Task.due_on.is_not(None), Task.due_on <= today)
-    call_tasks = _count_tasks(Task.is_call.is_(True))
-
     return DashboardOut(
         active_orders=active, waiting_parts=waiting_parts,
         ready=ReadyWidget(count=len(ready_orders), over_limit=over_limit),
-        overdue=overdue, today_tasks=today_tasks, call_tasks=call_tasks,
+        overdue=overdue,
     )

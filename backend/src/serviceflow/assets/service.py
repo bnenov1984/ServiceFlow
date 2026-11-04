@@ -31,6 +31,9 @@ from serviceflow.assets.models import Asset, AssetIdentifier, AssetOwnership, As
 BUSINESS_PROFILE_ASSET_TYPES: dict[str, dict[str, Any]] = {
     "automotive_repair": {
         "code": "vehicle", "name_bg": "Автомобил", "icon": "car", "sort": 1,
+        # order-workflow-revamp WP-H (Q16/Q16b): the one profile without an
+        # accessories checklist — see AssetType.accessories.
+        "accessories": False,
         "field_defs": [
             # Static V1 list (Issue 23) — no external make/model API. "Друго"
             # is the escape hatch: a "choice" field rejects any value outside
@@ -164,7 +167,7 @@ def seed_default_types(db: Session, company_id: uuid.UUID, business_profile: str
     db.add(AssetType(
         company_id=company_id, code=t["code"], name_bg=t["name_bg"],
         icon=t["icon"], sort=t["sort"], field_defs=t["field_defs"],
-        business_profile=business_profile,
+        business_profile=business_profile, accessories=t.get("accessories", True),
     ))
 
 

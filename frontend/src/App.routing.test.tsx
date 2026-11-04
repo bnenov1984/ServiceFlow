@@ -41,7 +41,7 @@ function stubDataEndpoints(getMe: () => ReturnType<typeof meFor> | null) {
     if (path.startsWith("/dashboard")) {
       return Promise.resolve({
         active_orders: 0, waiting_parts: 0, ready: { count: 0, over_limit: 0 },
-        overdue: 0, today_tasks: 0, call_tasks: 0,
+        overdue: 0,
       });
     }
     if (path.startsWith("/ps/")) return Promise.resolve([]);

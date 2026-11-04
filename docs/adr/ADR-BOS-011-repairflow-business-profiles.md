@@ -104,8 +104,15 @@ validation *mechanism* needs no change, only what it resolves against.
    the delete rather than cascading through it); a company left holding
    more than one type after that is real cross-type order history the
    migration correctly left alone, not a bug — it keeps seeing the picker
-   until reconciled by hand. An asset type gaining an `accessories` flag is
-   a separate, not-yet-applied amendment (WP-H).
+   until reconciled by hand.
+
+   **Amended 04.11.2026 (order-workflow-revamp WP-H, Q16/Q16b, migration
+   0036):** each asset type also carries an `accessories: bool` flag —
+   true for every profile's type except automotive's "vehicle" (migration
+   0036 sets it false there, backfilled from `business_profile`). This
+   moves accessories from §Decision 8's "stays common across every
+   profile" list to an asset-type property, same as the five profile
+   identifiers themselves — see §8's amendment below.
 6. **Backend validation is authoritative, not the frontend picker.** A
    company's active asset types/fields are resolved and enforced
    server-side on every asset create/update, exactly as today — a profile
@@ -142,11 +149,19 @@ validation *mechanism* needs no change, only what it resolves against.
    authorize a data rewrite after it.
 8. **What stays common across every profile, always**: the entire frozen
    domain model — customers, orders, the status transition matrix, diagnosis,
-   parts/labor, accessories, protocol PDF, invoicing (docs/01/02, BR-1…BR-10).
-   A profile varies *asset fields and terminology only*. The moment a
-   "profile" needs a different workflow engine or a different aggregate,
-   it is not a RepairFlow profile — it is a signal for a real second module,
-   restated from the frozen product model itself.
+   parts/labor, protocol PDF, invoicing (docs/01/02, BR-1…BR-10). A profile
+   varies *asset fields and terminology only*. The moment a "profile" needs
+   a different workflow engine or a different aggregate, it is not a
+   RepairFlow profile — it is a signal for a real second module, restated
+   from the frozen product model itself.
+
+   **Amended 04.11.2026 (WP-H, Q16/Q16b):** accessories is no longer on
+   this "stays common" list — it is now a per-asset-type `accessories`
+   flag (§Decision 5's amendment), off for automotive only. Nothing about
+   the accessories *data model* (AccessoryItem, the order-level checklist
+   mechanism itself) varies by profile — only whether a given profile's
+   type offers it at all, the same kind of per-type variation `field_defs`
+   already provides for ordinary fields.
 
 ## Alternatives considered
 

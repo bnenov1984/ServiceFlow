@@ -1354,6 +1354,65 @@
         }
       }
     },
+    "/api/v1/assets/reg-check": {
+      "get": {
+        "tags": [
+          "assets"
+        ],
+        "summary": "Check Reg",
+        "operationId": "check_reg_api_v1_assets_reg_check_get",
+        "parameters": [
+          {
+            "name": "reg",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Reg"
+            }
+          },
+          {
+            "name": "exclude_asset_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Exclude Asset Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegCheckOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/assets/{asset_id}": {
       "get": {
         "tags": [
@@ -2069,6 +2128,49 @@
                     "$ref": "#/components/schemas/TimelineEventOut"
                   },
                   "title": "Response Order Timeline Api V1 Orders  Order Id  Timeline Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assets/{asset_id}/open-order": {
+      "get": {
+        "tags": [
+          "orders"
+        ],
+        "summary": "Asset Open Order",
+        "operationId": "asset_open_order_api_v1_assets__asset_id__open_order_get",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Asset Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenOrderOut"
                 }
               }
             }
@@ -3272,263 +3374,6 @@
                 "schema": {}
               },
               "application/pdf": {}
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/tasks": {
-      "get": {
-        "tags": [
-          "tasks"
-        ],
-        "summary": "List Tasks",
-        "operationId": "list_tasks_api_v1_tasks_get",
-        "parameters": [
-          {
-            "name": "today",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": false,
-              "title": "Today"
-            }
-          },
-          {
-            "name": "mine",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": false,
-              "title": "Mine"
-            }
-          },
-          {
-            "name": "calls",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": false,
-              "title": "Calls"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/TaskOut"
-                  },
-                  "title": "Response List Tasks Api V1 Tasks Get"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "tasks"
-        ],
-        "summary": "Create Company Task",
-        "operationId": "create_company_task_api_v1_tasks_post",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TaskIn"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TaskOut"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/orders/{order_id}/tasks": {
-      "get": {
-        "tags": [
-          "tasks"
-        ],
-        "summary": "List Order Tasks",
-        "operationId": "list_order_tasks_api_v1_orders__order_id__tasks_get",
-        "parameters": [
-          {
-            "name": "order_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Order Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/TaskOut"
-                  },
-                  "title": "Response List Order Tasks Api V1 Orders  Order Id  Tasks Get"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "tasks"
-        ],
-        "summary": "Create Order Task",
-        "operationId": "create_order_task_api_v1_orders__order_id__tasks_post",
-        "parameters": [
-          {
-            "name": "order_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Order Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TaskIn"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TaskOut"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/tasks/{task_id}": {
-      "patch": {
-        "tags": [
-          "tasks"
-        ],
-        "summary": "Patch Task",
-        "operationId": "patch_task_api_v1_tasks__task_id__patch",
-        "parameters": [
-          {
-            "name": "task_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Task Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TaskPatch"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TaskOut"
-                }
-              }
             }
           },
           "422": {
@@ -5300,6 +5145,10 @@
             "type": "array",
             "title": "Duplicate Asset Ids",
             "default": []
+          },
+          "accessories": {
+            "type": "boolean",
+            "title": "Accessories"
           }
         },
         "type": "object",
@@ -5310,7 +5159,8 @@
           "label",
           "field_values",
           "archived",
-          "row_version"
+          "row_version",
+          "accessories"
         ],
         "title": "AssetOut"
       },
@@ -5385,6 +5235,10 @@
             },
             "type": "array",
             "title": "Field Defs"
+          },
+          "accessories": {
+            "type": "boolean",
+            "title": "Accessories"
           }
         },
         "type": "object",
@@ -5392,7 +5246,8 @@
           "code",
           "name_bg",
           "icon",
-          "field_defs"
+          "field_defs",
+          "accessories"
         ],
         "title": "AssetTypeOut"
       },
@@ -5565,6 +5420,10 @@
           "has_thumbnail": {
             "type": "boolean",
             "title": "Has Thumbnail"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
           }
         },
         "type": "object",
@@ -5576,7 +5435,8 @@
           "caption",
           "mime",
           "size",
-          "has_thumbnail"
+          "has_thumbnail",
+          "display_name"
         ],
         "title": "AttachmentOut"
       },
@@ -6721,14 +6581,6 @@
           "overdue": {
             "type": "integer",
             "title": "Overdue"
-          },
-          "today_tasks": {
-            "type": "integer",
-            "title": "Today Tasks"
-          },
-          "call_tasks": {
-            "type": "integer",
-            "title": "Call Tasks"
           }
         },
         "type": "object",
@@ -6736,9 +6588,7 @@
           "active_orders",
           "waiting_parts",
           "ready",
-          "overdue",
-          "today_tasks",
-          "call_tasks"
+          "overdue"
         ],
         "title": "DashboardOut"
       },
@@ -8009,6 +7859,47 @@
         ],
         "title": "NextActionOut"
       },
+      "OpenOrderOut": {
+        "properties": {
+          "order_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Id"
+          },
+          "number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Number"
+          },
+          "status_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Code"
+          }
+        },
+        "type": "object",
+        "title": "OpenOrderOut",
+        "description": "Q6b: the asset-step pre-check backing „Има отворена поръчка №… →\nОтвори я\" — read-only, mirrors customers' phone-check/eik-check and\nassets' reg-check shape. `service.create()`'s own\n`find_open_order_for_asset` call is what actually blocks a create; this\nis a convenience so the UI can show it before the user ever submits."
+      },
       "OrderDetailOut": {
         "properties": {
           "id": {
@@ -8134,6 +8025,11 @@
               }
             ],
             "title": "Mileage"
+          },
+          "mileage_confirmed_lower": {
+            "type": "boolean",
+            "title": "Mileage Confirmed Lower",
+            "default": false
           },
           "delivery_method": {
             "anyOf": [
@@ -8334,6 +8230,23 @@
             ],
             "title": "Mileage"
           },
+          "mileage_confirmed_lower": {
+            "type": "boolean",
+            "title": "Mileage Confirmed Lower",
+            "default": false
+          },
+          "mileage_override_comment": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mileage Override Comment"
+          },
           "delivery_method": {
             "anyOf": [
               {
@@ -8490,6 +8403,11 @@
               }
             ],
             "title": "Mileage"
+          },
+          "mileage_confirmed_lower": {
+            "type": "boolean",
+            "title": "Mileage Confirmed Lower",
+            "default": false
           },
           "delivery_method": {
             "anyOf": [
@@ -8704,6 +8622,11 @@
               }
             ],
             "title": "Mileage"
+          },
+          "mileage_confirmed_lower": {
+            "type": "boolean",
+            "title": "Mileage Confirmed Lower",
+            "default": false
           },
           "delivery_method": {
             "anyOf": [
@@ -9378,6 +9301,36 @@
         ],
         "title": "ReadyWidget"
       },
+      "RegCheckOut": {
+        "properties": {
+          "asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Id"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "title": "RegCheckOut",
+        "description": "Q11's on-blur pre-check for reg-№, same shape/rationale as customers'\nDuplicateCheckOut (WP-B): a convenience the UI calls before submit so\nthe conflict can be shown as an inline field error with a direct\n\"Избери този автомобил\" action — read-only, no CSRF/subscription gate\nneeded. Never the enforcement point itself; service.create()/\nupdate_fields() independently re-check via _check_reg_conflicts and are\nwhat actually blocks a save."
+      },
       "ResetPasswordRequest": {
         "properties": {
           "token": {
@@ -9713,213 +9666,6 @@
         ],
         "title": "SubscriptionTransitionResponse",
         "description": "Mirrors `service.SubscriptionTransitionResult` field-for-field."
-      },
-      "TaskIn": {
-        "properties": {
-          "title": {
-            "type": "string",
-            "maxLength": 500,
-            "minLength": 1,
-            "title": "Title"
-          },
-          "assignee_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Assignee Id"
-          },
-          "due_on": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Due On"
-          },
-          "note": {
-            "type": "string",
-            "maxLength": 2000,
-            "title": "Note",
-            "default": ""
-          },
-          "is_call": {
-            "type": "boolean",
-            "title": "Is Call",
-            "default": false
-          }
-        },
-        "type": "object",
-        "required": [
-          "title"
-        ],
-        "title": "TaskIn"
-      },
-      "TaskOut": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "order_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Order Id"
-          },
-          "title": {
-            "type": "string",
-            "title": "Title"
-          },
-          "is_done": {
-            "type": "boolean",
-            "title": "Is Done"
-          },
-          "assignee_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Assignee Id"
-          },
-          "due_on": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Due On"
-          },
-          "note": {
-            "type": "string",
-            "title": "Note"
-          },
-          "is_call": {
-            "type": "boolean",
-            "title": "Is Call"
-          },
-          "completed_by": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Completed By"
-          },
-          "completed_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Completed At"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "order_id",
-          "title",
-          "is_done",
-          "assignee_id",
-          "due_on",
-          "note",
-          "is_call",
-          "completed_by",
-          "completed_at"
-        ],
-        "title": "TaskOut"
-      },
-      "TaskPatch": {
-        "properties": {
-          "is_done": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Is Done"
-          },
-          "assignee_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Assignee Id"
-          },
-          "assign": {
-            "type": "boolean",
-            "title": "Assign",
-            "default": false
-          },
-          "due_on": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Due On"
-          },
-          "note": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 2000
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Note"
-          }
-        },
-        "type": "object",
-        "title": "TaskPatch"
       },
       "TechnicianLoadOut": {
         "properties": {

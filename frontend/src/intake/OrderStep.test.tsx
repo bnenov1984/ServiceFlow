@@ -42,9 +42,11 @@ const DEFAULT_VALUE: OrderStepValue = {
 // actually re-render OrderStep with the updated draft, the same way
 // IntakePage drives it for real.
 function Harness({
-  initial = DEFAULT_VALUE, assetTypeCode = "phone", defaultDeliveryAddress = null,
+  initial = DEFAULT_VALUE, assetTypeCode = "phone", accessoriesEnabled = true,
+  defaultDeliveryAddress = null,
 }: {
-  initial?: OrderStepValue; assetTypeCode?: string; defaultDeliveryAddress?: string | null;
+  initial?: OrderStepValue; assetTypeCode?: string; accessoriesEnabled?: boolean;
+  defaultDeliveryAddress?: string | null;
 }) {
   const [value, setValue] = useState(initial);
   return (
@@ -52,6 +54,7 @@ function Harness({
       value={value}
       assetId="asset-1"
       assetTypeCode={assetTypeCode}
+      accessoriesEnabled={accessoriesEnabled}
       defaultDeliveryAddress={defaultDeliveryAddress}
       onChange={setValue}
       onSubmit={vi.fn()}
@@ -63,7 +66,7 @@ function Harness({
 
 function renderStep(
   initial?: OrderStepValue, assetTypeCode?: string, defaultDeliveryAddress?: string | null,
-  isOwner = false,
+  isOwner = false, accessoriesEnabled = true,
 ) {
   mockUseAuth.mockReturnValue({ me: { is_owner: isOwner } });
   mockServiceHistory.mockReturnValue({ current_mileage: null });
@@ -71,7 +74,7 @@ function renderStep(
   render(
     <QueryClientProvider client={client}>
       <Harness
-        initial={initial} assetTypeCode={assetTypeCode}
+        initial={initial} assetTypeCode={assetTypeCode} accessoriesEnabled={accessoriesEnabled}
         defaultDeliveryAddress={defaultDeliveryAddress}
       />
     </QueryClientProvider>,
@@ -119,6 +122,18 @@ describe("OrderStep — Wave 3 Issues 21/26/27 (mileage at intake)", () => {
       ?.querySelector("textarea") as HTMLTextAreaElement, "Странен шум");
 
     expect(screen.getByRole("button", { name: "Създай поръчка" })).not.toBeDisabled();
+  });
+});
+
+describe("OrderStep — WP-H (Q16/Q16b: accessories hidden for automotive)", () => {
+  it("shows the accessories checklist when accessoriesEnabled is true", () => {
+    renderStep(undefined, "phone", null, false, true);
+    expect(screen.getByText("Аксесоари")).toBeInTheDocument();
+  });
+
+  it("hides the accessories checklist entirely when accessoriesEnabled is false", () => {
+    renderStep(undefined, "vehicle", null, false, false);
+    expect(screen.queryByText("Аксесоари")).not.toBeInTheDocument();
   });
 });
 

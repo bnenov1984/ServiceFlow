@@ -118,10 +118,11 @@ Data: `POST /auth/login`. States: submitting spinner в бутона; 401 → п
 обратен таймер (15 мин). Empty: n/a.
 
 ### 6.2 Табло (`/`)
-`DashboardPage → WidgetGrid → StatWidget ×6` (Активни · Чака части · Готови (с
-"над N дни" highlight) · Просрочени · Днешни задачи · Обади се).
+`DashboardPage → WidgetGrid → StatWidget ×4` (Активни · Чака части · Готови (с
+"над N дни" highlight) · Просрочени). *(Amended 04.11.2026 — WP-H, Q17b: бяха
+6, „Днешни задачи"/„Обади се" премахнати заедно с цялата функция задачи.)*
 Data: `GET /dashboard` (един call — **backend prerequisite §10**). Всеки widget →
-link към филтриран `/orders` или tasks view. Loading: 6 skeleton карти. Error:
+link към филтриран `/orders`. Loading: 4 skeleton карти. Error:
 една ErrorState карта с Retry. Empty (всичко 0): „Няма нищо спешно. Спокоен ден 👌".
 
 ### 6.3 Поръчки (`/orders`)
@@ -153,7 +154,8 @@ IntakePage (единичен екран, 3 collapse секции, Enter-through)
 │    (type picker 4 икони → типизирани полета от GET /asset-types; identifier
 │    format hints; duplicate_asset_ids hint)
 └─ Стъпка 3 ПОРЪЧКА: оплакване (required) · AccessoriesChecklist (готови чипове:
-     Зарядно/СИМ/Кутия/Ключ + свободно добавяне) · снимки (по избор, multipart)
+     Зарядно/СИМ/Кутия/Ключ/Документи/Резервна гума + свободно добавяне; скрит
+     изцяло за автомобилен профил — WP-H, Q16/Q16b) · снимки (по избор, multipart)
      · promised chips (Днес/Утре/3 дни/Седмица/дата) · приоритет · техник
 ```
 Submit последователност: (create customer ако нов) → (create asset ако нов) →
@@ -173,9 +175,10 @@ OrderPage
 │    ComplaintBlock (inline edit) · DiagnosisCard (inline form; approval блок
 │    когато approval_required) · MoneyCard (parts+labor изчислени; редове
 │    добавяне inline; „Фактура" бутон disabled с „Етап 4")
-├─ дясна колона: TasksChecklist (+call flag) · PartLines (state chips
+├─ дясна колона: PartLines (state chips
 │    needed→ordered→received→installed) · LaborLines · AccessoriesList
-│    (returned checkbox) · PhotosGrid (stage tabs; upload; lightbox) ·
+│    (returned checkbox; add-form hidden when the asset type's `accessories`
+│    flag is false — WP-H, Q16/Q16b) · PhotosGrid (stage tabs; upload; lightbox) ·
 │    ContactsList (+ добавяне: тип/посока/резюме; editable до края на деня)
 └─ TimelineSection (пълна ширина, read-only, най-новите горе, actor + време)
 ```

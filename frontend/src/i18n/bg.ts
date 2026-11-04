@@ -151,6 +151,7 @@ export const bg = {
   "errors.part_lines.invalid_state": "Невалидно състояние на частта.",
   "errors.labor_lines.not_found": "Няма такъв ред за труд.",
   "errors.accessories.not_found": "Няма такъв аксесоар.",
+  "errors.accessories.not_supported": "Този тип актив не поддържа аксесоари.",
   "errors.attachments.not_found": "Няма такъв файл.",
   "errors.attachments.invalid_stage": "Невалиден етап на снимката.",
   "errors.attachments.too_large": "Файлът е твърде голям (максимум 10 MB).",
@@ -368,11 +369,6 @@ export const bg = {
   "order.payment_method_card": "Карта",
   "order.payment_method_bank": "Банков превод",
   "order.completion_confirm": "Приключи",
-  "order.tasks": "Задачи",
-  "order.tasks_none": "Няма задачи.",
-  "order.task_add_placeholder": "Нова задача…",
-  "order.task_call_flag": "обаждане",
-  "order.task_call_badge": "Обаждане",
   "order.part_lines": "Части",
   "order.part_lines_none": "Няма добавени части.",
   "order.part_name_placeholder": "Име на частта…",
@@ -463,8 +459,6 @@ export const bg = {
   "dashboard.widget_ready": "Готови",
   "dashboard.widget_ready_over_limit": "{count} чакат твърде дълго",
   "dashboard.widget_overdue": "Просрочени",
-  "dashboard.widget_today_tasks": "Днешни задачи",
-  "dashboard.widget_call_tasks": "Обади се",
   "dashboard.empty": "Няма нищо спешно. Спокоен ден 👌",
 
   // --- invoices (central "Фактури" workspace — history view, not a new

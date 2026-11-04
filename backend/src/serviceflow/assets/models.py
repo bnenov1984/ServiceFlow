@@ -25,11 +25,11 @@ class AssetType(Base, TimestampMixin):
     """`business_profile` tags which RepairFlow profile this copy was seeded
     under (ADR-BOS-011's five-slug vocabulary — validated by the caller,
     `platform_admin.service.VALID_BUSINESS_PROFILES`, not here, same
-    division of labor as `identity.service.set_business_profile`). Content
-    is identical across every profile today (docs/business-os/18 §15,
-    PO decision 28.07.2026) — the column exists so a future profile-specific
-    seed set needs only a branch in `seed_default_types`, never another
-    schema change."""
+    division of labor as `identity.service.set_business_profile`). Each
+    profile now seeds its own single type with its own field_defs
+    (order-workflow-revamp WP-C, Q18, migration 0034) — the column exists so
+    a future profile needs only a branch in `seed_default_types`, never
+    another schema change."""
 
     __tablename__ = "asset_types"
     __table_args__ = (
@@ -47,6 +47,13 @@ class AssetType(Base, TimestampMixin):
     field_defs: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, default=list, server_default=text("'[]'")
     )
+    # order-workflow-revamp WP-H (Q16/Q16b, migration 0036): false only for
+    # automotive's "vehicle" type — hides the accessories checklist at
+    # intake/order/completion for that type without deleting anything;
+    # historic AccessoryItem rows and old protocols/snapshots keep rendering
+    # regardless (see serviceflow.service_orders.protocol, which only
+    # renders the section when there's a non-empty list to show).
+    accessories: Mapped[bool] = mapped_column(default=True, server_default=text("true"))
 
 
 class Asset(Base, TimestampMixin):

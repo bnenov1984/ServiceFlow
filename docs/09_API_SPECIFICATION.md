@@ -37,7 +37,7 @@ start; the generated OpenAPI schema becomes the machine-readable source of truth
 ### Service orders
 - POST /orders — intake payload (find-or-create customer + asset inline, 02 §3)
 - GET /orders — filters: status, technician, overdue, priority, q
-- GET /orders/{id} — full detail (lines, tasks, diagnosis, accessories, timeline page 1)
+- GET /orders/{id} — full detail (lines, diagnosis, accessories, timeline page 1)
 - PATCH /orders/{id} — fields per edit rules (row_version)
 - POST /orders/{id}/status — {to, reason?, approval?} — the **only** way any client
   (incl. Kanban DnD) changes status; server enforces the matrix (02 §2)
@@ -45,14 +45,17 @@ start; the generated OpenAPI schema becomes the machine-readable source of truth
   creates linked order
 - GET /orders/{id}/protocol.pdf — intake/delivery variants (?type=)
 - CRUD nested, flat paths: /orders/{id}/diagnosis (PUT — single record),
-  /orders/{id}/tasks, /part-lines, /labor-lines, /accessories, /contact-records
+  /part-lines, /labor-lines, /accessories (per-asset-type gated, 01 BR-9),
+  /contact-records
 - PATCH /part-lines/{id} — incl. state changes (needed→ordered→received…)
 - POST /orders/{id}/attachments (multipart) · GET /attachments/{id}/file — authorized
   stream (ADR-007), ?thumb= for photos · DELETE — soft
 - GET /orders/{id}/timeline — paged, read-only
 
-### Tasks (cross-order views)
-- GET /tasks?today|mine|calls · PATCH /tasks/{id} (done, reassign, reopen)
+### Tasks — retired
+*(Retired 04.11.2026 — order-workflow-revamp WP-H, Q17/Q17b.)* `/tasks`,
+`/orders/{id}/tasks` are no longer mounted. The underlying table stays
+for now (dropped in a later, separate migration).
 
 ### Commercial documents
 - POST /orders/{id}/invoices — draft prefilled from lines
@@ -66,7 +69,7 @@ start; the generated OpenAPI schema becomes the machine-readable source of truth
 - POST /orders/{id}/payments · payments listed within order/invoice payloads
 
 ### Dashboard & search
-- GET /dashboard — the six widget counts + previews (02 §15), one call
+- GET /dashboard — the four widget counts + previews (02 §15), one call
 - GET /search?q= — grouped results (customers/orders/assets), normalized (ADR-010)
 
 ### Platform (Owner)

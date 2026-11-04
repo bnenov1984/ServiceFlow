@@ -17,8 +17,7 @@ customer's asset?"**
 │                        SERVICE OPERATIONS (core)                    │
 │                                                                     │
 │   ServiceOrder ──┬── Diagnosis (0..1)                               │
-│    (center of    ├── Task (0..*)                                    │
-│     everything)  ├── PartLine (0..*)                                │
+│    (center of    ├── PartLine (0..*)                                │
 │                  ├── LaborLine (0..*)                               │
 │                  ├── AccessoryItem (0..*)                           │
 │                  ├── Attachment (0..*)                              │
@@ -142,15 +141,14 @@ Attributes are business attributes, not columns.
 - **Invariants:** approval events are recorded, never implied. An order cannot leave
   Чака клиент without a recorded approval or rejection.
 
-### Task
-- **Purpose:** work to be done; checklist, not project management.
-- **Attributes:** title, done flag, assignee (0..1), due date (0..1), note, call flag
-  (customer-contact reminders feed the dashboard), created by, completed by/at,
-  order reference (0..1 — company-level tasks allowed).
-- **Lifecycle:** created by anyone → optionally reassigned → completed by anyone →
-  may be reopened while its order is non-terminal.
-- **Invariants:** completion never auto-changes order status (V1 rule: humans move
-  orders). Task completion on an order writes a timeline event.
+### Task — retired
+*(Retired 04.11.2026 — order-workflow-revamp WP-H, Q17/Q17b.)* Previously:
+work to be done, order-bound or company-level, with a call flag feeding a
+now-also-retired dashboard widget (docs/02 §15). Removed entirely from the
+product — the `Готова`-aging dashboard warning already covers the one
+reminder case tasks existed for ("customer never came back for it"). The
+underlying table is kept (not dropped) for a later, separate migration;
+historical task-created/task-completed timeline entries are left as-is.
 
 ### PartLine
 - **Purpose:** a physical component used in this repair. Lightweight by design — no
@@ -176,6 +174,14 @@ Attributes are business attributes, not columns.
 - **Attributes:** name, quantity, returned flag (checked at delivery).
 - **Invariants:** appears on the intake protocol; delivery protocol section confirms
   return.
+- **Amended 04.11.2026** (order-workflow-revamp WP-H, Q16/Q16b): offered only
+  for an asset type whose `accessories` flag is true (every profile except
+  automotive — ADR-BOS-011 §Decision 5/8). Nothing here is profile-
+  conditional on the AccessoryItem side itself: an automotive order that
+  already has accessory items from before this flag existed keeps them,
+  keeps them on its protocols/completion snapshot, and keeps the
+  returned-flag workflow for them — only adding a *new* one is blocked for
+  that asset type.
 
 ### Attachment
 - **Purpose:** photos and documents evidencing the repair.
@@ -286,7 +292,7 @@ Company 1──* User
 Company 1──* Customer 1──* Asset *──1 AssetType
 Customer 1──* ServiceOrder *──1 Asset          (order's asset belongs to its customer)
 ServiceOrder 1──0..1 Diagnosis
-ServiceOrder 1──* Task | PartLine | LaborLine | AccessoryItem | Attachment
+ServiceOrder 1──* PartLine | LaborLine | AccessoryItem | Attachment
 ServiceOrder 1──* TimelineEvent | ContactRecord(optional link)
 ServiceOrder 1──* Payment *──0..1 Invoice
 ServiceOrder 1──* Invoice (typically 0..1 active; annulled predecessors retained)
@@ -310,16 +316,18 @@ aggregates are proposed, not assumed).
 | **Company**, **User** | — | Identity context; low write volume. |
 
 Deliberately **outside** any aggregate (independent lifecycles, high concurrency, no
-shared invariants): **Task**, **Attachment**, **ContactRecord**, **Payment**,
+shared invariants): **Attachment**, **ContactRecord**, **Payment**,
 **TimelineEvent** — each references the order; each writes its own timeline event
-transactionally. This keeps two workers from conflicting when one completes a task
+transactionally. This keeps two workers from conflicting when one records a contact
 while another uploads a photo on the same order.
 
 ## 5. Domain Events (identified, not event-sourced)
 
 OrderCreated · DiagnosisRecorded · DiagnosisUpdated · EstimateApprovalRequested ·
 EstimateApproved · EstimateRejected · StatusChanged · TechnicianAssigned ·
-PartAdded / PartOrdered / PartReceived · TaskCreated / TaskCompleted / TaskReopened ·
+PartAdded / PartOrdered / PartReceived ·
+TaskCreated / TaskCompleted / TaskReopened (retired WP-H 04.11.2026 — no longer
+emitted, historical timeline entries only) ·
 NoteOrContactRecorded · AttachmentAdded · OrderReady · OrderDelivered ·
 OrderCancelled / OrderNotRepairable · **OrderUnlocked** (BR-2 admin exception:
 Owner, ≤24 h, reason) · InvoiceIssued · InvoiceAnnulled ·
@@ -331,8 +339,9 @@ notification surface (V1.5+) without implementing it.
 ## 6. Business Rules (domain-level)
 
 - BR-1 Nothing bypasses the Service Order: parts, labor, photos, communication and
-  invoices exist only in the context of an order (company-level tasks are the single
-  exception).
+  invoices exist only in the context of an order. *(Amended 04.11.2026 — WP-H: this
+  rule's one exception, company-level tasks, is retired along with the Task entity
+  itself; BR-1 is now exceptionless.)*
 - BR-2 Exactly one terminal outcome per order; terminal orders are not reopened;
   follow-up work = new linked order. *(Amended 11.07.2026, PO-approved via the 07
   change process:)* one strictly limited administrative exception — the **Owner may
@@ -351,7 +360,10 @@ notification surface (V1.5+) without implementing it.
 - BR-8 Deleting is archiving; hard deletion exists only as GDPR anonymization for
   Customer personal data.
 - BR-9 Accessories recorded at intake must be explicitly confirmed returned at
-  delivery.
+  delivery. *(Amended 04.11.2026 — WP-H, Q16/Q16b: offered at intake only for an
+  asset type with `accessories: true` — automotive excluded; already-recorded
+  items on any order, automotive included, still go through this same
+  confirm-returned rule.)*
 - BR-10 Sensitive asset fields (passcodes) are masked by default; every reveal is
   logged. (Final inclusion pending security review.)
 

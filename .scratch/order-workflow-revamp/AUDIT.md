@@ -728,3 +728,127 @@ already-approved text (the mileage/open-order portion — the duplicate-
 customer portion was already applied in WP-B, the duplicate-vehicle
 portion added here too since WP-C never touched docs/01/02 despite
 shipping Q11's enforcement).
+
+WP-H (accessories per-asset-type flag + tasks removed entirely; #9/#25,
+Q16/Q16b/Q17/Q17b) implemented 04.11.2026. **Scope narrowed by direct code
+reading before implementing**: `service_orders/protocol.py` and
+`CompletionDialog.tsx` both already self-gate their accessories section on
+a non-empty list (`if data.accessories:` / `accessories.length > 0`) — Q16's
+"historic accessories keep rendering/printing on old protocols and
+completion snapshots" requirement is satisfied for free, no code change
+needed in either file. **Hide-vs-drop tension resolved**: the broader
+`proposal-removals-types-list.md` says tasks tables drop in the same
+change; Q17b's later, more specific decision text says "Hide first; drop
+table later, separately" — treated Q17b as authoritative. `serviceflow.
+tasks`'s model/service/router files are untouched (not deleted); only the
+`app.include_router(tasks_router, ...)` line in `main.py` is removed, so
+the table/model stay mapped and intact for a later, separate drop
+migration.
+
+Backend: migration 0036 adds `asset_types.accessories: bool` (default
+true, backfilled false only for `business_profile = 'automotive_repair'`
+rows). `BUSINESS_PROFILE_ASSET_TYPES["automotive_repair"]` gained
+`"accessories": False` (every other profile implicitly true via
+`seed_default_types`'s `t.get("accessories", True)`). `AssetOut.of()`
+signature changed from `(asset, asset_type_code: str, duplicates)` to
+`(asset, asset_type: AssetType, duplicates)` so both `.code` and
+`.accessories` come from one lookup — all 6 call sites in `assets/
+router.py` updated, including `list_customer_assets`'s batch lookup
+(`codes_by_id` → `types_by_id`). New guard in `service_orders/router.py`'s
+`add_accessory`: looks up the order's asset type and 400s
+(`errors.accessories.not_supported`) if `accessories` is false — the
+authoritative check mirroring WP-D's "backend guards are mandatory,
+regardless of what the UI allows through" precedent; historic items on
+such an order are untouched, only adding a *new* one is blocked.
+`tasks_router` unmounted from `main.py`; `dashboard/router.py` lost
+`today_tasks`/`call_tasks` from `DashboardOut`, the `_count_tasks` helper,
+and its `Task` import — down to the 4 pre-existing non-task widgets.
+`test_tasks.py` deleted outright (every endpoint it tested now 404s by
+design — asserting that would test nothing); `test_frontend_
+prerequisites.py`'s dashboard tests lost their task-creation calls and
+`today_tasks`/`call_tasks` assertions. New `test_accessory_add_rejected_
+for_asset_type_with_accessories_disabled` in `test_order_operations.py`
+(automotive vehicle order, asset-type-seeded on the fly via
+`set_business_profile`+`seed_default_types`, mirroring the pattern
+`test_frontend_prerequisites.py` already uses for a similar vehicle-type
+seed).
+
+Frontend: `ResolvedAsset` (`AssetStep.tsx`) gained `accessories: boolean`,
+resolved via a new `accessoriesFor(code)` helper (`?? true` fallback) that
+looks the flag up from the already-fetched `/asset-types` list — all 7
+`resolve()` call sites (pick-existing, VIN-reuse ×2, create, VIN-
+owner-conflict-use-existing, VIN-transfer, reg-№-conflict-resolve) thread
+it through. `OrderStep.tsx` gained an `accessoriesEnabled` prop gating the
+entire accessories-checklist block (not just hiding the add control —
+automotive intake never shows the section at all). `AccessoriesListSection.
+tsx` (order page) gained the same prop: renders nothing when disabled AND
+there's no existing item to show; when there is a historic item, shows it
+with the returned-checkbox but no add-form. `TasksChecklist.tsx` deleted
+outright (not just unmounted — nothing referenced it besides `OrderPage.
+tsx`'s now-removed import/usage); `DashboardSummary.tsx` down to 4
+`StatWidget`s (`grid-cols-2 md:grid-cols-4`), both task widgets and their
+i18n keys (`dashboard.widget_today_tasks`/`_call_tasks`,
+`order.tasks*`/`order.task_*`) removed; `order.event_task_created`/
+`_completed` i18n keys and `TimelineSection.tsx`'s label mapping for them
+are kept — old task timeline events still render. `queryKeys.orderTasks`
+removed (orphaned). Regenerated `frontend/src/generated/openapi.json`/
+`api.d.ts` via `scripts/export_openapi.py` + `npm run gen:api` (both
+carried `today_tasks`/`call_tasks` and the tasks paths from the pre-change
+schema).
+
+**Test fallout, small and mechanical**: `App.routing.test.tsx`'s dashboard
+mock response lost `today_tasks`/`call_tasks`. `AssetStep.test.tsx` had 4
+`onResolved).toHaveBeenCalledWith({...})` exact-shape assertions that
+needed `accessories: true` added (the fixtures never set the flag
+explicitly, so it flows through the `?? true` default) — plus 2 new tests
+asserting the flag carries through as both `true` and `false` from a
+mocked `/asset-types` response. `OrderStep.test.tsx`'s harness/`renderStep`
+gained an `accessoriesEnabled` parameter (default `true`, backward
+compatible with every existing call site) plus a new 2-test describe block
+for the show/hide behavior itself. New `AccessoriesListSection.test.tsx`
+(didn't exist before — the component had no gating logic to test
+previously): empty-and-disabled renders nothing, historic-item-and-
+disabled shows the item without an add-form, enabled-and-empty shows the
+empty state with an add-form.
+
+Verified live (after discovering and fixing a self-inflicted dev-DB
+truncation — ran a backend pytest file with `SERVICEFLOW_TEST_DATABASE_URL`
+pointed at the shared dev database instead of the dedicated
+`serviceflow_test` one, which the test fixture migrates *and truncates* on
+every run; re-seeded and continued, saved a memory note so it isn't
+repeated): a freshly provisioned `automotive_repair` company's intake flow
+shows no accessories section at all for a vehicle order, and the created
+order page has no "Аксесоари" card anywhere; the dashboard strip shows
+exactly 4 widgets (Активни/Чака части/Готови/Просрочени), no task widgets;
+a `generic_repair` company's order (asset type "Друго") shows the
+"Аксесоари" card with an added item and a working "Добави" control. Backend
+guard confirmed both ways: `POST .../accessories` → 400 `errors.
+accessories.not_supported` for the automotive vehicle order (pytest), 201
+for the generic order (live fetch against the running dev backend). No
+"Задачи"/tasks UI anywhere. Backend: 823 passed, 2 xfailed (same
+pre-existing pair, up from 822 pre-this-test — net new: the accessories-
+guard test) — re-run against the correct dedicated `serviceflow_test`
+database after the dev-DB incident below. Frontend: 582 passed (up from
+581 pre-WP-H — net new: `AccessoriesListSection.test.tsx`'s 3 tests, 2 new
+`OrderStep.test.tsx` tests, 2 new `AssetStep.test.tsx` tests, offset by no
+tests removed). ruff/mypy/lint-imports/tsc all clean.
+
+Docs: docs/01 Task entity retired (section replaced, not deleted — same
+pattern as docs/02 §5 below), AccessoryItem amended for the flag, domain-
+map diagram/relationships/aggregate-proposal/domain-events/BR-1/BR-9
+updated (Task removed from all of them). docs/02 §3 (intake accessories
+step annotated conditional), §4 (removed the fictional "auto-created call
+task" phrase — grep confirmed it was never implemented), §5 (Tasks section
+retired), §12 (permission matrix), §15 (dashboard "six" → "four" widgets),
+plus the three narrative sections (§17/§18 day-in-the-life, §19 failure
+scenarios) that mentioned tasks in prose. §16 (Orders list) needed no
+change — it was about Kanban cards at audit-writing time; WP-K already
+replaced that section with the task-free single-table design. ADR-BOS-011
+§Decision 5 (marks the previously-flagged "not-yet-applied" accessories
+amendment as now applied) and §Decision 8 (accessories moved off the
+"stays common across every profile" list). docs/business-os/18 §15.1(1)
+superseded-note extended. docs/09 (API spec: GET /orders/{id} response
+description, nested-paths list, dashboard "six"→"four", Tasks section
+retired) and docs/15 (frontend design: dashboard widget count/skeleton
+count, intake AccessoriesChecklist note, order-page right column list)
+amended.

@@ -63,6 +63,11 @@ export interface ResolvedAsset {
   id: string;
   label: string;
   assetTypeCode: string;
+  // order-workflow-revamp WP-H (Q16/Q16b): per-asset-type flag — false only
+  // for automotive's "vehicle" type. Looked up from `types` (already
+  // fetched for this step) rather than carried on every asset response, so
+  // the flag is never stale relative to the type picker shown here.
+  accessories: boolean;
   duplicateWarning?: string;
 }
 
@@ -79,6 +84,7 @@ interface AssetTypeOut {
   name_bg: string;
   icon: string;
   field_defs: FieldDef[];
+  accessories: boolean;
 }
 
 interface AssetHit {
@@ -304,6 +310,13 @@ export function AssetStep({
     queryKey: queryKeys.assetTypes,
     queryFn: () => api.get<AssetTypeOut[]>("/asset-types"),
   });
+  // Q16/Q16b: every resolve() call below only has a bare asset_type_code
+  // string from whichever endpoint it came from — this looks up the full
+  // type's accessories flag from the same `types` list the picker already
+  // uses. Defaults true (every profile but automotive) if the code is
+  // somehow not among this company's own types.
+  const accessoriesFor = (code: string) =>
+    types?.find((t2) => t2.code === code)?.accessories ?? true;
   const { data: existingAssets } = useQuery({
     queryKey: queryKeys.customerAssets(customerId),
     queryFn: () => api.get<AssetHit[]>(`/customers/${customerId}/assets`),
@@ -423,7 +436,10 @@ export function AssetStep({
         if (match.customer_id === customerId) {
           // Already this customer's own vehicle — reuse it outright, same
           // as picking it from the "pick existing" list would have done.
-          await resolve({ id: match.id, label: match.label, assetTypeCode: match.asset_type_code });
+          await resolve({
+            id: match.id, label: match.label, assetTypeCode: match.asset_type_code,
+            accessories: accessoriesFor(match.asset_type_code),
+          });
         } else {
           patchDraft({ ownerConflict: match });
         }
@@ -457,7 +473,10 @@ export function AssetStep({
       const match = await lookupVinConflict();
       if (match) {
         if (match.customer_id === customerId) {
-          await resolve({ id: match.id, label: match.label, assetTypeCode: match.asset_type_code });
+          await resolve({
+            id: match.id, label: match.label, assetTypeCode: match.asset_type_code,
+            accessories: accessoriesFor(match.asset_type_code),
+          });
         } else {
           patchDraft({ ownerConflict: match });
         }
@@ -476,6 +495,7 @@ export function AssetStep({
       await queryClient.invalidateQueries({ queryKey: queryKeys.customerAssets(customerId) });
       await resolve({
         id: created.id, label: created.label, assetTypeCode: created.asset_type_code,
+        accessories: accessoriesFor(created.asset_type_code),
         duplicateWarning: created.duplicate_asset_ids.length > 0
           ? t("intake.duplicate_asset_hint") : undefined,
       });
@@ -500,6 +520,7 @@ export function AssetStep({
     await resolve({
       id: ownerConflict.id, label: ownerConflict.label,
       assetTypeCode: ownerConflict.asset_type_code,
+      accessories: accessoriesFor(ownerConflict.asset_type_code),
     });
   };
 
@@ -512,7 +533,10 @@ export function AssetStep({
       const asset = await api.post<AssetOut>(`/assets/${ownerConflict.id}/transfer-owner`, {
         customer_id: customerId,
       });
-      await resolve({ id: asset.id, label: asset.label, assetTypeCode: asset.asset_type_code });
+      await resolve({
+        id: asset.id, label: asset.label, assetTypeCode: asset.asset_type_code,
+        accessories: accessoriesFor(asset.asset_type_code),
+      });
     } catch (err) {
       setError(err instanceof ApiError ? t(err.messageKey, err.params) : t("errors.internal"));
     } finally {
@@ -530,7 +554,10 @@ export function AssetStep({
                 <button
                   key={a.id}
                   type="button"
-                  onClick={() => void resolve({ id: a.id, label: a.label, assetTypeCode: a.asset_type_code })}
+                  onClick={() => void resolve({
+                    id: a.id, label: a.label, assetTypeCode: a.asset_type_code,
+                    accessories: accessoriesFor(a.asset_type_code),
+                  })}
                   className="flex items-center gap-3 rounded-lg border border-slate-200 px-4 py-2 text-left hover:bg-slate-50 min-h-touch"
                 >
                   <AssetTypeIcon code={a.asset_type_code} className="h-5 w-5 text-slate-400" />
@@ -673,6 +700,7 @@ export function AssetStep({
                     onClick={() => void resolve({
                       id: regConflict.assetId, label: regConflict.label,
                       assetTypeCode: selectedType.code,
+                      accessories: accessoriesFor(selectedType.code),
                     })}
                     className="text-xs font-medium text-blue-700 hover:underline"
                   >

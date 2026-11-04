@@ -14,7 +14,6 @@ export const queryKeys = {
   orders: (filters?: Record<string, string>) => ["orders", filters ?? {}] as const,
   order: (id: string) => ["order", id] as const,
   orderTimeline: (id: string) => ["order", id, "timeline"] as const,
-  orderTasks: (id: string) => ["order", id, "tasks"] as const,
   orderAccessories: (id: string) => ["order", id, "accessories"] as const,
   orderPartLines: (id: string) => ["order", id, "part-lines"] as const,
   orderLaborLines: (id: string) => ["order", id, "labor-lines"] as const,

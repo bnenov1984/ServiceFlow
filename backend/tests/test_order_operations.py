@@ -170,6 +170,48 @@ def test_accessories_returned_flag(client: TestClient) -> None:
     assert r.json()["returned"] is True
 
 
+def _automotive_vehicle_order(client: TestClient, h: dict[str, str],
+                              email: str = "a@a.bg") -> str:
+    """order-workflow-revamp WP-H (Q16/Q16b): a vehicle order on a company
+    whose profile is automotive_repair — the one combination whose asset
+    type has `accessories: false` (migration 0036)."""
+    from sqlalchemy import select
+
+    from business_os.identity.models import User
+    from business_os.identity.service import set_business_profile
+    from business_os.shared_kernel.db import bind_tenant_scope, open_session
+    from serviceflow.assets.service import seed_default_types
+
+    for db in open_session(os.environ["SERVICEFLOW_TEST_DATABASE_URL"]):
+        owner = db.scalar(select(User).where(User.email == email))
+        assert owner is not None
+        bind_tenant_scope(db, owner.company_id)
+        set_business_profile(db, owner.company_id, "automotive_repair")
+        seed_default_types(db, owner.company_id, "automotive_repair")
+        db.commit()
+
+    cid = client.post("/api/v1/customers", headers=h,
+                      json={"name": "Иван", "phone": "0888111222"}).json()["id"]
+    aid = client.post(f"/api/v1/customers/{cid}/assets", headers=h, json={
+        "asset_type_code": "vehicle", "field_values": {"brand": "Volkswagen", "model": "Golf"},
+    }).json()["id"]
+    return str(client.post("/api/v1/orders", headers=h, json={
+        "customer_id": cid, "asset_id": aid, "complaint": "Скърца",
+    }).json()["id"])
+
+
+def test_accessory_add_rejected_for_asset_type_with_accessories_disabled(
+    client: TestClient,
+) -> None:
+    h = _login(client)
+    oid = _automotive_vehicle_order(client, h)
+
+    r = client.post(f"/api/v1/orders/{oid}/accessories", headers=h,
+                    json={"name": "Зарядно", "qty": 1})
+    assert r.status_code == 400
+    assert r.json()["detail"]["message_key"] == "errors.accessories.not_supported"
+
+
 def test_aggregate_members_are_tenant_isolated(client: TestClient) -> None:
     h_a = _login(client, "Сервиз А", "a@a.bg")
     oid = _order(client, h_a)

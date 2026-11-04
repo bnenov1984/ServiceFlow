@@ -32,6 +32,10 @@ class AssetTypeOut(BaseModel):
     name_bg: str
     icon: str
     field_defs: list[dict[str, Any]]
+    # order-workflow-revamp WP-H (Q16/Q16b): false only for automotive's
+    # "vehicle" type — gates the accessories checklist at intake/order/
+    # completion client-side; add_accessory below is the authoritative guard.
+    accessories: bool
 
 
 class AssetIn(BaseModel):
@@ -52,15 +56,16 @@ class AssetOut(BaseModel):
     archived: bool
     row_version: int
     duplicate_asset_ids: list[uuid.UUID] = []
+    accessories: bool
 
     @staticmethod
-    def of(a: Asset, asset_type_code: str,
+    def of(a: Asset, asset_type: AssetType,
           duplicates: list[uuid.UUID] | None = None) -> "AssetOut":
         return AssetOut(
-            id=a.id, customer_id=a.customer_id, asset_type_code=asset_type_code,
+            id=a.id, customer_id=a.customer_id, asset_type_code=asset_type.code,
             label=a.label, field_values=a.field_values,
             archived=a.archived_at is not None, row_version=a.row_version,
-            duplicate_asset_ids=duplicates or [],
+            duplicate_asset_ids=duplicates or [], accessories=asset_type.accessories,
         )
 
 
@@ -102,7 +107,8 @@ def _err(status: int, code: str, key: str, **extra: Any) -> HTTPException:
 @router.get("/asset-types")
 def list_asset_types(db: TenantDbDep, tenant: TenantDep) -> list[AssetTypeOut]:
     return [AssetTypeOut(code=t.code, name_bg=t.name_bg, icon=t.icon,
-                         field_defs=t.field_defs) for t in service.list_types(db, tenant)]
+                         field_defs=t.field_defs, accessories=t.accessories)
+           for t in service.list_types(db, tenant)]
 
 
 @router.get("/customers/{customer_id}/assets")
@@ -113,8 +119,8 @@ def list_customer_assets(customer_id: uuid.UUID, db: TenantDbDep, tenant: Tenant
     assets = service.list_for_customer(db, tenant, customer_id, include_archived)
     # One lookup for the whole list (a handful of types per company) rather
     # than one query per asset.
-    codes_by_id = {t.id: t.code for t in service.list_types(db, tenant)}
-    return [AssetOut.of(a, codes_by_id[a.asset_type_id]) for a in assets]
+    types_by_id = {t.id: t for t in service.list_types(db, tenant)}
+    return [AssetOut.of(a, types_by_id[a.asset_type_id]) for a in assets]
 
 
 @router.post("/customers/{customer_id}/assets",
@@ -139,7 +145,7 @@ def create_asset(customer_id: uuid.UUID, body: AssetIn, db: TenantDbDep,
     except service.RegConflictError as e:
         raise _err(409, "reg_conflict", "errors.assets.reg_conflict",
                    conflicting_asset_id=str(e.existing_asset_id)) from e
-    return AssetOut.of(asset, asset_type.code, duplicates)
+    return AssetOut.of(asset, asset_type, duplicates)
 
 
 @router.get("/assets/by-vin")
@@ -187,7 +193,7 @@ def _type_or_500(db: TenantDbDep, tenant: TenantDep, asset: Asset) -> AssetType:
 @router.get("/assets/{asset_id}")
 def get_asset(asset_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep) -> AssetOut:
     asset = _get_or_404(db, tenant, asset_id)
-    return AssetOut.of(asset, _type_or_500(db, tenant, asset).code)
+    return AssetOut.of(asset, _type_or_500(db, tenant, asset))
 
 
 @router.patch("/assets/{asset_id}",
@@ -208,7 +214,7 @@ def patch_asset(asset_id: uuid.UUID, body: AssetPatch, db: TenantDbDep,
     except service.RegConflictError as e:
         raise _err(409, "reg_conflict", "errors.assets.reg_conflict",
                    conflicting_asset_id=str(e.existing_asset_id)) from e
-    return AssetOut.of(asset, asset_type.code, duplicates)
+    return AssetOut.of(asset, asset_type, duplicates)
 
 
 @router.post("/assets/{asset_id}/archive",
@@ -217,7 +223,7 @@ def archive_asset(asset_id: uuid.UUID, db: TenantDbDep, tenant: TenantDep) -> As
     asset = _get_or_404(db, tenant, asset_id)
     asset_type = _type_or_500(db, tenant, asset)
     service.archive(db, asset)
-    return AssetOut.of(asset, asset_type.code)
+    return AssetOut.of(asset, asset_type)
 
 
 @router.post("/assets/{asset_id}/transfer-owner",
@@ -234,4 +240,4 @@ def transfer_owner(asset_id: uuid.UUID, body: TransferOwnerIn, db: TenantDbDep,
     if customers_service.get(db, tenant, body.customer_id) is None:
         raise _err(404, "not_found", "errors.customers.not_found")
     asset = service.transfer_owner(db, tenant, asset, body.customer_id)
-    return AssetOut.of(asset, asset_type.code)
+    return AssetOut.of(asset, asset_type)

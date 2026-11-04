@@ -86,7 +86,8 @@ Permissions: any active user may perform allowed transitions except Анулир
 Клиент идва → Намери/създай клиент (търсене по телефон, предупреждение за дубликат)
 → Регистрирай/избери актив (при съществуващ: последни посещения + последен пробег;
    отворена поръчка → блок с връзка към нея) → Създай поръчка №2026-00042:
-     оплакване (задълж.) · аксесоари чеклист · снимки при приемане (препор.)
+     оплакване (задълж.) · аксесоари чеклист (всеки профил освен автомобилен —
+     order-workflow-revamp WP-H, Q16/Q16b) · снимки при приемане (препор.)
      · обещана дата · приоритет · техник (по избор)
 → ПЕЧАТ: приемо-предавателен протокол (A4) — клиентът си тръгва с него
 → Диагностика: находка, причина, препоръка, оценка (цена/срок), нужда от одобрение?
@@ -108,21 +109,25 @@ Target times (success metrics): intake incl. protocol ≤ 2 min for existing cus
 |----------|----------|
 | Customer rejects estimate | Чака клиент → Отказана (reason recorded); diagnostic fee invoiceable + payable on the terminal order; delivery of unrepaired asset via protocol print from Отказана |
 | Repair impossible | → Неремонтируема; same fee/protocol options |
-| Customer never returns | Готова + N days → dashboard warning + auto-created call task; remains Готова until delivered or Owner archives with note (no extra status) |
+| Customer never returns | Готова + N days → dashboard warning („Готови от над N работни дни"); remains Готова until delivered or Owner archives with note (no extra status) |
 | Wrong diagnosis | Back to Диагностика; diagnosis edited in place, timeline shows the change |
 | Additional damage found | Back to Диагностика or Чака клиент with updated estimate; new approval required if estimate grew |
 | Additional parts needed | Back to Чака части; new part lines |
 | Invoice correction | Issued invoice → Annul (reason) → new Draft → Issue (new number, references annulled one) |
 | Warranty return | New order linked to original; badge „Гаранционна“; original stays terminal |
 
-## 5. Tasks — rules
+## 5. Tasks — retired
 
-Created by anyone at any time (typical: during diagnosis and repair). Assignable,
-reassignable, reopenable while the order is non-terminal. **Not mandatory** — trivial
-repairs need zero tasks. **Completion never auto-changes order status** (V1: humans
-move orders; revisit only if pilot data shows friction). Call-flagged tasks feed the
-dashboard's „Обади се на клиента“ widget. Company-level tasks (no order) allowed for
-shop chores.
+*(Retired 04.11.2026 — order-workflow-revamp WP-H, Q17/Q17b.)* The task
+feature (order-bound + company-level, the dashboard's „Днешни задачи“/„Обади
+се на клиента“ widgets, and the never-actually-built auto-call-task job) is
+gone from the product entirely — it never justified itself against the
+`Готова` dashboard aging warning (§15), which already covers the one case
+("customer never came back for it") tasks were meant to catch. Old
+task-created/task-completed timeline entries from before this date are left
+in place, unexplained by anything else in this document; the underlying
+table is kept (not dropped) for now, to be removed in a later, separate
+change.
 
 ## 6. Diagnosis & Customer Approval
 
@@ -191,7 +196,7 @@ emerge from the one mechanism. Corrections by offsetting record.
 
 | Action | Owner | Worker |
 |---|---|---|
-| Customers/assets/orders: create, edit, statuses, tasks, parts, labor, photos, contacts | ✔ | ✔ |
+| Customers/assets/orders: create, edit, statuses, parts, labor, photos, contacts | ✔ | ✔ |
 | Анулирана transition, unarchive, bulk reassignment | ✔ | — |
 | Invoice draft + payments | ✔ | ✔ |
 | Invoice issue/annul | ✔ | toggle |
@@ -216,10 +221,11 @@ box, grouped results (Клиенти / Поръчки / Активи), tenant = 
 
 ## 15. Dashboard — "what requires attention today?"
 
-Six operational widgets, each opening its filtered list/board: Активни поръчки ·
+*(Amended 04.11.2026 — order-workflow-revamp WP-H, Q17b: down to four widgets,
+the two task ones retired along with the rest of the tasks feature.)*
+Four operational widgets, each opening its filtered list/board: Активни поръчки ·
 Чака части · Готови за получаване (with "over N days" highlight) · Просрочени
-(promised date passed, non-terminal) · Днешни задачи · Обади се на клиента (open
-call tasks). No charts, no vanity metrics.
+(promised date passed, non-terminal). No charts, no vanity metrics.
 
 ## 16. Orders list
 
@@ -232,11 +238,11 @@ not change statuses; that happens only on the order page.
 
 ## 17. A Day — Owner (Мария, автосервиз, 6 души)
 
-07:45 отваря таблото: 2 просрочени, 3 готови от >5 дни, 4 задачи „обади се". 08:00
+07:45 отваря таблото: 2 просрочени, 3 готови от >5 дни. 08:00
 преглежда поръчките, размества приоритети, назначава новия ремонт на Георги. 09:30 приема
 клиент: намира го по телефона, нов актив (втора кола), поръчка + протокол — 2 мин.
-11:00 одобрение по телефона за скъп ремонт → записва одобрението, мести в Чака части,
-задача „поръчай накладки". 14:00 частите идват → received → Ремонт. 17:30 клиент
+11:00 одобрение по телефона за скъп ремонт → записва одобрението, мести в Чака части.
+14:00 частите идват → received → Ремонт. 17:30 клиент
 взима колата: плащане в брой, фактура (фирмен клиент), протокол, Предадена. 18:00
 преглежда утрешните обещани дати; бекъпът е минал зелено (health индикатор).
 
@@ -244,17 +250,17 @@ not change statuses; that happens only on the order page.
 
 09:00 влиза с PIN на общия компютър. Таблото: 3 негови поръчки, 1 тест за днес. 09:15
 отваря първата поръчка → Диагностика: оглед, диагноза (дисплей + батерия), оценка 180 €,
-маркира „изисква одобрение" → Чака клиент, задача „обади се". 10:30 звъни, клиентът
+маркира „изисква одобрение" → Чака клиент. 10:30 звъни, клиентът
 одобрява → записва одобрението → Чака части. 11:00 друга поръчка: смяна на дисплей,
 ред труд 60 €, снимки „процес" → Готова. 16:00 нов клиент на гишето: Иво
-приема устройство (интейк + протокол — 3 мин, нов клиент). 17:45 отбелязва задачите,
+приема устройство (интейк + протокол — 3 мин, нов клиент). 17:45 приключва деня,
 PIN-out.
 
 ## 19. Failure Scenarios & Mitigations
 
 | Scenario | Mitigation |
 |----------|------------|
-| Customer unreachable | Call task + escalating dashboard aging on Готова/Чака клиент; Owner archive-with-note as last resort |
+| Customer unreachable | Escalating dashboard aging on Готова/Чака клиент; Owner archive-with-note as last resort |
 | Lost/misplaced device | Order № on intake protocol; (labels V1.5); search by any identifier |
 | Duplicate customer | *(Amended 03.11.2026 — WP-B, Q7/Q8)* Individuals: normalized phone unique — blocked inline with „Избери съществуващия"; companies: ЕИК unique — blocked inline |
 | Duplicate vehicle | *(Added 04.11.2026 — WP-C, Q11)* VIN and рег. № unique per company — blocked inline with „Избери този автомобил" |

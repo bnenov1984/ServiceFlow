@@ -1,10 +1,12 @@
 /**
- * DashboardSummary (Wave 2 Issue 3): the same 6 GET /dashboard counts
+ * DashboardSummary (Wave 2 Issue 3): the same GET /dashboard counts
  * DashboardPage used to render as its own full screen, now a compact strip
- * at the top of the merged Orders workspace (OrdersPage). No new data, no
- * new analytics — same query, same widgets, same deep-link targets
- * (StatWidget -> /orders?...), just without its own heading/full-page
- * loading-and-error chrome, since the page around it already has both.
+ * at the top of the merged Orders workspace (OrdersPage) — without its own
+ * heading/full-page loading-and-error chrome, since the page around it
+ * already has both.
+ *
+ * order-workflow-revamp WP-H (Q17b): down to 4 widgets — the two task
+ * widgets are gone along with the rest of the tasks feature.
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -24,8 +26,6 @@ interface DashboardOut {
   waiting_parts: number;
   ready: ReadyWidget;
   overdue: number;
-  today_tasks: number;
-  call_tasks: number;
 }
 
 export function DashboardSummary() {
@@ -36,8 +36,8 @@ export function DashboardSummary() {
 
   if (isLoading) {
     return (
-      <div className="mb-4 grid grid-cols-3 gap-2 md:grid-cols-6">
-        {Array.from({ length: 6 }).map((_, i) => (
+      <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
           <Skeleton key={i} className="h-16" />
         ))}
       </div>
@@ -52,13 +52,11 @@ export function DashboardSummary() {
     data.active_orders === 0 &&
     data.waiting_parts === 0 &&
     data.ready.count === 0 &&
-    data.overdue === 0 &&
-    data.today_tasks === 0 &&
-    data.call_tasks === 0;
+    data.overdue === 0;
   if (allZero) return null;
 
   return (
-    <div className="mb-4 grid grid-cols-3 gap-2 md:grid-cols-6">
+    <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-4">
       <StatWidget to="/orders" label={t("dashboard.widget_active")} value={data.active_orders} />
       <StatWidget
         to="/orders?status=waiting_parts"
@@ -76,8 +74,6 @@ export function DashboardSummary() {
         }
       />
       <StatWidget to="/orders?overdue=1" label={t("dashboard.widget_overdue")} value={data.overdue} />
-      <StatWidget to="/orders" label={t("dashboard.widget_today_tasks")} value={data.today_tasks} />
-      <StatWidget to="/orders" label={t("dashboard.widget_call_tasks")} value={data.call_tasks} />
     </div>
   );
 }

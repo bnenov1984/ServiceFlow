@@ -90,7 +90,7 @@ def test_dashboard_counts(client: TestClient) -> None:
             "customer_id": cid, "asset_id": new_aid, "complaint": "x", **extra,
         }).json()["id"])
 
-    o1 = order()  # received
+    order()  # received
     o2 = order()
     client.post(f"/api/v1/orders/{o2}/status", headers=h, json={"to": "waiting_parts"})
     o3 = order()
@@ -98,28 +98,18 @@ def test_dashboard_counts(client: TestClient) -> None:
     overdue_date = (today - timedelta(days=3)).isoformat()
     order(promised_on=overdue_date)  # overdue: promised past, still received
 
-    client.post(f"/api/v1/orders/{o1}/tasks", headers=h, json={
-        "title": "Обади се", "is_call": True,
-    })
-    client.post(f"/api/v1/orders/{o1}/tasks", headers=h, json={
-        "title": "За днес", "due_on": today.isoformat(),
-    })
-
     d = client.get("/api/v1/dashboard").json()
     assert d["active_orders"] == 4
     assert d["waiting_parts"] == 1
     assert d["ready"] == {"count": 1, "over_limit": 0}
     assert d["overdue"] == 1
-    assert d["today_tasks"] == 1
-    assert d["call_tasks"] == 1
 
 
 def test_dashboard_empty_company(client: TestClient) -> None:
     _login(client)
     d = client.get("/api/v1/dashboard").json()
     assert d == {"active_orders": 0, "waiting_parts": 0,
-                 "ready": {"count": 0, "over_limit": 0}, "overdue": 0,
-                 "today_tasks": 0, "call_tasks": 0}
+                 "ready": {"count": 0, "over_limit": 0}, "overdue": 0}
 
 
 # --- GET /search -------------------------------------------------------------

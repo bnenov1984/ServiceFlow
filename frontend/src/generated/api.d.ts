@@ -568,6 +568,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/assets/reg-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Check Reg */
+        get: operations["check_reg_api_v1_assets_reg_check_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/assets/{asset_id}": {
         parameters: {
             query?: never;
@@ -761,6 +778,23 @@ export interface paths {
         };
         /** Order Timeline */
         get: operations["order_timeline_api_v1_orders__order_id__timeline_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assets/{asset_id}/open-order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Asset Open Order */
+        get: operations["asset_open_order_api_v1_assets__asset_id__open_order_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1106,59 +1140,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
-        trace?: never;
-    };
-    "/api/v1/tasks": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Tasks */
-        get: operations["list_tasks_api_v1_tasks_get"];
-        put?: never;
-        /** Create Company Task */
-        post: operations["create_company_task_api_v1_tasks_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/orders/{order_id}/tasks": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Order Tasks */
-        get: operations["list_order_tasks_api_v1_orders__order_id__tasks_get"];
-        put?: never;
-        /** Create Order Task */
-        post: operations["create_order_task_api_v1_orders__order_id__tasks_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/tasks/{task_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Patch Task */
-        patch: operations["patch_task_api_v1_tasks__task_id__patch"];
         trace?: never;
     };
     "/api/v1/orders/{order_id}/attachments": {
@@ -1759,6 +1740,8 @@ export interface components {
              * @default []
              */
             duplicate_asset_ids: string[];
+            /** Accessories */
+            accessories: boolean;
         };
         /** AssetPatch */
         AssetPatch: {
@@ -1793,6 +1776,8 @@ export interface components {
             field_defs: {
                 [key: string]: unknown;
             }[];
+            /** Accessories */
+            accessories: boolean;
         };
         /** AssignmentCreate */
         AssignmentCreate: {
@@ -1860,6 +1845,8 @@ export interface components {
             size: number;
             /** Has Thumbnail */
             has_thumbnail: boolean;
+            /** Display Name */
+            display_name: string;
         };
         /** Body_upload_attachment_api_v1_orders__order_id__attachments_post */
         Body_upload_attachment_api_v1_orders__order_id__attachments_post: {
@@ -2239,10 +2226,6 @@ export interface components {
             ready: components["schemas"]["ReadyWidget"];
             /** Overdue */
             overdue: number;
-            /** Today Tasks */
-            today_tasks: number;
-            /** Call Tasks */
-            call_tasks: number;
         };
         /** DeadlineChangeIn */
         DeadlineChangeIn: {
@@ -2720,6 +2703,22 @@ export interface components {
             risk: string;
         };
         /**
+         * OpenOrderOut
+         * @description Q6b: the asset-step pre-check backing „Има отворена поръчка №… →
+         *     Отвори я" — read-only, mirrors customers' phone-check/eik-check and
+         *     assets' reg-check shape. `service.create()`'s own
+         *     `find_open_order_for_asset` call is what actually blocks a create; this
+         *     is a convenience so the UI can show it before the user ever submits.
+         */
+        OpenOrderOut: {
+            /** Order Id */
+            order_id?: string | null;
+            /** Number */
+            number?: string | null;
+            /** Status Code */
+            status_code?: string | null;
+        };
+        /**
          * OrderDetailOut
          * @description The docs/09 'full detail' shape — aggregate members only (docs/01 §4);
          *     tasks/attachments/contacts/timeline are outside the aggregate, fetched
@@ -2769,6 +2768,11 @@ export interface components {
             row_version: number;
             /** Mileage */
             mileage?: number | null;
+            /**
+             * Mileage Confirmed Lower
+             * @default false
+             */
+            mileage_confirmed_lower: boolean;
             /** Delivery Method */
             delivery_method?: string | null;
             delivery_address?: components["schemas"]["DeliveryAddressIn"] | null;
@@ -2832,6 +2836,13 @@ export interface components {
             technician_id?: string | null;
             /** Mileage */
             mileage?: number | null;
+            /**
+             * Mileage Confirmed Lower
+             * @default false
+             */
+            mileage_confirmed_lower: boolean;
+            /** Mileage Override Comment */
+            mileage_override_comment?: string | null;
             /** Delivery Method */
             delivery_method?: string | null;
             delivery_address?: components["schemas"]["DeliveryAddressIn"] | null;
@@ -2885,6 +2896,11 @@ export interface components {
             row_version: number;
             /** Mileage */
             mileage?: number | null;
+            /**
+             * Mileage Confirmed Lower
+             * @default false
+             */
+            mileage_confirmed_lower: boolean;
             /** Delivery Method */
             delivery_method?: string | null;
             delivery_address?: components["schemas"]["DeliveryAddressIn"] | null;
@@ -2949,6 +2965,11 @@ export interface components {
             row_version: number;
             /** Mileage */
             mileage?: number | null;
+            /**
+             * Mileage Confirmed Lower
+             * @default false
+             */
+            mileage_confirmed_lower: boolean;
             /** Delivery Method */
             delivery_method?: string | null;
             delivery_address?: components["schemas"]["DeliveryAddressIn"] | null;
@@ -3197,6 +3218,22 @@ export interface components {
             /** Over Limit */
             over_limit: number;
         };
+        /**
+         * RegCheckOut
+         * @description Q11's on-blur pre-check for reg-№, same shape/rationale as customers'
+         *     DuplicateCheckOut (WP-B): a convenience the UI calls before submit so
+         *     the conflict can be shown as an inline field error with a direct
+         *     "Избери този автомобил" action — read-only, no CSRF/subscription gate
+         *     needed. Never the enforcement point itself; service.create()/
+         *     update_fields() independently re-check via _check_reg_conflicts and are
+         *     what actually blocks a save.
+         */
+        RegCheckOut: {
+            /** Asset Id */
+            asset_id?: string | null;
+            /** Label */
+            label?: string | null;
+        };
         /** ResetPasswordRequest */
         ResetPasswordRequest: {
             /** Token */
@@ -3340,67 +3377,6 @@ export interface components {
              * Format: uuid
              */
             audit_id: string;
-        };
-        /** TaskIn */
-        TaskIn: {
-            /** Title */
-            title: string;
-            /** Assignee Id */
-            assignee_id?: string | null;
-            /** Due On */
-            due_on?: string | null;
-            /**
-             * Note
-             * @default
-             */
-            note: string;
-            /**
-             * Is Call
-             * @default false
-             */
-            is_call: boolean;
-        };
-        /** TaskOut */
-        TaskOut: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Order Id */
-            order_id: string | null;
-            /** Title */
-            title: string;
-            /** Is Done */
-            is_done: boolean;
-            /** Assignee Id */
-            assignee_id: string | null;
-            /** Due On */
-            due_on: string | null;
-            /** Note */
-            note: string;
-            /** Is Call */
-            is_call: boolean;
-            /** Completed By */
-            completed_by: string | null;
-            /** Completed At */
-            completed_at: string | null;
-        };
-        /** TaskPatch */
-        TaskPatch: {
-            /** Is Done */
-            is_done?: boolean | null;
-            /** Assignee Id */
-            assignee_id?: string | null;
-            /**
-             * Assign
-             * @default false
-             */
-            assign: boolean;
-            /** Due On */
-            due_on?: string | null;
-            /** Note */
-            note?: string | null;
         };
         /** TechnicianLoadOut */
         TechnicianLoadOut: {
@@ -4539,6 +4515,38 @@ export interface operations {
             };
         };
     };
+    check_reg_api_v1_assets_reg_check_get: {
+        parameters: {
+            query: {
+                reg: string;
+                exclude_asset_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegCheckOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_asset_api_v1_assets__asset_id__get: {
         parameters: {
             query?: never;
@@ -4981,6 +4989,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TimelineEventOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    asset_open_order_api_v1_assets__asset_id__open_order_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenOrderOut"];
                 };
             };
             /** @description Validation Error */
@@ -5757,173 +5796,6 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                     "application/pdf": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_tasks_api_v1_tasks_get: {
-        parameters: {
-            query?: {
-                today?: boolean;
-                mine?: boolean;
-                calls?: boolean;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskOut"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_company_task_api_v1_tasks_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TaskIn"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_order_tasks_api_v1_orders__order_id__tasks_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                order_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskOut"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_order_task_api_v1_orders__order_id__tasks_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                order_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TaskIn"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    patch_task_api_v1_tasks__task_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TaskPatch"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskOut"];
                 };
             };
             /** @description Validation Error */

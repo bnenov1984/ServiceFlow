@@ -61,6 +61,7 @@ export function OrderStep({
   value,
   assetId,
   assetTypeCode,
+  accessoriesEnabled,
   defaultDeliveryAddress,
   onChange,
   onSubmit,
@@ -74,6 +75,9 @@ export function OrderStep({
   // Gates the mileage field (Issue 21: automotive only, never shown for
   // other asset types).
   assetTypeCode: string;
+  // order-workflow-revamp WP-H (Q16/Q16b): gates the accessories checklist
+  // below — false only for automotive's "vehicle" type.
+  accessoriesEnabled: boolean;
   // Wave 5 Issue 12: the resolved customer's own default delivery address
   // (if any) — prefills the courier address once, never overwrites a value
   // the user already typed/edited.
@@ -227,22 +231,24 @@ export function OrderStep({
         </div>
       )}
 
-      <div>
-        <label className="mb-1 block text-sm font-medium text-slate-700">
-          {t("intake.accessories")}
-        </label>
-        <AccessoriesChecklist
-          selected={value.accessories}
-          onToggle={(name) =>
-            onChange((prev) => ({
-              ...prev,
-              accessories: prev.accessories.includes(name)
-                ? prev.accessories.filter((a) => a !== name)
-                : [...prev.accessories, name],
-            }))
-          }
-        />
-      </div>
+      {accessoriesEnabled && (
+        <div>
+          <label className="mb-1 block text-sm font-medium text-slate-700">
+            {t("intake.accessories")}
+          </label>
+          <AccessoriesChecklist
+            selected={value.accessories}
+            onToggle={(name) =>
+              onChange((prev) => ({
+                ...prev,
+                accessories: prev.accessories.includes(name)
+                  ? prev.accessories.filter((a) => a !== name)
+                  : [...prev.accessories, name],
+              }))
+            }
+          />
+        </div>
+      )}
 
       <div>
         <label className="mb-1 block text-sm font-medium text-slate-700">

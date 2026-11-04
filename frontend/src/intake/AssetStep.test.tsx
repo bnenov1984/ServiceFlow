@@ -279,6 +279,58 @@ describe("AssetStep — WP-C Q18 (single-type companies skip the picker)", () =>
   });
 });
 
+describe("AssetStep — WP-H (Q16/Q16b: accessories flag carried onto the resolved asset)", () => {
+  it("resolves with accessories: false for a vehicle (automotive has it off)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockImplementation((path: string) => {
+      if (path === "/asset-types") {
+        return Promise.resolve([{ ...vehicleType, accessories: false }]) as never;
+      }
+      if (path.endsWith("/assets")) {
+        return Promise.resolve([
+          { id: "a1", label: "Volkswagen Golf", asset_type_code: "vehicle", archived: false },
+        ]) as never;
+      }
+      if (path.includes("/open-order")) {
+        return Promise.resolve({ order_id: null, number: null, status_code: null }) as never;
+      }
+      return Promise.reject(new Error(`unexpected GET ${path}`));
+    });
+    const { onResolved } = renderStep();
+
+    await user.click(await screen.findByText("Volkswagen Golf"));
+
+    expect(onResolved).toHaveBeenCalledWith({
+      id: "a1", label: "Volkswagen Golf", assetTypeCode: "vehicle", accessories: false,
+    });
+  });
+
+  it("resolves with accessories: true for a type that carries the flag as true", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockImplementation((path: string) => {
+      if (path === "/asset-types") {
+        return Promise.resolve([{ ...vehicleType, code: "phone", accessories: true }]) as never;
+      }
+      if (path.endsWith("/assets")) {
+        return Promise.resolve([
+          { id: "a2", label: "iPhone 12", asset_type_code: "phone", archived: false },
+        ]) as never;
+      }
+      if (path.includes("/open-order")) {
+        return Promise.resolve({ order_id: null, number: null, status_code: null }) as never;
+      }
+      return Promise.reject(new Error(`unexpected GET ${path}`));
+    });
+    const { onResolved } = renderStep();
+
+    await user.click(await screen.findByText("iPhone 12"));
+
+    expect(onResolved).toHaveBeenCalledWith({
+      id: "a2", label: "iPhone 12", assetTypeCode: "phone", accessories: true,
+    });
+  });
+});
+
 describe("AssetStep VIN-first lookup (Issue 20: VIN before the full form)", () => {
   const customerId2 = "cust-2";
 
@@ -366,7 +418,7 @@ describe("AssetStep VIN-first lookup (Issue 20: VIN before the full form)", () =
     await user.click(screen.getByRole("button", { name: "Провери VIN" }));
 
     expect(onResolved).toHaveBeenCalledWith({
-      id: "existing-1", label: "Volkswagen Golf", assetTypeCode: "vehicle",
+      id: "existing-1", label: "Volkswagen Golf", assetTypeCode: "vehicle", accessories: true,
     });
     expect(api.post).not.toHaveBeenCalled();
   });
@@ -403,7 +455,7 @@ describe("AssetStep VIN-first lookup (Issue 20: VIN before the full form)", () =
     await user.click(await screen.findByRole("button", { name: "Използвай автомобила" }));
 
     expect(onResolved).toHaveBeenCalledWith({
-      id: "existing-2", label: "Volkswagen Golf", assetTypeCode: "vehicle",
+      id: "existing-2", label: "Volkswagen Golf", assetTypeCode: "vehicle", accessories: true,
     });
     expect(api.post).not.toHaveBeenCalled();
   });
@@ -430,7 +482,7 @@ describe("AssetStep VIN-first lookup (Issue 20: VIN before the full form)", () =
       customer_id: customerId,
     });
     expect(onResolved).toHaveBeenCalledWith({
-      id: "existing-2", label: "Volkswagen Golf", assetTypeCode: "vehicle",
+      id: "existing-2", label: "Volkswagen Golf", assetTypeCode: "vehicle", accessories: true,
     });
   });
 });
@@ -605,7 +657,7 @@ describe("AssetStep — Q11 (reg-№ on-blur conflict check)", () => {
     await user.click(screen.getByRole("button", { name: "Използвай автомобила" }));
 
     expect(onResolved).toHaveBeenCalledWith({
-      id: "existing-3", label: "Volkswagen Golf", assetTypeCode: "vehicle",
+      id: "existing-3", label: "Volkswagen Golf", assetTypeCode: "vehicle", accessories: true,
     });
   });
 

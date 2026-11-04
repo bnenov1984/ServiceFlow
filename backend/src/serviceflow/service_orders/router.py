@@ -748,6 +748,20 @@ def add_accessory(order_id: uuid.UUID, body: AccessoryIn, db: TenantDbDep,
                   tenant: TenantDep) -> AccessoryOut:
     order = _get_or_404(db, tenant, order_id)
     _reject_if_terminal(order)
+    # order-workflow-revamp WP-H (Q16/Q16b): the UI hides the add-accessory
+    # form for an asset type with accessories=False (automotive) — this is
+    # the authoritative guard, same division of labor as mileage's
+    # service-side re-check. Historic accessories on such an order (added
+    # before this flag existed) are untouched; only adding a NEW one is
+    # blocked.
+    asset = assets_service.get(db, tenant, order.asset_id)
+    asset_type = assets_service.get_type_by_id(db, tenant, asset.asset_type_id) \
+        if asset is not None else None
+    if asset_type is not None and not asset_type.accessories:
+        raise HTTPException(status_code=400, detail={
+            "code": "accessories_not_supported", "message_key": "errors.accessories.not_supported",
+            "params": {},
+        })
     item = lines.add_accessory(db, tenant, order, name=body.name, qty=body.qty)
     return AccessoryOut.of(item)
 
