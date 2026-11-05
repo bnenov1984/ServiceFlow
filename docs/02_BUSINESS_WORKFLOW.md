@@ -15,19 +15,30 @@ distinct stage a company can toggle. The table below reflects the current
 flag; the row it removed is struck out rather than deleted, so the change is
 visible rather than silently rewriting history.
 
+*(order-workflow-revamp WP-G, Q1, 05.11.2026:)* **Приета is display-renamed
+НОВА** — the code (`received`) and its position in the model are unchanged,
+only the Bulgarian label. НОВА has its own dedicated screen and a reduced
+action set (§2 below) rather than the generic status menu every other
+status gets — see §15's order-detail-page note and docs/15 §6.5.
+
+*(Wave 4 audit correction, 25.09.2026, applied retroactively to this table —
+not previously reflected here:)* **Предадена was renamed Приключена** — the
+distinct post-Готова completion step reuses the pre-existing terminal-success
+status rather than adding a new one.
+
 Internal semantic kinds are fixed; Bulgarian display names are what users see.
 
 | # | Status (BG) | Kind | Purpose — the question it answers |
 |---|-------------|------|-----------------------------------|
-| 1 | Приета | working | Intake done; nobody has looked at it yet |
+| 1 | НОВА | working | Intake done; nobody has looked at it yet |
 | 2 | Диагностика | working | A technician is evaluating it |
 | 3 | Чака клиент | waiting | Estimate given; customer must decide |
 | 4 | Чака части | waiting | Approved; blocked on parts |
 | 5 | Ремонт | working | Actively being repaired (now includes verifying the repair — see amendment above) |
 | ~~6~~ | ~~Тестване~~ | ~~removed~~ | ~~Verifying the repair~~ — folded into Ремонт |
 | 6 | Готова | ready | Done; waiting for pickup |
-| 7 | Предадена | terminal-success | Customer took it; engagement complete |
-| 8 | Отказана | terminal-failure | Customer declined the estimate |
+| 7 | Приключена | terminal-success | Customer took it; engagement complete |
+| 8 | Отказана | terminal-failure | Customer declined the estimate / shop declined the job |
 | 9 | Неремонтируема | terminal-failure | Cannot / not worth repairing |
 | 10 | Анулирана | terminal-failure | Created by mistake / duplicate |
 
@@ -36,44 +47,68 @@ operational views; reversible by Owner.
 
 ## 2. Transition Matrix
 
-Rows = from, columns = to. ✔ allowed · W = allowed with warning (skip) · — not allowed.
-All transitions require an authenticated user; backend always validates (Kanban is
-just one way to trigger them).
+*(order-workflow-revamp WP-G, Q1–Q4, grilling 24.10.2026 — full rewrite of
+this section; the prior matrix, kept only in git history now, let every
+status skip-ahead to almost any other with a warning and allowed backward
+moves through the same menu as forward ones.)*
 
-*(Cleanup batch amendment: Тестване row/column removed — see §1's amendment.
-No other cell changes: Ремонт → Готова was already a direct ✔, since
-verifying the repair was never the only path there.)*
+Rows = from, columns = to. ✔ allowed (regular status menu) · W = allowed with
+warning (skip) · ↩ = allowed **only** via the separate "Върни към…" action
+(mandatory reason, never the regular menu) · — not allowed, not even with a
+warning. All transitions require an authenticated user; backend always
+validates (the UI is never the only gate).
 
-| From \ To | Диагн. | Чака кл. | Чака части | Ремонт | Готова | Предадена | Отказана | Неремонт. | Анулирана |
-|---|---|---|---|---|---|---|---|---|---|
-| Приета | ✔ | W | W | W | W | — | ✔ | ✔ | ✔ |
-| Диагностика | — | ✔ | ✔ | ✔ | W | — | ✔ | ✔ | ✔ |
-| Чака клиент | ✔ | — | ✔ | ✔ | W | — | ✔ | ✔ | ✔ |
-| Чака части | ✔ | ✔ | — | ✔ | W | — | ✔ | ✔ | ✔ |
-| Ремонт | ✔ | ✔ | ✔ | — | ✔ | — | — | ✔ | ✔ |
-| Готова | — | — | — | ✔ | — | ✔ | — | — | ✔ |
-| terminal | — | — | — | — | — | — | — | — | — |
+**Анулирана is not a matrix cell at all** — it's reachable from any open
+status via a separate Owner-only action (unconditional, mandatory reason),
+same as before this rewrite; it's omitted from the table below for that
+reason, not because it became unreachable.
+
+| From \ To | Диагн. | Чака кл. | Чака части | Ремонт | Готова | Приключена | Отказана | Неремонт. |
+|---|---|---|---|---|---|---|---|---|
+| НОВА | ✔ | — | — | — | — | — | ✔ | — |
+| Диагностика | — | ✔ | ✔ | ✔ | W | — | ✔ | ✔ |
+| Чака клиент | ↩ | — | ✔ | ✔ | W | — | ✔ | — |
+| Чака части | ↩ | ✔ | — | ✔ | W | — | ✔ | — |
+| Ремонт | ↩ | ✔ | ✔ | — | ✔ | — | — | — |
+| Готова | — | — | — | ↩ | — | ✔ | — | — |
+| terminal | — | — | — | — | — | — | — | — |
 
 Rules encoded above:
-- **Предадена only from Готова** (you can't hand over what isn't ready). Delivery
-  prompts: accessories return check, warranty days, payment settlement, optional
-  invoice, protocol print.
-- **Backward movement is allowed** among working statuses (wrong diagnosis, additional
-  damage, failed test) — always timeline-logged with the actor.
-- **Skips are allowed with a warning** (small shops legitimately jump Приета → Ремонт
-  for trivial jobs). The warning keeps the honest path visible without blocking
-  reality.
-- **Чака клиент exit to a forward status requires a recorded approval** (BR-7);
-  exit to Отказана requires a recorded rejection.
-- **Анулирана** (mistake) is Owner-only and requires a reason.
-- Terminal statuses accept no further transitions; only payments settling balance,
-  protocol printing and archiving remain possible. *(BR-2 amendment, 11.07.2026:)*
-  exception — **Owner-only „Отключване" ≤ 24 h** after the terminal transition,
-  mandatory reason, returns the order to its pre-closure status, timeline event
-  `OrderUnlocked`. Unavailable on archived orders (unarchive first, Owner-only
-  anyway). The UI's „Повторно отваряне" button on terminal orders creates a **new
-  linked follow-up order** (the rule); unlock lives under the Owner menu (the
-  exception).
+- **НОВА has no regular status menu at all** (Q2c) — just two dedicated
+  actions: **ПРИЕМИ** (→ Диагностика, pre-fills whatever technician intake
+  already picked — Q2b) and **ОТКАЖИ** (→ Отказана). Анулирана stays
+  available as the usual Owner-only secondary action.
+- **Диагностика requires a technician already on file to enter** (Q2a),
+  server-side, every entry point — since НОВА only forwards to Диагностика,
+  this single check also guarantees every later working status has one. A
+  pre-WP-G order with no technician gets one at its next transition.
+- **Неремонтируема is reachable only from Диагностика** (Q4) — not from any
+  other status, reversing the prior model where several statuses allowed it.
+- **Приключена only from Готова** (you can't hand over what isn't ready).
+  Delivery prompts: accessories return check, warranty days, payment
+  settlement, optional invoice, protocol print.
+- **Backward movement (↩) is a separate action, "Върни към…", never the
+  regular forward menu** (Q3) — always requires a reason (Q3b), always
+  timeline-logged with the actor and the reason. Чака клиент/Чака части/
+  Ремонт can all go back to Диагностика this way; Готова can go back to
+  Ремонт. Available to any active user, not just the Owner.
+- **Skips are still allowed with a warning** (small shops legitimately jump
+  straight to Готова for trivial jobs) — unchanged by this rewrite, just
+  narrower now that НОВА itself has no skip-ahead options at all.
+- **Чака клиент exit to a forward status requires a recorded approval**
+  (BR-7); exit to Отказана requires a recorded rejection. The backward move
+  back to Диагностика is not "the customer's decision" and doesn't go
+  through this gate — its own mandatory reason (above) covers it instead.
+- **Анулирана** (mistake) is Owner-only and requires a reason, from any open
+  status (see note above the table).
+- Terminal statuses accept no further transitions; only payments settling
+  balance, protocol printing and archiving remain possible. *(BR-2
+  amendment, 11.07.2026:)* exception — **Owner-only „Отключване" ≤ 24 h**
+  after the terminal transition, mandatory reason, returns the order to its
+  pre-closure status, timeline event `OrderUnlocked`. Unavailable on
+  archived orders (unarchive first, Owner-only anyway). The UI's „Повторно
+  отваряне" button on terminal orders creates a **new linked follow-up
+  order** (the rule); unlock lives under the Owner menu (the exception).
 
 Timeline events per transition: StatusChanged + specific events (EstimateApproved,
 OrderReady, OrderDelivered…) per 01 §5. Notifications: none in V1 (V1.5 hooks noted).
@@ -90,13 +125,16 @@ Permissions: any active user may perform allowed transitions except Анулир
      order-workflow-revamp WP-H, Q16/Q16b) · снимки при приемане (препор.)
      · обещана дата · приоритет · техник (по избор)
 → ПЕЧАТ: приемо-предавателен протокол (A4) — клиентът си тръгва с него
+→ НОВА: ПРИЕМИ (изисква техник — ако не е избран при приемането, пита тук;
+   WP-G, Q2a/Q2b) → Диагностика, или ОТКАЖИ → Отказана
 → Диагностика: находка, причина, препоръка, оценка (цена/срок), нужда от одобрение?
    ├─ одобрение нужно → Чака клиент → обаждане → запис на одобрение/отказ
    └─ не → продължава
-→ Части нужни? → редове „части“ (needed→ordered→received) → Чака части при блокаж
+→ Части нужни? → ред „част“ от ценоразписа, издадена от наличност или поръчана
+   (WP-J, Q15/Q15b) → Чака части при блокаж
 → Ремонт (incl. verifying the repair — no separate Тестване stage) → Готова
 → Клиентът идва: аксесоари върнати ✓ · плащане(ия) · [фактура по желание]
-   · гаранционен срок · ПЕЧАТ: протокол за предаване → Предадена
+   · гаранционен срок · ПЕЧАТ: протокол за предаване → Приключена
 → (по-късно) Архивирана
 ```
 
@@ -277,8 +315,8 @@ not change statuses; that happens only on the order page.
 преглежда поръчките, размества приоритети, назначава новия ремонт на Георги. 09:30 приема
 клиент: намира го по телефона, нов актив (втора кола), поръчка + протокол — 2 мин.
 11:00 одобрение по телефона за скъп ремонт → записва одобрението, мести в Чака части.
-14:00 частите идват → received → Ремонт. 17:30 клиент
-взима колата: плащане в брой, фактура (фирмен клиент), протокол, Предадена. 18:00
+14:00 частите идват → поръчаната част става издадена → Ремонт. 17:30 клиент
+взима колата: плащане в брой, фактура (фирмен клиент), протокол, Приключена. 18:00
 преглежда утрешните обещани дати; бекъпът е минал зелено (health индикатор).
 
 ## 18. A Day — Worker (Иво, GSM сервиз)

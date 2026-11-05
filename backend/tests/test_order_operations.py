@@ -37,12 +37,20 @@ def _order(client: TestClient, h: dict[str, str]) -> str:
     }).json()["id"])
 
 
+def _technician_id(client: TestClient, h: dict[str, str]) -> str:
+    """order-workflow-revamp WP-G (Q2a): diagnostics now requires a
+    technician on file — the Owner is itself a valid one (Q22)."""
+    return str(next(u["id"] for u in client.get("/api/v1/users", headers=h).json()
+                    if u["is_owner"]))
+
+
 def _order_for_lines(client: TestClient, h: dict[str, str]) -> str:
     """order-workflow-revamp WP-I (Q13d): a line can only be added once the
     order has left „Приета" — every test below that adds a part/labor line
     needs this instead of the bare `_order()`."""
     oid = _order(client, h)
-    r = client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
+    r = client.post(f"/api/v1/orders/{oid}/status", headers=h,
+                    json={"to": "diagnostics", "technician_id": _technician_id(client, h)})
     assert r.status_code == 200, r.text
     return oid
 
@@ -110,7 +118,8 @@ def test_approval_persists_to_diagnosis_record(client: TestClient) -> None:
         "recommendation": "Смяна на дисплей", "estimated_cost": "120.00",
         "approval_required": True,
     })
-    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
+    client.post(f"/api/v1/orders/{oid}/status", headers=h,
+               json={"to": "diagnostics", "technician_id": _technician_id(client, h)})
     client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "waiting_customer"})
     client.post(f"/api/v1/orders/{oid}/status", headers=h, json={
         "to": "repair", "approval": {"approved": True, "channel": "phone", "amount": 120},
@@ -128,7 +137,8 @@ def test_rejection_persists_to_diagnosis_record(client: TestClient) -> None:
     oid = _order(client, h)
     client.put(f"/api/v1/orders/{oid}/diagnosis", headers=h,
               json={"recommendation": "x", "approval_required": True})
-    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
+    client.post(f"/api/v1/orders/{oid}/status", headers=h,
+               json={"to": "diagnostics", "technician_id": _technician_id(client, h)})
     client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "waiting_customer"})
     client.post(f"/api/v1/orders/{oid}/status", headers=h,
                json={"to": "declined", "reason": "Клиентът отказа"})
@@ -368,7 +378,8 @@ def test_line_creation_blocked_outside_allowed_statuses(client: TestClient) -> N
     assert r.status_code == 400
     assert r.json()["detail"]["message_key"] == "errors.orders.lines_not_allowed_in_status"
 
-    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
+    client.post(f"/api/v1/orders/{oid}/status", headers=h,
+               json={"to": "diagnostics", "technician_id": _technician_id(client, h)})
     client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "ready"})
     r2 = client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
                      json={"catalog_item_id": item_id, "qty": 1})

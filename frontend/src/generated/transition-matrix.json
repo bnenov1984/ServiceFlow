@@ -3,7 +3,7 @@
     {
       "code": "received",
       "kind": "working",
-      "name_bg": "Приета",
+      "name_bg": "НОВА",
       "sort": 1
     },
     {
@@ -64,13 +64,13 @@
   "matrix": {
     "received": {
       "diagnostics": "ok",
-      "waiting_customer": "warn",
-      "waiting_parts": "warn",
-      "repair": "warn",
-      "ready": "warn",
+      "waiting_customer": "no",
+      "waiting_parts": "no",
+      "repair": "no",
+      "ready": "no",
       "completed": "no",
       "declined": "ok",
-      "unrepairable": "ok",
+      "unrepairable": "no",
       "cancelled": "ok"
     },
     "diagnostics": {
@@ -86,35 +86,35 @@
     },
     "waiting_customer": {
       "received": "no",
-      "diagnostics": "ok",
+      "diagnostics": "back",
       "waiting_parts": "ok",
       "repair": "ok",
       "ready": "warn",
       "completed": "no",
       "declined": "ok",
-      "unrepairable": "ok",
+      "unrepairable": "no",
       "cancelled": "ok"
     },
     "waiting_parts": {
       "received": "no",
-      "diagnostics": "ok",
+      "diagnostics": "back",
       "waiting_customer": "ok",
       "repair": "ok",
       "ready": "warn",
       "completed": "no",
       "declined": "ok",
-      "unrepairable": "ok",
+      "unrepairable": "no",
       "cancelled": "ok"
     },
     "repair": {
       "received": "no",
-      "diagnostics": "ok",
+      "diagnostics": "back",
       "waiting_customer": "ok",
       "waiting_parts": "ok",
       "ready": "ok",
       "completed": "no",
       "declined": "no",
-      "unrepairable": "ok",
+      "unrepairable": "no",
       "cancelled": "ok"
     },
     "ready": {
@@ -122,7 +122,7 @@
       "diagnostics": "no",
       "waiting_customer": "no",
       "waiting_parts": "no",
-      "repair": "ok",
+      "repair": "back",
       "completed": "ok",
       "declined": "no",
       "unrepairable": "no",

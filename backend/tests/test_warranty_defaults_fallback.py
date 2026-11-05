@@ -60,7 +60,14 @@ def _order(client: TestClient, h: dict[str, str], cid: str, aid: str) -> str:
 def _deliver(client: TestClient, h: dict[str, str], oid: str,
             warranty_days: int | None = None, skip: bool = True) -> "object":
     for to in ("diagnostics", "repair", "ready"):
-        client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": to})
+        # order-workflow-revamp WP-G (Q2a): diagnostics now requires a
+        # technician on file — the Owner is itself a valid one (Q22).
+        body_to: dict[str, object] = {"to": to}
+        if to == "diagnostics":
+            body_to["technician_id"] = next(
+                u["id"] for u in client.get("/api/v1/users", headers=h).json() if u["is_owner"]
+            )
+        client.post(f"/api/v1/orders/{oid}/status", headers=h, json=body_to)
     body: dict[str, object] = {"to": "completed"}
     if warranty_days is not None:
         body["warranty_days"] = warranty_days

@@ -1208,3 +1208,235 @@ on POST/PATCH responses), docs/15 (order-page right column: two add
 buttons, warranty checkbox, state select, suggestion banner), `docs/adr/
 ADR-BOS-013-repairflow-price-catalog.md` (forward-pointer note added to its
 WP-J-carve-out Consequences bullet: "Applied 05.11.2026").
+
+WP-G (status-driven order screen; #21/#22/#24/#31, Q1/Q2a/Q2b/Q2c/Q3/Q3b/Q4)
+implemented 05.11.2026 — the **last remaining work package** in the
+`order-workflow-revamp` initiative (A/B/C/D/E/F/H/I/J/K all already shipped;
+A, in particular, turned out to already be done — `fix/stale-order-cache`,
+merged via PR #5 before this session even started working through the WP
+table in order — confirmed by checking out that branch's own history rather
+than assuming from memory). By far the largest package in the initiative:
+a full transition-matrix rewrite, a new server-side precondition, a new
+backward-move UX, and two screen variants.
+
+**The one genuinely blocking open question, resolved as a scope call this
+session**: Q1b says "Claude builds a prototype [of the Диагностика screen];
+Венци corrects it (final say)." A 3-layout prototype was built 24.10.2026
+(artifact `cc83b202-c0e9-4241-a06c-b08b8ca48004`, "Екран Диагностика") but
+no verdict from Венци was ever recorded — the audit trail said so
+explicitly ("Verdict from Венци pending"), and the live matrix in
+`statuses.py` still had the pre-WP-G shape, confirming nothing had landed.
+Asked the user how to proceed; told to pick one myself. Read the actual
+prototype (its `VARIANTS` object, not just the audit's prose summary) and
+chose **Layout A** ("Две колони, като макета НОВА") over B (a technician
+step-wizard) and C (tabs + rail): A mirrors the already-PO-approved НОВА
+mock-up's structure, is the smallest departure from the existing
+`OrderPage.tsx` two-column layout, and — unlike B or C — generalizes to
+every status without per-status bespoke variants. In practice this meant:
+**no redesign of the existing default OrderPage grid at all** for
+Диагностика/Чака клиент/Чака части/Ремонт/Готова (terminal) — it already
+reads as "Layout A" — only НОВА (#21/#24, which has an explicit, separate,
+mock-up-sourced spec, not just the loose Q1b prototype) needed a genuinely
+distinct screen. This narrowed what could have been a much larger UI
+rewrite down to one new screen variant plus the header/menu changes below.
+
+**Matrix rewrite (Q1–Q4)**: `statuses.py`'s `_M` dict (one flat verdict per
+cell) replaced by `_FORWARD` (ok/warn-only) and `_BACKWARD` (which targets
+are reachable only via the new mandatory-reason action), with
+`check_transition` now returning a 4th verdict, `BACK`, alongside
+OK/WARN/NO. "cancelled" is deliberately in neither table — it's a wildcard
+`check_transition` grants unconditionally for any open, non-self status
+(the Owner-only + reason-required gate was already in `service.py`, unmoved
+by this WP). The exact cell values were taken verbatim from the 24.10.2026
+prototype's own `FORWARD`/`BACK` JS objects (ground truth already encoded
+and dated to the PO's own grilling session) rather than re-derived by hand
+from the prose decisions — cross-checked against AUDIT §7's resulting
+table and found to match exactly. "received" is display-renamed **НОВА**
+(`STATUSES` dict, Q1) — code, sort position, and kind are unchanged.
+"unrepairable" moved from reachable-via-5-statuses to reachable-only-from-
+Диагностика (Q4). `export_transition_matrix.py` needed **no code change** —
+it already calls `check_transition` generically per cell, so the new `BACK`
+value just flows through; regenerated `transition-matrix.json` and
+confirmed `test_frontend_prerequisites.py`'s drift-guard test still passes
+unmodified.
+
+**Technician precondition (Q2a)**: `change_status` gained a check —
+`statuses.kind_of(to) == Kind.WORKING and order.technician_id is None` →
+400 `errors.orders.technician_required`. Deliberately generic on the
+*target's kind*, not hardcoded to the literal status `"diagnostics"` — since
+НОВА only ever forwards to Диагностика (never directly to Чака части/
+Ремонт/Готова), this one check is sufficient for what Q2a's "every later working
+status" needs: a legacy pre-WP-G order with no technician that tries to
+re-enter Ремонт (also Kind.WORKING) from a waiting status gets caught by
+the exact same line, with no separate rule. `change_status` also gained an
+optional `technician_id` kwarg, applied *before* that check runs — lets
+ПРИЕМИ assign a technician and accept in one request, rather than a
+PATCH-then-POST round trip. Deliberately **not** routed through the
+existing `assign_technician()` service function (reserved for the
+standalone PATCH path, which fires its own `technician_assigned` event) —
+inlined directly so accepting doesn't double-log two events for one user
+action.
+
+**Backward-move UX (Q3/Q3b)**: a `BACK`-verdict transition now requires its
+own non-empty `reason` (400 `errors.orders.reason_required` otherwise —
+reusing the existing message_key, not a new one, since the user-facing
+meaning is identical) — checked independently of the pre-existing
+cancelled/declined reason rule, which is cell-specific, not direction-
+specific. **Scope call, not an explicit PO decision**: BR-7's approval gate
+(leaving Чака клиент forward requires a recorded customer decision) is
+skipped entirely when the verdict is `BACK` — the backward move to
+Диагностика already carries its own mandatory reason, and "went back to
+re-diagnose" isn't "the customer approved/rejected the estimate." The audit
+never addressed this interaction explicitly; this session's call is
+recorded inline in `service.py`'s own comment, not just here.
+
+**Real bug class avoided, not found** (contrast with WP-I's `adjustment_
+added` and WP-J's `part_issued` timeline-allowlist misses): no new
+`service_orders` timeline event type was introduced by this WP at all — a
+backward move and ПРИЕМИ both reuse the existing generic `status_changed`
+event, so there was no allowlist entry to forget this time.
+
+Backend: `statuses.py` (matrix rewrite, НОВА rename, `BACK` constant),
+`service.py` (`change_status`: `technician_id` param, technician-required
+check, backward-reason check, BR-7 scope narrowing — see above),
+`router.py` (`StatusChange.technician_id` field threaded through).
+`export_transition_matrix.py` and `assign_technician()` both **untouched**
+(confirmed deliberately, not by oversight — see above for each).
+
+Backend tests: `test_statuses.py`'s `EXPECTED` table rewritten wholesale to
+the new matrix (6 "from" rows × up to 8 "to" columns, `"back"` as a
+first-class verdict string alongside `"ok"/"warn"/"no"`) plus 2 new tests
+(`cancelled` reachable from every open status; `BACK` is a 4th, distinct
+verdict). `test_orders.py` gained a `_technician_id` helper (the Owner is
+itself a valid technician, Q22) and 4 new tests (technician-required gate,
+ПРИЕМИ succeeding without resending `technician_id` when intake already set
+one, backward-reason requirement + its timeline record, Неремонтируема-
+only-from-Диагностика) plus a full rewrite of `test_status_transitions_ok_
+warn_no` (НОВА no longer has a WARN skip-ahead at all — moved to
+Диагностика→Готова) and mechanical `technician_id` fixes to every other
+test in the file that drove an order into Диагностика. **Same mechanical
+fallout shape as WP-I's catalog change, bigger radius**: every test file
+anywhere that transitions an order out of received now needs a technician
+— caught 9 files via a literal grep for `"to": "diagnostics"`
+(`test_invoices.py`, `test_invoice_annul.py`, `test_invoice_issue.py`,
+`test_invoice_list.py`, `test_invoice_pdf.py`, `test_manual_invoice.py`,
+`test_order_operations.py`, `test_payments.py`, `test_protocol.py`) plus 3
+more the literal grep missed because the status was a loop variable, not a
+string literal (`test_open_order_block.py`'s `_transition` helper,
+`test_warranty_defaults_fallback.py`'s `_deliver` helper, and
+`test_frontend_prerequisites.py`'s dashboard-counts test) — found only
+because the **full suite** run surfaced them; the targeted per-file runs
+during implementation did not, which is exactly why "run everything, not
+just the files you think you touched" matters for a change with this much
+blast radius. Also fixed a genuine test bug in `test_open_order_block.py`'s
+parametrized terminal-transition test: `unrepairable` was asserted
+reachable directly from `received`, which Q4 makes false now — fixed by
+routing that one parametrize case through Диагностика first instead of
+weakening the assertion. 854 passed, 2 xfailed (same pre-existing pair), 0
+failed — net +6 over WP-J's 848 (4 new in `test_orders.py`, 2 new in
+`test_statuses.py`; every other touched file's test *count* is unchanged,
+only bodies). ruff/mypy/lint-imports all clean.
+
+Frontend: `statusMatrix.ts` (`allowedTransitions` now excludes `"back"`
+too, not just `"no"`; new `backwardTransitions(from)`). `OrderHeader.tsx`:
+НОВА gets dedicated ПРИЕМИ/ОТКАЖИ buttons plus an Owner-only "Анулирай
+поръчката" link, entirely replacing the generic dropdown for that one
+status (new `orderIsReceived` branch); a new "Върни към…" button per
+`backwardTransitions(statusCode)` entry, each wired to `ReasonDialog` with
+`requireReason` — reusing that existing component rather than inventing a
+new one, since it already supports every shape this needed (confirmed by
+the scoping pass before writing any code, not assumed). New `AcceptDialog.
+tsx` (ПРИЕМИ): wraps the existing `TechnicianPicker` (shared with intake),
+pre-filled from `order.technician_id` when intake already set one — the
+confirm button stays disabled until a technician is picked, satisfying Q2a
+without a separate client-side validation path. `OrderPage.tsx`: new
+`isReceived` branch mirroring `isReady`'s existing pattern — left column
+keeps only AssetCard/VehicleHistorySection/ComplaintBlock, right column
+only PhotosGrid/ContactsSection, nothing else (#21/#24's explicit "Absent"
+list) — `technician_id` threaded from `OrderDetailOut` down to
+`OrderHeader`. **Scope call**: kept `CustomerCard`'s column position (left,
+same as every other status) rather than moving it to the mock-up's literal
+"right column" placement for НОВА specifically — cosmetic-only, avoids a
+per-status special case for one card's column, and is exactly the kind of
+detail a real Венци review would settle either way. `bg.ts`: new
+`order.accept*`/`order.decline`/`order.cancel_order`/`order.back_to_action`
+keys.
+
+**A real bug found writing the tests, same category as WP-I's `test_
+catalog.py` cookie-ordering and WP-J's PartLinesSection mock set up**:
+`OrderHeader.test.tsx`'s `renderHeader()` helper set a blanket `api.get`
+mock (`mockResolvedValue([])`) *after* accepting test-specific overrides in
+two new ПРИЕМИ tests — but `AcceptDialog`'s `TechnicianPicker` is always
+mounted (same "every dialog always rendered, `open` only toggles
+visibility" pattern the whole file already uses), so its `GET /users` call
+fires at `OrderHeader` mount time, before a test's own `mockImplementation`
+call (made *after* calling `renderHeader`) could ever take effect. Fixed by
+moving the technician-list fixture into `renderHeader`'s own parameters
+(`users: [...]`) so it's configured before the first render, not patched
+in afterward.
+
+Frontend tests: `OrderHeader.test.tsx`'s "status transition menu" describe
+block rewritten to use `statusCode: "diagnostics"` as its default subject
+(the generic dropdown's own test fixture) instead of `"received"`, which
+has no dropdown at all post-WP-G; 3 new describe blocks ("НОВА", "backward
+transitions", plus the one new "never shows the generic dropdown for НОВА"
+case folded into the existing menu block) — 38 tests total, up from the
+file's pre-WP-G count. `FiltersBar.test.tsx` one-line fix (`"Приета"` →
+`"НОВА"` chip-label assertion). 603 passed (up from WP-J's post-fix 593 —
+net +10, same count across both full-suite runs). tsc/`npm run build`
+clean.
+
+**e2e (Playwright, `frontend/e2e/repairflow/`) — fixed for correctness, not
+run**: no command in this repo's CLAUDE.md puts Playwright in the normal
+verification loop (confirmed by re-checking — only `uv run pytest`/`npm run
+dev`/`npm run build` are listed), and `tsconfig.json`'s own `include` is
+`["src", "vite.config.ts"]` — the `e2e/` directory isn't even covered by
+`npm run typecheck`. Consistent with every prior WP this session, e2e specs
+were fixed by careful reading, not executed. Five specs drove "received →
+diagnostics" through the now-gone generic dropdown and needed the new
+ПРИЕМИ flow instead (`order-status.spec.ts`, `order-rejection.spec.ts`,
+`order-status-cache.spec.ts` — 2 of its 3 tests, `order-delivery.spec.ts`,
+`order-invoice.spec.ts`) plus `"Приета"` text-assertion fixes to `"НОВА"`.
+New shared helper `support/order.ts`'s `acceptIntoDiagnostics(page)`
+(clicks ПРИЕМИ, picks whichever technician sorts first, confirms) factors
+the new flow out once rather than duplicating it five times — matching
+this subtree's own stated convention ("reuse fixtures/helpers instead of
+re-deriving... don't duplicate"). `frontend/e2e/CLAUDE.md` (this subtree's
+own per-spec documentation file, which predates and is more detailed than
+this AUDIT) updated in step: the shared-helpers section, every affected
+spec's description paragraph, and the domain-ownership section's file list.
+
+Verified live (dev backend + Vite dev server via `mcp__Claude_Browser__*`,
+no migration needed — WP-G is pure logic/validation, no schema change,
+confirmed before starting): created a fresh order, confirmed the НОВА
+screen renders exactly the reduced section set (КЛИЕНТ/АКТИВ/ОПЛАКВАНЕ/
+СНИМКИ/КОМУНИКАЦИЯ/ХРОНОЛОГИЯ only — no diagnosis/parts/labor/accessories/
+promised-date/invoice/money, no technician field), confirmed `POST .../
+status {to: diagnostics}` with no technician 400s with `errors.orders.
+technician_required`. **Unlike every prior WP this session, `find`+`ref`-
+based real clicks worked reliably this time** (previously flaky in this
+Browser-pane environment) — drove the *entire* ПРИЕМИ flow through actual
+clicks: opened AcceptDialog, selected a technician from the real picker,
+confirmed, watched the order flip to Диагностика and the full operational
+screen (diagnosis/parts/labor/accessories/money) appear. Advanced to Ремонт
+via the regular dropdown, confirmed a "↩ Върни към Диагностика" button
+appeared (and only that one — Ремонт's sole backward target), clicked it,
+confirmed the confirm button stays disabled with an empty reason, typed one,
+confirmed, and verified via the raw timeline API that the resulting `status_
+changed` event carries the typed reason verbatim. Confirmed Диагностика →
+Неремонтируема succeeds (via direct API call) immediately after a backward
+move landed the order back in Диагностика, closing the loop on Q4's
+restriction in the one place it's actually reachable from the НОВА origin
+story this test walked.
+
+Docs: docs/02 §1 (status table: НОВА rename, retroactively documents the
+pre-existing-but-never-reflected Предадена→Приключена rename too, found
+while rewriting the adjacent row), §2 (full matrix rewrite — forward/
+backward/wildcard-cancelled, replacing the old flat ✔/W/— table), §3 (main
+workflow ASCII flow: ПРИЕМИ step added, stale "needed→ordered→received"
+part-state mention corrected to WP-J's actual model), §18 ("A Day — Owner"
+narrative: same two stale-text fixes in prose form). docs/09 (`POST
+/orders/{id}/status` body fields: `technician_id`, backward-reason rule).
+docs/15 §6.5 (general OrderPage ASCII diagram: forward-only menu + "Върни
+към…" row annotated; new, separate НОВА-specific ASCII diagram + prose
+listing what's absent and the CustomerCard-placement scope call).

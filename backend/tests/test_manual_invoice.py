@@ -45,6 +45,13 @@ def _customer(client: TestClient, h: dict[str, str], *, name: str = "Иван П
     return str(resp.json()["id"])
 
 
+def _technician_id(client: TestClient, h: dict[str, str]) -> str:
+    """order-workflow-revamp WP-G (Q2a): diagnostics now requires a
+    technician on file — the Owner is itself a valid one (Q22)."""
+    return str(next(u["id"] for u in client.get("/api/v1/users", headers=h).json()
+                    if u["is_owner"]))
+
+
 def _manual_draft(client: TestClient, h: dict[str, str], customer_id: str) -> "object":
     return client.post("/api/v1/invoices", headers=h, json={"customer_id": customer_id})
 
@@ -205,7 +212,8 @@ def test_manual_and_order_invoices_share_one_continuous_number_sequence(
     oid = client.post("/api/v1/orders", headers=h, json={
         "customer_id": cid1, "asset_id": aid, "complaint": "Тест",
     }).json()["id"]
-    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
+    client.post(f"/api/v1/orders/{oid}/status", headers=h,
+               json={"to": "diagnostics", "technician_id": _technician_id(client, h)})
     labor_item_id = client.post("/api/v1/catalog-items", headers=h, json={
         "kind": "labor", "name": "Труд", "unit": "pcs", "sale_price": "20",
     }).json()["id"]

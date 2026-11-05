@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { enterRepairFlow, getOwnerCredentials, loginAsOwner } from '../support/login';
+import { acceptIntoDiagnostics } from '../support/order';
 
 test('owner declines an order with a required reason, reaching a terminal state', async ({ page }) => {
   const { email, password } = getOwnerCredentials();
@@ -58,19 +59,13 @@ test('owner declines an order with a required reason, reaching a terminal state'
     .click();
 
   await expect(page).toHaveURL(/\/orders\/[0-9a-f-]{36}$/);
-  await expect(page.getByText('Приета', { exact: true })).toBeVisible();
+  await expect(page.getByText('НОВА', { exact: true })).toBeVisible();
 
-  // received -> diagnostics is the matrix's plain "ok" next step (same as
-  // order-status.spec.ts) — get to a state that can still decline (docs/02
+  // НОВА (Q2c) has no "Промени статус" dropdown — ПРИЕМИ (Q2a/Q2b) is the
+  // only way to Диагностика, which can still decline from there (docs/02
   // §2: "diagnostics" -> "declined" is OK; matches the rejection journey's
   // "оценка -> отказ").
-  await page
-    .getByRole('button', { name: 'Промени статус' })
-    .click();
-
-  await page
-    .getByRole('menuitem', { name: 'Диагностика' })
-    .click();
+  await acceptIntoDiagnostics(page);
 
   await expect(page.getByText('Диагностика', { exact: true })).toBeVisible();
 

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { enterRepairFlow, getOwnerCredentials, loginAsOwner } from '../support/login';
+import { acceptIntoDiagnostics } from '../support/order';
 
 test('owner delivers an order and issues an invoice for it', async ({ page }) => {
   const { email, password } = getOwnerCredentials();
@@ -76,11 +77,15 @@ test('owner delivers an order and issues an invoice for it', async ({ page }) =>
     .click();
 
   await expect(page).toHaveURL(/\/orders\/[0-9a-f-]{36}$/);
-  await expect(page.getByText('Приета', { exact: true })).toBeVisible();
+  await expect(page.getByText('НОВА', { exact: true })).toBeVisible();
 
-  // received -> diagnostics -> repair -> ready, the matrix's plain "ok"
-  // chain (transition-matrix.json), same as order-delivery.spec.ts.
-  for (const step of ['Диагностика', 'Ремонт', 'Готова']) {
+  // НОВА -> Диагностика is ПРИЕМИ, not a menu item (order-workflow-revamp
+  // WP-G, Q2a/Q2c) — diagnostics -> repair -> ready stay the matrix's plain
+  // "ok" chain (transition-matrix.json), same as order-delivery.spec.ts.
+  await acceptIntoDiagnostics(page);
+  await expect(page.getByText('Диагностика', { exact: true })).toBeVisible();
+
+  for (const step of ['Ремонт', 'Готова']) {
     await page
       .getByRole('button', { name: 'Промени статус' })
       .click();

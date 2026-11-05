@@ -52,6 +52,9 @@ interface OrderDetailOut {
   warranty_days: number | null;
   // Wave 4 Issue 7 — whether a frozen delivery snapshot/protocol exists.
   has_completion_snapshot: boolean;
+  // order-workflow-revamp WP-G (Q2b) — whatever intake already picked, if
+  // anything; AcceptDialog pre-fills from this.
+  technician_id: string | null;
 }
 
 interface AssetServiceHistoryOut {
@@ -159,6 +162,12 @@ export function OrderPage() {
   // only, and every other section (accessories, photos, invoice,
   // timeline) keeps working exactly as it does for any other open order.
   const isReady = order.status_code === "ready";
+  // order-workflow-revamp WP-G (Q1/Q2c, #21/#24): НОВА (received) is
+  // review-only — no diagnosis yet, no technician field (ПРИЕМИ's own
+  // dialog handles that), and none of the operational sections that only
+  // make sense once the order has actually been accepted into the shop's
+  // workflow (parts/labor/accessories/promised date/invoice/money).
+  const isReceived = order.status_code === "received";
   // order-workflow-revamp WP-I (Q13d) — see LINE_CREATION_STATUSES above.
   const addLineBlockedHint = LINE_CREATION_STATUSES.has(order.status_code)
     ? null : t("order.add_line_blocked_hint");
@@ -172,6 +181,7 @@ export function OrderPage() {
         archived={order.archived}
         warrantyDays={order.warranty_days}
         hasCompletionSnapshot={order.has_completion_snapshot}
+        technicianId={order.technician_id}
       />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -190,7 +200,9 @@ export function OrderPage() {
           {isVehicle && (
             <VehicleHistorySection assetId={order.asset_id} currentOrderId={order.id} />
           )}
-          {isReady ? (
+          {isReceived ? (
+            <ComplaintBlock orderId={order.id} complaint={order.complaint} editable />
+          ) : isReady ? (
             <ReadySummary
               orderId={order.id}
               complaint={order.complaint}
@@ -205,18 +217,24 @@ export function OrderPage() {
               <DiagnosisCard orderId={order.id} diagnosis={order.diagnosis} editable={!orderIsTerminal} />
             </>
           )}
-          <PromisedDateBlock orderId={order.id} promisedOn={order.promised_on} editable={!orderIsTerminal} />
-          <InvoiceCard orderId={order.id} completedAt={order.completed_at} customerId={order.customer_id} />
+          {!isReceived && (
+            <>
+              <PromisedDateBlock orderId={order.id} promisedOn={order.promised_on} editable={!orderIsTerminal} />
+              <InvoiceCard orderId={order.id} completedAt={order.completed_at} customerId={order.customer_id} />
+            </>
+          )}
         </div>
 
         <div className="flex flex-col gap-4">
-          {!isReady && (
+          {!isReady && !isReceived && (
             <>
               <PartLinesSection orderId={order.id} addLineBlockedHint={addLineBlockedHint} />
               <LaborLinesSection orderId={order.id} addLineBlockedHint={addLineBlockedHint} />
             </>
           )}
-          <AccessoriesListSection orderId={order.id} accessoriesEnabled={asset?.accessories ?? true} />
+          {!isReceived && (
+            <AccessoriesListSection orderId={order.id} accessoriesEnabled={asset?.accessories ?? true} />
+          )}
           <PhotosGrid orderId={order.id} />
           {/* Issue 34: history lives in the timeline below now — this stays
               only as the add-a-contact form, no duplicate list. */}
@@ -225,8 +243,9 @@ export function OrderPage() {
               actual bottom of this column's operational content — after
               every line-item/accessory/photo/contact section, not sandwiched
               between Parts/Labor and them. Ready orders skip this entirely
-              (ReadySummary above already shows the same three figures). */}
-          {!isReady && (
+              (ReadySummary above already shows the same three figures);
+              НОВА (#21/#24) has no money to show at all yet. */}
+          {!isReady && !isReceived && (
             <>
               <AdjustmentSection orderId={order.id} />
               <MoneyCard

@@ -16,7 +16,8 @@ import { ApiError, api } from "../lib/api";
 import { apiUrl } from "../lib/apiUrl";
 import { invalidateOrderViews } from "../lib/orderQueries";
 import { queryKeys } from "../lib/queryKeys";
-import { allowedTransitions, isTerminal, kindOf, statusName } from "../lib/statusMatrix";
+import { allowedTransitions, backwardTransitions, isTerminal, kindOf, statusName } from "../lib/statusMatrix";
+import { AcceptDialog } from "./dialogs/AcceptDialog";
 import { ApprovalDialog } from "./dialogs/ApprovalDialog";
 import { CompletionDialog, type CompletionPaymentInput } from "./dialogs/CompletionDialog";
 import { ReasonDialog } from "./dialogs/ReasonDialog";
@@ -40,13 +41,18 @@ interface OrderHeaderProps {
   // print action short-circuit to a clear message instead of opening a
   // doomed new tab for a legacy delivered order (or one not delivered yet).
   hasCompletionSnapshot: boolean;
+  // order-workflow-revamp WP-G (Q2b): whatever intake already picked, if
+  // anything — pre-fills AcceptDialog's technician picker.
+  technicianId: string | null;
 }
 
 const TERMINAL_FAILURE_CODES = new Set(["declined", "unrepairable", "cancelled"]);
 
 type PendingAction =
   | { kind: "reason"; to: string }
+  | { kind: "back"; to: string }
   | { kind: "approval"; to: string }
+  | { kind: "accept" }
   | { kind: "completion" }
   | { kind: "unlock" }
   | { kind: "warranty_return" }
@@ -138,7 +144,7 @@ function StatusTransitionMenu({
 }
 
 export function OrderHeader({
-  orderId, number, statusCode, archived, warrantyDays, hasCompletionSnapshot,
+  orderId, number, statusCode, archived, warrantyDays, hasCompletionSnapshot, technicianId,
 }: OrderHeaderProps) {
   const { me } = useAuth();
   const queryClient = useQueryClient();
@@ -335,9 +341,16 @@ export function OrderHeader({
   const buttons = allowedTransitions(statusCode).filter(
     ({ code }) => (code !== "cancelled" || me?.is_owner) && code !== "completed",
   );
+  // order-workflow-revamp WP-G (Q3/Q3b): never in the regular dropdown —
+  // only this dedicated "Върни към…" row, each with its own mandatory-
+  // reason dialog.
+  const backwardTo = backwardTransitions(statusCode);
   const orderIsTerminal = isTerminal(statusCode);
   const orderIsCompleted = kindOf(statusCode) === "terminal_success";
   const orderIsReady = statusCode === "ready";
+  // order-workflow-revamp WP-G (Q1/Q2c): НОВА has no regular status
+  // dropdown at all — just ПРИЕМИ/ОТКАЖИ (and, Owner-only, Анулирай).
+  const orderIsReceived = statusCode === "received";
 
   return (
     <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -347,9 +360,48 @@ export function OrderHeader({
       <h1 className="text-2xl font-bold text-slate-900">№ {number}</h1>
       <StatusPill code={statusCode} />
 
-      {!archived && !orderIsTerminal && (
+      {!archived && orderIsReceived && (
+        <>
+          <button
+            type="button"
+            onClick={() => openPending({ kind: "accept" })}
+            className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 min-h-touch"
+          >
+            {t("order.accept")}
+          </button>
+          <button
+            type="button"
+            onClick={() => openPending({ kind: "reason", to: "declined" })}
+            className="rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 min-h-touch"
+          >
+            {t("order.decline")}
+          </button>
+          {me?.is_owner && (
+            <button
+              type="button"
+              onClick={() => openPending({ kind: "reason", to: "cancelled" })}
+              className="text-sm font-medium text-slate-500 hover:underline"
+            >
+              {t("order.cancel_order")}
+            </button>
+          )}
+        </>
+      )}
+
+      {!archived && !orderIsTerminal && !orderIsReceived && (
         <StatusTransitionMenu transitions={buttons} onSelect={requestTransition} />
       )}
+
+      {!archived && !orderIsTerminal && backwardTo.map((to) => (
+        <button
+          key={to}
+          type="button"
+          onClick={() => openPending({ kind: "back", to })}
+          className="rounded-lg border border-amber-300 px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50 min-h-touch"
+        >
+          ↩ {t("order.back_to_action", { status: statusName(to) })}
+        </button>
+      ))}
 
       {!archived && orderIsReady && (
         <button
@@ -443,6 +495,27 @@ export function OrderHeader({
         requireReason={pending?.kind === "reason" && pending.to !== "unrepairable"}
         onClose={close}
         onConfirm={(reason) => pending?.kind === "reason" && void runStatusChange({ to: pending.to, reason })}
+        submitting={submitting}
+        error={error}
+      />
+      <ReasonDialog
+        open={pending?.kind === "back"}
+        title={
+          pending?.kind === "back"
+            ? t("order.back_to_action", { status: statusName(pending.to) })
+            : ""
+        }
+        requireReason
+        onClose={close}
+        onConfirm={(reason) => pending?.kind === "back" && void runStatusChange({ to: pending.to, reason })}
+        submitting={submitting}
+        error={error}
+      />
+      <AcceptDialog
+        open={pending?.kind === "accept"}
+        currentTechnicianId={technicianId}
+        onClose={close}
+        onConfirm={(id) => void runStatusChange({ to: "diagnostics", technician_id: id })}
         submitting={submitting}
         error={error}
       />

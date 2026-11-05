@@ -39,8 +39,13 @@ start; the generated OpenAPI schema becomes the machine-readable source of truth
 - GET /orders — filters: status, technician, overdue, priority, q
 - GET /orders/{id} — full detail (lines, diagnosis, accessories, adjustments, timeline page 1)
 - PATCH /orders/{id} — fields per edit rules (row_version)
-- POST /orders/{id}/status — {to, reason?, approval?} — the **only** way any client
-  (incl. Kanban DnD) changes status; server enforces the matrix (02 §2)
+- POST /orders/{id}/status — {to, reason?, approval?, warranty_days?,
+  technician_id?} — the **only** way any client changes status; server
+  enforces the matrix (02 §2). `reason` is mandatory for a backward move
+  (WP-G, Q3b) in addition to the pre-existing cancelled/declined cases;
+  `technician_id`, when given, is applied before the "entering a WORKING
+  status requires a technician" precondition (WP-G, Q2a) is checked — lets
+  ПРИЕМИ (received → diagnostics) assign one and accept in the same request
 - POST /orders/{id}/archive (terminal only) · POST /orders/{id}/warranty-return —
   creates linked order
 - GET /orders/{id}/protocol.pdf — intake/delivery variants (?type=)

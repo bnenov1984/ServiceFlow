@@ -84,6 +84,10 @@ class StatusChange(BaseModel):
     reason: str | None = Field(default=None, max_length=1000)
     approval: dict[str, Any] | None = None
     warranty_days: int | None = Field(default=None, ge=0, le=3650)
+    # order-workflow-revamp WP-G (Q2b): lets ПРИЕМИ (received -> diagnostics)
+    # assign a technician and accept in one request, when intake didn't
+    # already pick one.
+    technician_id: uuid.UUID | None = None
 
 
 class UnlockRequest(BaseModel):
@@ -606,6 +610,7 @@ def change_status(order_id: uuid.UUID, body: StatusChange, db: TenantDbDep,
         order, warning = service.change_status(
             db, tenant, order, to=body.to, reason=body.reason,
             approval=body.approval, warranty_days=body.warranty_days,
+            technician_id=body.technician_id,
         )
     except service.OrderError as e:
         raise _err(e) from e

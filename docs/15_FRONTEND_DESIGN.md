@@ -166,11 +166,18 @@ Submit последователност: (create customer ако нов) → (cr
 никога не губим интейка заради периферия. Error: полеви грешки от field_errors.
 
 ### 6.5 Order detail (`/orders/:id`) — един екран, без табове (10 §2.3)
+
+*(order-workflow-revamp WP-G, Q1–Q4, 05.11.2026:)* НОВА (received) renders a
+distinct, deliberately minimal variant of this page — see the separate ASCII
+block right after the general one below; everything from "лява колона"
+onward in the general diagram applies to every **other** status.
 ```
-OrderPage
-├─ OrderHeader (№ · StatusPill · StatusActionButtons (само позволените от
-│    матрицата; terminal през диалози §6.6) · Печат протокол · Owner меню:
-│    Отключи (unlock) / Ново гаранционно / Архивирай)
+OrderPage (Диагностика/Чака клиент/Чака части/Ремонт/Готова/terminal)
+├─ OrderHeader (№ · StatusPill · StatusActionButtons — forward-only menu
+│    (Q3), never a backward target; "Върни към…" row, one ghost button per
+│    BACK-verdict target, own mandatory-reason dialog (Q3b); terminal
+│    targets through диалози §6.6) · Печат протокол · Owner меню: Отключи
+│    (unlock) / Ново гаранционно / Архивирай)
 ├─ лява колона: CustomerCard (tel: link) · AssetCard (идентификатори) ·
 │    ComplaintBlock (inline edit) · DiagnosisCard (inline form; approval блок
 │    когато approval_required) · AdjustmentSection (Owner-only add form,
@@ -192,6 +199,25 @@ OrderPage
 ```
 Data: `["order", id]` + timeline + attachments + contacts (паралелни заявки; един
 skeleton layout). Terminal orders: всичко read-only + banner с изхода и причината.
+
+**НОВА (received) — отделен, умишлено оскъден вариант** (#21/#24, Q1/Q2a/Q2b/Q2c):
+```
+OrderPage (НОВА)
+├─ OrderHeader (№ · StatusPill „НОВА" · ПРИЕМИ (AcceptDialog: technician
+│    picker, pre-filled от интейка ако вече е избран там — Q2b; потвърждава
+│    и прехода, и техника в едно заявка) · ОТКАЖИ (ReasonDialog → Отказана)
+│    · Owner-only „Анулирай поръчката" линк · Печат протокол)
+├─ лява колона: CustomerCard · AssetCard (+ VehicleHistorySection при
+│    автомобил) · ComplaintBlock (editable)
+└─ дясна колона: PhotosGrid · ContactsSection
+   TimelineSection (пълна ширина, както винаги)
+```
+Отсъстват изцяло: техник като постоянно поле (само в AcceptDialog),
+DiagnosisCard, PartLines/LaborLines, AccessoriesList, PromisedDateBlock,
+InvoiceCard, AdjustmentSection, MoneyCard — нищо от това няма смисъл преди
+ПРИЕМИ. Колонното разположение на CustomerCard/PhotosGrid остава същото като
+другите статуси (пресъздава ги вместо да ги мести) — умишлено опростяване
+спрямо оригиналния макет, което следващ преглед от Венци може да коригира.
 Error 404: „Няма такава поръчка" + link. Всички мутации → invalidation per §5.2.
 
 ### 6.6 Диалози, носещи бизнес правила (10 §4)

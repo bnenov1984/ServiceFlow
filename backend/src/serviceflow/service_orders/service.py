@@ -441,10 +441,20 @@ def _build_completion_snapshot(db: Session, ctx: TenantContext,
 
 def change_status(db: Session, ctx: TenantContext, order: ServiceOrder, *, to: str,
                   reason: str | None = None, approval: dict[str, Any] | None = None,
-                  warranty_days: int | None = None) -> tuple[ServiceOrder, str | None]:
+                  warranty_days: int | None = None,
+                  technician_id: uuid.UUID | None = None) -> tuple[ServiceOrder, str | None]:
     """The single entry point for status changes (docs/09: Kanban is just a client).
 
     Returns (order, warning) where warning is "skip" for WARN transitions.
+
+    order-workflow-revamp WP-G (Q2b): `technician_id`, when given, is applied
+    *before* the technician-required precondition below is checked — this is
+    how ПРИЕМИ (received -> diagnostics) lets a caller pick a technician and
+    accept in one request when intake didn't already set one. Not routed
+    through `assign_technician()` (that function is reserved for the
+    standalone PATCH /orders/{id} path, which also emits its own
+    `technician_assigned` event) — applying it here inline avoids a second,
+    redundant event for what is really one user action.
     """
     if order.archived_at is not None:
         raise OrderError("errors.orders.archived")
@@ -457,7 +467,35 @@ def change_status(db: Session, ctx: TenantContext, order: ServiceOrder, *, to: s
         raise OrderError("errors.auth.owner_required", status=403)
     if to in ("cancelled", "declined") and not (reason and reason.strip()):
         raise OrderError("errors.orders.reason_required", status=400)
-    if order.status_code == "waiting_customer":
+    # order-workflow-revamp WP-G (Q3/Q3b): a backward move (Чака клиент/Чака
+    # части/Ремонт -> Диагностика, Готова -> Ремонт) always needs its own
+    # mandatory reason, regardless of the "cancelled"/"declined" rule above
+    # (which is cell-specific, not direction-specific).
+    if verdict == statuses.BACK and not (reason and reason.strip()):
+        raise OrderError("errors.orders.reason_required", status=400)
+    if technician_id is not None:
+        order.technician_id = technician_id
+    # order-workflow-revamp WP-G (Q2a): a technician must already be
+    # assigned to enter Диагностика or any later WORKING status — checked
+    # generically on the *target* status's kind, not hardcoded to
+    # "diagnostics" alone, so it also catches a legacy order (no technician
+    # on file, predating this rule) attempting its next transition into
+    # Ремонт from a waiting status, per Q2a's "every later working status."
+    # Every WORKING status past "received" is only reachable by first
+    # passing through "diagnostics" (see `_FORWARD`/`_BACKWARD` in
+    # statuses.py), so this one generic check is sufficient — no separate
+    # check is needed per working status.
+    if statuses.kind_of(to) == statuses.Kind.WORKING and order.technician_id is None:
+        raise OrderError("errors.orders.technician_required", status=400)
+    # order-workflow-revamp WP-G: BR-7's approval gate is specific to
+    # *forward* exits from Чака клиент (the customer's decision on the
+    # estimate) — the backward move back to Диагностика already carries its
+    # own mandatory reason above and isn't "the customer decided," so it's
+    # deliberately excluded here (verdict == BACK skips this block
+    # entirely). Not an explicit PO decision — the audit didn't address the
+    # interaction between Q3b's reason and BR-7's approval, so this is this
+    # session's own scope call; see AUDIT.md's WP-G completion entry.
+    if order.status_code == "waiting_customer" and verdict != statuses.BACK:
         if to == "declined":
             _event(db, ctx, order, "estimate_rejected", {"reason": reason})
             _persist_diagnosis_approval(db, ctx, order, {

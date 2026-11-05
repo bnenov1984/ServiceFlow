@@ -1,7 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { enterRepairFlow, getOwnerCredentials, loginAsOwner } from '../support/login';
+import { acceptIntoDiagnostics } from '../support/order';
 
-test('owner advances an order from Приета to Диагностика via the status menu', async ({ page }) => {
+test('owner advances an order from НОВА to Диагностика via ПРИЕМИ', async ({ page }) => {
   const { email, password } = getOwnerCredentials();
 
   const unique = Date.now();
@@ -59,21 +60,16 @@ test('owner advances an order from Приета to Диагностика via th
 
   await expect(page).toHaveURL(/\/orders\/[0-9a-f-]{36}$/);
 
-  // A freshly created order starts at "received" ("Приета", docs/01 BR-1) —
+  // A freshly created order starts at "received" ("НОВА", docs/01 BR-1;
+  // display-renamed from "Приета" by order-workflow-revamp WP-G, Q1) —
   // confirm the starting state before changing it.
-  await expect(page.getByText('Приета', { exact: true })).toBeVisible();
+  await expect(page.getByText('НОВА', { exact: true })).toBeVisible();
 
-  // "received" -> "diagnostics" is the matrix's plain "ok" next step (no
-  // reason/approval/delivery dialog attached to it — see OrderHeader.tsx's
-  // requestTransition), the simplest real status change to drive end to end.
-  await page
-    .getByRole('button', { name: 'Промени статус' })
-    .click();
-
-  await page
-    .getByRole('menuitem', { name: 'Диагностика' })
-    .click();
+  // НОВА has no "Промени статус" dropdown at all (WP-G, Q2c) — only the
+  // dedicated ПРИЕМИ button, which also requires picking a technician
+  // (Q2a) before the move to Диагностика is allowed.
+  await acceptIntoDiagnostics(page);
 
   await expect(page.getByText('Диагностика', { exact: true })).toBeVisible();
-  await expect(page.getByText('Приета', { exact: true })).not.toBeVisible();
+  await expect(page.getByText('НОВА', { exact: true })).not.toBeVisible();
 });

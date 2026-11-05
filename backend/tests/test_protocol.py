@@ -25,6 +25,13 @@ def _login(client: TestClient, company: str = "Сервиз Компютри О�
     return {"X-CSRF-Token": str(me["csrf_token"])}
 
 
+def _technician_id(client: TestClient, h: dict[str, str]) -> str:
+    """order-workflow-revamp WP-G (Q2a): diagnostics now requires a
+    technician on file — the Owner is itself a valid one (Q22)."""
+    return str(next(u["id"] for u in client.get("/api/v1/users", headers=h).json()
+                    if u["is_owner"]))
+
+
 def _catalog_item(client: TestClient, h: dict[str, str], *, kind: str = "part",
                   name: str, sale_price: str) -> str:
     r = client.post("/api/v1/catalog-items", headers=h,
@@ -140,6 +147,17 @@ def test_protocol_is_tenant_isolated(client: TestClient) -> None:
 
 def _deliver(client: TestClient, h: dict[str, str], oid: str,
             warranty_days: int | None = None) -> None:
+    # order-workflow-revamp WP-G (Q1/Q2a): "received" (НОВА) no longer
+    # forwards straight to "ready" at all — only to diagnostics/declined —
+    # and diagnostics itself now requires a technician on file. Some callers
+    # (e.g. ones that add part/labor lines first, which also requires
+    # diagnostics) already moved the order there themselves — only do it
+    # here if still needed.
+    if client.get(f"/api/v1/orders/{oid}", headers=h).json()["status_code"] == "received":
+        r0 = client.post(f"/api/v1/orders/{oid}/status", headers=h, json={
+            "to": "diagnostics", "technician_id": _technician_id(client, h),
+        })
+        assert r0.status_code == 200, r0.text
     r1 = client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "ready"})
     assert r1.status_code == 200, r1.text
     r2 = client.post(f"/api/v1/orders/{oid}/status", headers=h,
@@ -162,7 +180,8 @@ def test_delivery_protocol_renders_after_delivery(client: TestClient) -> None:
         "observed": "Счупен екран", "cause": "Падане",
         "recommendation": "Смяна на дисплей",
     })
-    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
+    client.post(f"/api/v1/orders/{oid}/status", headers=h,
+               json={"to": "diagnostics", "technician_id": _technician_id(client, h)})
     part_id = _catalog_item(client, h, name="Дисплей Samsung", sale_price="120.00")
     labor_id = _catalog_item(client, h, kind="labor", name="Смяна на дисплей",
                              sale_price="30.00")
@@ -296,7 +315,8 @@ def test_warranty_rendering_boolean_part_and_legacy_labor_days(client: TestClien
     days-based NULL/0/positive rendering, unchanged by this WP."""
     h = _login(client)
     oid = _order_with_accessories(client, h)
-    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
+    client.post(f"/api/v1/orders/{oid}/status", headers=h,
+               json={"to": "diagnostics", "technician_id": _technician_id(client, h)})
     no_warranty_id = _catalog_item(client, h, name="Част без гаранция", sale_price="5.00")
     with_warranty_id = _catalog_item(client, h, name="Част с гаранция", sale_price="5.00")
     client.post(f"/api/v1/orders/{oid}/part-lines", headers=h, json={

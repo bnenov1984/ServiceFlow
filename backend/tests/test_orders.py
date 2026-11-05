@@ -60,6 +60,15 @@ def _order(client: TestClient, h: dict[str, str], cid: str, aid: str,
     return dict(r.json())
 
 
+def _technician_id(client: TestClient, h: dict[str, str]) -> str:
+    """order-workflow-revamp WP-G (Q2a): entering "diagnostics" (or any later
+    WORKING status) now requires a technician already on file — the Owner
+    created by `_login` is itself a valid technician (Q22), so every test
+    below that doesn't care *which* technician just uses this one."""
+    return str(next(u["id"] for u in client.get("/api/v1/users", headers=h).json()
+                    if u["is_owner"]))
+
+
 def test_create_order_numbering_and_default_status(client: TestClient) -> None:
     h = _login(client)
     cid, aid = _customer_and_asset(client, h)
@@ -106,28 +115,118 @@ def test_order_rejects_unknown_asset(client: TestClient) -> None:
 
 
 def test_status_transitions_ok_warn_no(client: TestClient) -> None:
+    """order-workflow-revamp WP-G (Q1–Q4): received ("НОВА") only forwards to
+    diagnostics/declined now — ready is no longer even a WARN skip from
+    there, it's NO. diagnostics -> ready is where WARN now lives."""
     h = _login(client)
     cid, aid = _customer_and_asset(client, h)
     order = _order(client, h, cid, aid)
     oid = order["id"]
+    tech_id = _technician_id(client, h)
 
-    # received -> ready is WARN (skip allowed, warning surfaces).
+    # received -> diagnostics is OK (technician required — see
+    # test_diagnostics_requires_a_technician below for that gate itself).
+    r = client.post(f"/api/v1/orders/{oid}/status", headers=h,
+                    json={"to": "diagnostics", "technician_id": tech_id})
+    assert r.status_code == 200
+    assert r.json()["status_code"] == "diagnostics"
+
+    # diagnostics -> ready is WARN (skip allowed, warning surfaces).
     r = client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "ready"})
     assert r.status_code == 200
     assert r.json()["warning"] == "skip"
     assert r.json()["status_code"] == "ready"
 
-    # ready -> diagnostics is NO per the matrix.
+    # ready -> diagnostics is NO per the matrix (not even backward — ready's
+    # only backward target is repair).
     r = client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
     assert r.status_code == 409
     assert r.json()["detail"]["message_key"] == "errors.orders.invalid_transition"
+
+
+def test_diagnostics_requires_a_technician(client: TestClient) -> None:
+    """order-workflow-revamp WP-G (Q2a)."""
+    h = _login(client)
+    cid, aid = _customer_and_asset(client, h)
+    oid = _order(client, h, cid, aid)["id"]
+
+    r = client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
+    assert r.status_code == 400
+    assert r.json()["detail"]["message_key"] == "errors.orders.technician_required"
+
+    r = client.post(f"/api/v1/orders/{oid}/status", headers=h,
+                    json={"to": "diagnostics", "technician_id": _technician_id(client, h)})
+    assert r.status_code == 200
+    assert r.json()["status_code"] == "diagnostics"
+
+
+def test_diagnostics_succeeds_with_a_technician_already_set_at_intake(
+    client: TestClient,
+) -> None:
+    """order-workflow-revamp WP-G (Q2b): ПРИЕМИ doesn't have to resend
+    `technician_id` when intake already picked one — the precondition reads
+    `order.technician_id`, not just the request body."""
+    h = _login(client)
+    cid, aid = _customer_and_asset(client, h)
+    tech_id = _technician_id(client, h)
+    oid = client.post("/api/v1/orders", headers=h, json={
+        "customer_id": cid, "asset_id": aid, "complaint": "x", "technician_id": tech_id,
+    }).json()["id"]
+
+    r = client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
+    assert r.status_code == 200
+
+
+def test_backward_transition_requires_reason(client: TestClient) -> None:
+    """order-workflow-revamp WP-G (Q3/Q3b)."""
+    h = _login(client)
+    cid, aid = _customer_and_asset(client, h)
+    oid = _order(client, h, cid, aid)["id"]
+    client.post(f"/api/v1/orders/{oid}/status", headers=h,
+               json={"to": "diagnostics", "technician_id": _technician_id(client, h)})
+    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "repair"})
+
+    r = client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
+    assert r.status_code == 400
+    assert r.json()["detail"]["message_key"] == "errors.orders.reason_required"
+
+    r = client.post(f"/api/v1/orders/{oid}/status", headers=h, json={
+        "to": "diagnostics", "reason": "Оказа се друг проблем",
+    })
+    assert r.status_code == 200
+    assert r.json()["status_code"] == "diagnostics"
+
+    events = [e["event_type"] for e in client.get(f"/api/v1/orders/{oid}/timeline").json()]
+    # One each for ->diagnostics, ->repair, and the final ->diagnostics
+    # backward move — the failed 400 attempt above logged nothing.
+    assert events.count("status_changed") == 3
+
+
+def test_unrepairable_only_reachable_from_diagnostics(client: TestClient) -> None:
+    """order-workflow-revamp WP-G (Q4)."""
+    h = _login(client)
+    cid, aid = _customer_and_asset(client, h)
+    oid = _order(client, h, cid, aid)["id"]
+
+    r = client.post(f"/api/v1/orders/{oid}/status", headers=h,
+                    json={"to": "unrepairable", "reason": "x"})
+    assert r.status_code == 409
+    assert r.json()["detail"]["message_key"] == "errors.orders.invalid_transition"
+
+    client.post(f"/api/v1/orders/{oid}/status", headers=h,
+               json={"to": "diagnostics", "technician_id": _technician_id(client, h)})
+    r = client.post(f"/api/v1/orders/{oid}/status", headers=h,
+                    json={"to": "unrepairable", "reason": "Шасито е пропукано"})
+    assert r.status_code == 200
+    assert r.json()["status_kind"] == "terminal_failure"
 
 
 def test_waiting_customer_requires_recorded_approval(client: TestClient) -> None:
     h = _login(client)
     cid, aid = _customer_and_asset(client, h)
     oid = _order(client, h, cid, aid)["id"]
-    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
+    client.post(f"/api/v1/orders/{oid}/status", headers=h,
+               json={"to": "diagnostics", "technician_id": _technician_id(client, h)})
     client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "waiting_customer"})
 
     # No approval payload -> blocked (BR-7).
@@ -146,7 +245,8 @@ def test_declined_requires_reason_and_is_terminal(client: TestClient) -> None:
     h = _login(client)
     cid, aid = _customer_and_asset(client, h)
     oid = _order(client, h, cid, aid)["id"]
-    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
+    client.post(f"/api/v1/orders/{oid}/status", headers=h,
+               json={"to": "diagnostics", "technician_id": _technician_id(client, h)})
     client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "waiting_customer"})
 
     r = client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "declined"})
@@ -166,8 +266,9 @@ def test_delivery_flow_with_warranty(client: TestClient) -> None:
     h = _login(client)
     cid, aid = _customer_and_asset(client, h)
     oid = _order(client, h, cid, aid)["id"]
-    for to in ("diagnostics", "repair"):
-        client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": to})
+    client.post(f"/api/v1/orders/{oid}/status", headers=h,
+               json={"to": "diagnostics", "technician_id": _technician_id(client, h)})
+    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "repair"})
     client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "ready"})
 
     r = client.post(f"/api/v1/orders/{oid}/status", headers=h,
@@ -211,7 +312,8 @@ def test_br2_unlock_owner_only_and_reverts_to_prior_status(client: TestClient) -
     h = _login(client)
     cid, aid = _customer_and_asset(client, h)
     oid = _order(client, h, cid, aid)["id"]
-    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
+    client.post(f"/api/v1/orders/{oid}/status", headers=h,
+               json={"to": "diagnostics", "technician_id": _technician_id(client, h)})
     client.post(f"/api/v1/orders/{oid}/status", headers=h,
                json={"to": "cancelled", "reason": "по грешка"})
 
@@ -241,7 +343,9 @@ def test_reopen_via_ui_button_is_a_new_linked_order_not_a_status_change(
     h = _login(client)
     cid, aid = _customer_and_asset(client, h)
     oid = _order(client, h, cid, aid)["id"]
-    for to in ("diagnostics", "repair", "ready"):
+    client.post(f"/api/v1/orders/{oid}/status", headers=h,
+               json={"to": "diagnostics", "technician_id": _technician_id(client, h)})
+    for to in ("repair", "ready"):
         client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": to})
     client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "completed"})
 
@@ -275,6 +379,7 @@ def test_timeline_records_actor_and_survives_pin_switch(client: TestClient) -> N
     h = _login(client)
     cid, aid = _customer_and_asset(client, h)
     oid = _order(client, h, cid, aid)["id"]
+    tech_id = _technician_id(client, h)
 
     for db in open_session(os.environ["SERVICEFLOW_DATABASE_URL"]):
         from sqlalchemy import select
@@ -291,7 +396,8 @@ def test_timeline_records_actor_and_survives_pin_switch(client: TestClient) -> N
                     json={"user_id": worker_id, "pin": "5678"})
     assert r.status_code == 200
 
-    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
+    client.post(f"/api/v1/orders/{oid}/status", headers=h,
+               json={"to": "diagnostics", "technician_id": tech_id})
     events = client.get(f"/api/v1/orders/{oid}/timeline").json()
     status_event = next(e for e in events if e["event_type"] == "status_changed")
     assert status_event["actor_user_id"] == worker_id
@@ -637,7 +743,13 @@ def test_technician_load_counts_only_diagnostics_and_repair(client: TestClient) 
     _order_in(client, h, cid, owner, ["diagnostics", "repair"])
     _order_in(client, h, cid, worker, ["diagnostics", "waiting_parts"])
     _order_in(client, h, cid, worker, [])  # Приета
-    _order_in(client, h, cid, None, ["diagnostics"])  # unassigned
+    # order-workflow-revamp WP-G (Q2a): an order can no longer *reach*
+    # diagnostics unassigned at all — technician-required is now a hard
+    # precondition — so there's nothing left to exercise for "an unassigned
+    # order in diagnostics doesn't count" specifically; the stays-"Приета"
+    # case right above already proves an order with no technician
+    # contributes nothing to the load count (TECHNICIAN_LOAD never includes
+    # "received" either way).
 
     r = client.get("/api/v1/orders/technician-load")
     assert r.status_code == 200, r.text

@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { enterRepairFlow, getOwnerCredentials, loginAsOwner } from '../support/login';
+import { acceptIntoDiagnostics } from '../support/order';
 
 // Regression for PO bugs #23/#30: a change made in one view (order page,
 // intake) must show in the other views immediately — not after the global
@@ -50,9 +51,9 @@ test('a new order shows in the orders list right after intake', async ({ page })
 
 test('a status changed on the order page shows in the orders list (#23)', async ({ page }) => {
   const number = await createOrder(page);
-  await page.getByRole('button', { name: 'Промени статус' }).click();
-  await page.getByRole('menuitem', { name: 'Диагностика' }).click();
-  await page.waitForLoadState('networkidle');
+  // order-workflow-revamp WP-G (Q2c): НОВА has no "Промени статус" dropdown
+  // — ПРИЕМИ is the only way to Диагностика now.
+  await acceptIntoDiagnostics(page);
 
   await openOrdersList(page);
   // Navigated client-side straight from the order page on purpose — a full
@@ -62,11 +63,11 @@ test('a status changed on the order page shows in the orders list (#23)', async 
 
 test('Чака клиент → Чака части on the order page shows in the orders list (#30)', async ({ page }) => {
   const number = await createOrder(page);
-  for (const status of ['Диагностика', 'Чака клиент']) {
-    await page.getByRole('button', { name: 'Промени статус' }).click();
-    await page.getByRole('menuitem', { name: status }).click();
-    await page.waitForLoadState('networkidle');
-  }
+  await acceptIntoDiagnostics(page);
+  await page.getByRole('button', { name: 'Промени статус' }).click();
+  await page.getByRole('menuitem', { name: 'Чака клиент' }).click();
+  await page.waitForLoadState('networkidle');
+
   await page.getByRole('button', { name: 'Промени статус' }).click();
   await page.getByRole('menuitem', { name: 'Чака части' }).click();
   await page.getByRole('button', { name: 'Запиши одобрение' }).click();

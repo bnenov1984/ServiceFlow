@@ -29,7 +29,7 @@ user would, as opposed to the unit tests under `frontend/src/`.
 - Credentials/secrets must come from environment variables and must never be
   hardcoded in a spec. CI supplies these from GitHub Actions secrets.
 
-## Shared helpers (`support/login.ts`)
+## Shared helpers (`support/login.ts`, `support/order.ts`)
 
 - `getOwnerCredentials()` — reads `E2E_OWNER_EMAIL`/`E2E_OWNER_PASSWORD` and
   throws early if either is unset, rather than failing later on a blank field.
@@ -50,6 +50,14 @@ user would, as opposed to the unit tests under `frontend/src/`.
   shape production forbids. The chooser's own five routing branches are
   unit-tested in `frontend/src/App.routing.test.tsx`, which is where that
   behavior belongs.
+- `acceptIntoDiagnostics(page)` *(order-workflow-revamp WP-G, added
+  05.11.2026)* — a freshly created order sits in НОВА (code `received`),
+  which has no "Промени статус" dropdown at all (Q2c); this clicks the
+  dedicated ПРИЕМИ button, picks whichever technician sorts first in the
+  picker (Q2a — a technician is now mandatory to enter Диагностика), and
+  confirms. Every spec that used to drive "received → diagnostics" through
+  the generic menu now calls this instead for that one hop; every later
+  transition in the same test still uses the regular dropdown, unaffected.
 
 ## Existing tests
 
@@ -96,24 +104,25 @@ detail page.
 ### `repairflow/order-status.spec.ts`
 
 Repeats `order-intake.spec.ts`'s setup to get a real order onto the board
-(login → RepairFlow → intake), confirms it starts at "Приета" (received,
-docs/01 BR-1), then drives the "Промени статус" menu (`OrderHeader.tsx`'s
-`StatusTransitionMenu`, `role="menu"`/`role="menuitem"`) to advance it to
-"Диагностика" — the matrix's plain "ok" next step from "received", the one
-transition with no reason/approval/completion dialog attached
-(`OrderHeader.tsx`'s `requestTransition`). Asserts the new status is visible
-and the old one no longer is. Deliberately doesn't touch the Kanban board's
-drag-and-drop path (same underlying transition, a separate and more brittle
-interaction surface) or any transition that opens a dialog (skip-ahead
-"warn" transitions, the terminal-failure reason dialog, completion — the
-last of which, since 2026-09-25, is its own dedicated button on
-`OrderHeader.tsx`, not a dropdown transition at all) — those are each their
-own future test, not bundled into this one.
+(login → RepairFlow → intake), confirms it starts at "НОВА" (received,
+docs/01 BR-1; display-renamed from "Приета" by order-workflow-revamp WP-G,
+Q1, 05.11.2026), then drives `acceptIntoDiagnostics` (ПРИЕМИ — see **Shared
+helpers**) to advance it to "Диагностика", the only transition out of НОВА
+that isn't a dedicated ОТКАЖИ/Owner-only-cancel button. Asserts the new
+status is visible and the old one no longer is. Deliberately doesn't touch
+the Kanban board's drag-and-drop path (same underlying transition, a
+separate and more brittle interaction surface, and — since WP-K — retired
+anyway) or any transition that opens a dialog (skip-ahead "warn"
+transitions, the terminal-failure reason dialog, completion — the last of
+which, since 2026-09-25, is its own dedicated button on `OrderHeader.tsx`,
+not a dropdown transition at all) — those are each their own future test,
+not bundled into this one.
 
 ### `repairflow/order-delivery.spec.ts`
 
 Same intake setup, then drives the *entire* clean lifecycle in one pass:
-received → diagnostics → repair → ready (three no-dialog "ok" transitions,
+received → diagnostics (via `acceptIntoDiagnostics`/ПРИЕМИ, WP-G — see
+**Shared helpers**) → repair → ready (two no-dialog "ok" menu transitions,
 same menu as `order-status.spec.ts`) → completed. **Since the 2026-09-25
 audit correction, "completed" ("Приключена", renamed from "delivered"/
 "Предадена") is no longer offered through the "Промени статус" dropdown at
@@ -194,7 +203,8 @@ Other things worth knowing:
 ### `repairflow/order-rejection.spec.ts`
 
 Journey 2's first half (docs/12 §3 «оценка → отказ»): intake (same setup as
-`order-intake.spec.ts`) → received → **диагностика** → **отказана**.
+`order-intake.spec.ts`) → received → **диагностика** (via
+`acceptIntoDiagnostics`/ПРИЕМИ, WP-G — see **Shared helpers**) → **отказана**.
 `"declined"` is a `TERMINAL_FAILURE_CODES` entry (`OrderHeader.tsx`), rendered
 in the status menu's separate red failure section below a divider — still a
 plain `role="menuitem"`. It opens `ReasonDialog`, and the spec asserts the
@@ -226,6 +236,10 @@ touched:
 - The #23/#30 tests `page.reload()` once before opening the list on purpose,
   so they exercise only the order-page cache, not the intake → list case the
   first test covers.
+- Both the #23 and #30 tests now call `acceptIntoDiagnostics` (ПРИЕМИ, WP-G
+  — see **Shared helpers**) to get from received to diagnostics first — the
+  generic "Промени статус" menu they used before order-workflow-revamp
+  WP-G no longer has that option at all on a received order.
 
 ## Domain ownership and growth rules
 
@@ -233,7 +247,11 @@ touched:
 `order-intake-customer.spec.ts`, `order-intake.spec.ts`, `order-status.spec.ts`,
 `order-delivery.spec.ts`, `order-invoice.spec.ts`, `order-rejection.spec.ts`,
 `order-status-cache.spec.ts` — seven specs, all importing the shared `../support/login` helpers (note the `../`,
-not `./`, from inside the subdirectory). `auth.spec.ts` stays flat at the E2E root for now — it's
+not `./`, from inside the subdirectory); four of them (every one that drives
+an order out of НОВА — all but `order-intake.spec.ts`/
+`order-intake-customer.spec.ts`) also import `../support/order`
+(`acceptIntoDiagnostics`, added for order-workflow-revamp WP-G,
+05.11.2026). `auth.spec.ts` stays flat at the E2E root for now — it's
 the only spec conceptually belonging to `platform/`, and the materialization
 rule below says one file isn't yet enough to justify a directory.
 

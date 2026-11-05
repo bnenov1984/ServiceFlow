@@ -16,7 +16,8 @@ describe("FiltersBar — status chips (order-workflow-revamp WP-K, docs/02 §16)
   it("shows 'Всички отворени' plus one chip per open status", () => {
     render(<FiltersBar filters={EMPTY_FILTERS} onChange={vi.fn()} technicians={technicians} />);
     expect(screen.getByRole("button", { name: "Всички отворени" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "Приета" })).toBeInTheDocument();
+    // order-workflow-revamp WP-G (Q1): "received" is display-renamed НОВА.
+    expect(screen.getByRole("button", { name: "НОВА" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Диагностика" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Готова" })).toBeInTheDocument();
   });

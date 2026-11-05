@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { enterRepairFlow, getOwnerCredentials, loginAsOwner } from '../support/login';
+import { acceptIntoDiagnostics } from '../support/order';
 
 test('owner delivers an order through the full status lifecycle', async ({ page }) => {
   const { email, password } = getOwnerCredentials();
@@ -58,13 +59,16 @@ test('owner delivers an order through the full status lifecycle', async ({ page 
     .click();
 
   await expect(page).toHaveURL(/\/orders\/[0-9a-f-]{36}$/);
-  await expect(page.getByText('Приета', { exact: true })).toBeVisible();
+  await expect(page.getByText('НОВА', { exact: true })).toBeVisible();
 
-  // received -> diagnostics -> repair -> ready are all plain "ok" transitions
-  // (transition-matrix.json) with no reason/approval/delivery dialog
-  // attached (OrderHeader.tsx's requestTransition) — three identical menu
-  // clicks to reach the one transition that does open a dialog.
-  for (const step of ['Диагностика', 'Ремонт', 'Готова']) {
+  // НОВА -> Диагностика is ПРИЕМИ now, not a menu item (order-workflow-
+  // revamp WP-G, Q2a/Q2c) — diagnostics -> repair -> ready are still plain
+  // "ok" transitions (transition-matrix.json) with no reason/approval/
+  // delivery dialog attached (OrderHeader.tsx's requestTransition).
+  await acceptIntoDiagnostics(page);
+  await expect(page.getByText('Диагностика', { exact: true })).toBeVisible();
+
+  for (const step of ['Ремонт', 'Готова']) {
     await page
       .getByRole('button', { name: 'Промени статус' })
       .click();

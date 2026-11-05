@@ -90,10 +90,19 @@ def test_dashboard_counts(client: TestClient) -> None:
             "customer_id": cid, "asset_id": new_aid, "complaint": "x", **extra,
         }).json()["id"])
 
+    # order-workflow-revamp WP-G (Q1/Q2a): "received" (НОВА) only forwards
+    # to diagnostics/declined now, and diagnostics requires a technician.
+    tech_id = next(u["id"] for u in client.get("/api/v1/users", headers=h).json()
+                   if u["is_owner"])
+
     order()  # received
     o2 = order()
+    client.post(f"/api/v1/orders/{o2}/status", headers=h,
+               json={"to": "diagnostics", "technician_id": tech_id})
     client.post(f"/api/v1/orders/{o2}/status", headers=h, json={"to": "waiting_parts"})
     o3 = order()
+    client.post(f"/api/v1/orders/{o3}/status", headers=h,
+               json={"to": "diagnostics", "technician_id": tech_id})
     client.post(f"/api/v1/orders/{o3}/status", headers=h, json={"to": "ready"})
     overdue_date = (today - timedelta(days=3)).isoformat()
     order(promised_on=overdue_date)  # overdue: promised past, still received

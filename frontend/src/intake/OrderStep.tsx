@@ -16,8 +16,9 @@
  *
  * order-workflow-revamp WP-I (Q13d): parts are no longer addable at intake
  * at all (reverses Wave 2 Issue 29) — a line can only be added once the
- * order has left "Приета" (PartLinesSection/LaborLinesSection on the order
- * page, catalog-only).
+ * order has left "НОВА" (WP-G's display rename of "Приета", code still
+ * `received`) (PartLinesSection/LaborLinesSection on the order page,
+ * catalog-only).
  */
 
 import { useQuery } from "@tanstack/react-query";

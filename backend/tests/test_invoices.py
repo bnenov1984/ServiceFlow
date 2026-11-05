@@ -57,9 +57,17 @@ def _catalog_item(client: TestClient, h: dict[str, str], *, kind: str,
     return str(r.json()["id"])
 
 
+def _technician_id(client: TestClient, h: dict[str, str]) -> str:
+    """order-workflow-revamp WP-G (Q2a): diagnostics now requires a
+    technician on file — the Owner is itself a valid one (Q22)."""
+    return str(next(u["id"] for u in client.get("/api/v1/users", headers=h).json()
+                    if u["is_owner"]))
+
+
 def _order_with_lines(client: TestClient, h: dict[str, str]) -> str:
     oid = _order(client, h)
-    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
+    client.post(f"/api/v1/orders/{oid}/status", headers=h,
+               json={"to": "diagnostics", "technician_id": _technician_id(client, h)})
     part_id = _catalog_item(client, h, kind="part", name="Дисплей", sale_price="100")
     labor_id = _catalog_item(client, h, kind="labor", name="Смяна на дисплей", sale_price="50")
     client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,

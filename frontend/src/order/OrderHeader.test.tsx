@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -27,18 +27,21 @@ beforeEach(() => {
 // actually land on whatever is mounted at that route, not just carry the
 // right `href` string.
 //
-// statusCode defaults to "received" - a real transition-matrix key (unlike
-// the old "new" fixture, which doesn't exist in the generated matrix and
-// silently produced zero transitions, so the previous version of this file
-// never actually exercised transition rendering at all).
+// statusCode defaults to "diagnostics" — a real transition-matrix key with a
+// real forward-dropdown menu. order-workflow-revamp WP-G (Q1/Q2c) gave
+// "received" an entirely different, dedicated UI (ПРИЕМИ/ОТКАЖИ, no generic
+// dropdown at all) — see the "OrderHeader — НОВА (received)" describe block
+// below for that status specifically.
 function renderHeader({
   initialEntries = ["/orders/order-1"],
   initialIndex,
-  statusCode = "received",
+  statusCode = "diagnostics",
   isOwner = true,
   archived = false,
   warrantyDays = null,
   hasCompletionSnapshot = false,
+  technicianId = null,
+  users = [] as { id: string; name: string; is_active: boolean }[],
 }: {
   initialEntries?: string[];
   initialIndex?: number;
@@ -47,9 +50,20 @@ function renderHeader({
   archived?: boolean;
   warrantyDays?: number | null;
   hasCompletionSnapshot?: boolean;
+  technicianId?: string | null;
+  // order-workflow-revamp WP-G: AcceptDialog's TechnicianPicker mounts
+  // (and fires its own GET /users) as soon as OrderHeader itself mounts —
+  // it's always rendered, only its dialog's `open` prop toggles — so this
+  // must be configured here, before the first render, not inside an
+  // individual test after the fact (too late: the query has already fired
+  // against whatever mock was active at mount time).
+  users?: { id: string; name: string; is_active: boolean }[];
 } = {}) {
   mockUseAuth.mockReturnValue({ me: { is_owner: isOwner } });
-  vi.mocked(api.get).mockResolvedValue([]);
+  vi.mocked(api.get).mockImplementation((path: string) => {
+    if (path === "/users") return Promise.resolve(users);
+    return Promise.resolve([]);
+  });
   vi.mocked(api.post).mockResolvedValue({ warning: null });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -64,6 +78,7 @@ function renderHeader({
                   orderId="order-1" number="2026-00001" statusCode={statusCode}
                   archived={archived} warrantyDays={warrantyDays}
                   hasCompletionSnapshot={hasCompletionSnapshot}
+                  technicianId={technicianId}
                 />
               }
             />
@@ -133,20 +148,21 @@ describe("OrderHeader — back to orders control", () => {
 
 describe("OrderHeader — status transition menu", () => {
   it("collapses every allowed transition behind a single trigger instead of one button per transition", () => {
-    renderHeader({ statusCode: "received" });
+    renderHeader({ statusCode: "diagnostics" });
 
-    // "received" alone allows 8 transitions (1 ok next-step, 4 warn
-    // skip-ahead, 3 terminal-failure — Wave 2 Issue 5 removed "testing" from
-    // the warn skip-ahead set) - previously each rendered as its own
-    // always-visible button next to the status pill.
+    // order-workflow-revamp WP-G: "diagnostics" forwards to 3 plain-ok
+    // statuses (waiting_customer/waiting_parts/repair), 1 warn skip-ahead
+    // (ready), and 3 terminal-failure (declined/unrepairable/cancelled) —
+    // each rendered behind the one trigger, never its own always-visible
+    // button next to the status pill.
     expect(screen.getByRole("button", { name: /Промени статус/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Диагностика" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Ремонт" })).not.toBeInTheDocument();
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
   it("opens the menu on click and lists the allowed transitions, closed by default", async () => {
     const user = userEvent.setup();
-    renderHeader({ statusCode: "received" });
+    renderHeader({ statusCode: "diagnostics" });
 
     const trigger = screen.getByRole("button", { name: /Промени статус/ });
     expect(trigger).toHaveAttribute("aria-expanded", "false");
@@ -156,16 +172,16 @@ describe("OrderHeader — status transition menu", () => {
     expect(trigger).toHaveAttribute("aria-expanded", "true");
     const menu = screen.getByRole("menu");
     expect(menu).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "Диагностика" })).toBeInTheDocument();
-    // "waiting_customer" is a "warn" (skip-ahead) transition: its accessible
-    // name carries the skip hint via aria-label, so match on a substring.
-    expect(screen.getByRole("menuitem", { name: /Чака клиент/ })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Ремонт" })).toBeInTheDocument();
+    // "ready" is a "warn" (skip-ahead) transition: its accessible name
+    // carries the skip hint via aria-label, so match on a substring.
+    expect(screen.getByRole("menuitem", { name: /Готова/ })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Отказана" })).toBeInTheDocument();
   });
 
   it("hides the transition-skip terminal-failure options from non-owners", async () => {
     const user = userEvent.setup();
-    renderHeader({ statusCode: "received", isOwner: false });
+    renderHeader({ statusCode: "diagnostics", isOwner: false });
 
     await user.click(screen.getByRole("button", { name: /Промени статус/ }));
 
@@ -177,18 +193,18 @@ describe("OrderHeader — status transition menu", () => {
 
   it("selecting a plain 'ok' transition submits the status change and closes the menu", async () => {
     const user = userEvent.setup();
-    renderHeader({ statusCode: "received" });
+    renderHeader({ statusCode: "diagnostics" });
 
     await user.click(screen.getByRole("button", { name: /Промени статус/ }));
-    await user.click(screen.getByRole("menuitem", { name: "Диагностика" }));
+    await user.click(screen.getByRole("menuitem", { name: "Ремонт" }));
 
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-    expect(api.post).toHaveBeenCalledWith("/orders/order-1/status", { to: "diagnostics" });
+    expect(api.post).toHaveBeenCalledWith("/orders/order-1/status", { to: "repair" });
   });
 
   it("selecting a terminal-failure transition opens the reason dialog instead of submitting directly", async () => {
     const user = userEvent.setup();
-    renderHeader({ statusCode: "received" });
+    renderHeader({ statusCode: "diagnostics" });
 
     await user.click(screen.getByRole("button", { name: /Промени статус/ }));
     await user.click(screen.getByRole("menuitem", { name: "Анулирана" }));
@@ -205,9 +221,130 @@ describe("OrderHeader — status transition menu", () => {
   });
 
   it("does not render the trigger for an archived order", () => {
-    renderHeader({ statusCode: "received", archived: true });
+    renderHeader({ statusCode: "diagnostics", archived: true });
 
     expect(screen.queryByRole("button", { name: /Промени статус/ })).not.toBeInTheDocument();
+  });
+
+  it("never shows the generic dropdown trigger for a НОВА (received) order", () => {
+    renderHeader({ statusCode: "received" });
+
+    expect(screen.queryByRole("button", { name: /Промени статус/ })).not.toBeInTheDocument();
+  });
+});
+
+describe("OrderHeader — НОВА (Q1/Q2a/Q2b/Q2c)", () => {
+  it("shows dedicated ПРИЕМИ/ОТКАЖИ buttons instead of the generic menu", () => {
+    renderHeader({ statusCode: "received" });
+
+    expect(screen.getByRole("button", { name: "Приеми" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Откажи" })).toBeInTheDocument();
+  });
+
+  it("shows the cancel-order link to an Owner", () => {
+    renderHeader({ statusCode: "received", isOwner: true });
+    expect(screen.getByRole("button", { name: "Анулирай поръчката" })).toBeInTheDocument();
+  });
+
+  it("hides the cancel-order link from a non-owner", () => {
+    renderHeader({ statusCode: "received", isOwner: false });
+    expect(screen.queryByRole("button", { name: "Анулирай поръчката" })).not.toBeInTheDocument();
+  });
+
+  it("ОТКАЖИ opens the reason dialog targeting 'declined'", async () => {
+    const user = userEvent.setup();
+    renderHeader({ statusCode: "received" });
+
+    await user.click(screen.getByRole("button", { name: "Откажи" }));
+    const dialog = (await screen.findByText("Причина за промяната")).closest("dialog")!;
+
+    await user.type(within(dialog).getByRole("textbox"), "Клиентът се отказа веднага");
+    await user.click(within(dialog).getByRole("button", { name: "Потвърди" }));
+
+    expect(api.post).toHaveBeenCalledWith("/orders/order-1/status", {
+      to: "declined", reason: "Клиентът се отказа веднага",
+    });
+  });
+
+  it("ПРИЕМИ opens a technician picker pre-filled from intake and submits both in one request", async () => {
+    const user = userEvent.setup();
+    renderHeader({
+      statusCode: "received", technicianId: "tech-1",
+      users: [
+        { id: "tech-1", name: "Георги", is_active: true },
+        { id: "tech-2", name: "Иван", is_active: true },
+      ],
+    });
+
+    await user.click(screen.getByRole("button", { name: "Приеми" }));
+    await screen.findByText("Приемане на поръчката");
+    await screen.findByRole("option", { name: /Георги/ });
+    const picker = screen.getByLabelText("Техник") as HTMLSelectElement;
+    expect(picker).toHaveValue("tech-1");
+
+    const confirmButtons = screen.getAllByRole("button", { name: "Приеми" });
+    await user.click(confirmButtons[confirmButtons.length - 1]);
+
+    expect(api.post).toHaveBeenCalledWith("/orders/order-1/status", {
+      to: "diagnostics", technician_id: "tech-1",
+    });
+  });
+
+  it("ПРИЕМИ requires picking a technician when intake didn't set one", async () => {
+    const user = userEvent.setup();
+    renderHeader({
+      statusCode: "received", technicianId: null,
+      users: [{ id: "tech-1", name: "Георги", is_active: true }],
+    });
+
+    await user.click(screen.getByRole("button", { name: "Приеми" }));
+    await screen.findByText("Приемане на поръчката");
+    await screen.findByRole("option", { name: /Георги/ });
+
+    const confirmButtons = screen.getAllByRole("button", { name: "Приеми" });
+    const dialogConfirm = confirmButtons[confirmButtons.length - 1];
+    expect(dialogConfirm).toBeDisabled();
+
+    await user.selectOptions(screen.getByLabelText("Техник"), "tech-1");
+    expect(dialogConfirm).not.toBeDisabled();
+  });
+});
+
+describe("OrderHeader — backward transitions, 'Върни към…' (Q3/Q3b)", () => {
+  it("offers a backward action for a status with a BACK target, separate from the forward menu", async () => {
+    const user = userEvent.setup();
+    renderHeader({ statusCode: "repair" });
+
+    const backButton = screen.getByRole("button", { name: /Върни към Диагностика/ });
+    expect(backButton).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Промени статус/ }));
+    expect(screen.queryByRole("menuitem", { name: "Диагностика" })).not.toBeInTheDocument();
+  });
+
+  it("requires a mandatory reason and submits it with the backward transition", async () => {
+    const user = userEvent.setup();
+    renderHeader({ statusCode: "repair" });
+
+    await user.click(screen.getByRole("button", { name: /Върни към Диагностика/ }));
+    const dialog = (await screen.findByText("Върни към Диагностика", { selector: "h2" }))
+      .closest("dialog")!;
+    const confirm = within(dialog).getByRole("button", { name: "Потвърди" });
+    expect(confirm).toBeDisabled();
+
+    await user.type(within(dialog).getByRole("textbox"), "Оказа се друг проблем");
+    expect(confirm).not.toBeDisabled();
+    await user.click(confirm);
+
+    expect(api.post).toHaveBeenCalledWith("/orders/order-1/status", {
+      to: "diagnostics", reason: "Оказа се друг проблем",
+    });
+  });
+
+  it("offers no backward action for a status with no BACK target (e.g. diagnostics)", () => {
+    renderHeader({ statusCode: "diagnostics" });
+
+    expect(screen.queryByRole("button", { name: /Върни към/ })).not.toBeInTheDocument();
   });
 });
 

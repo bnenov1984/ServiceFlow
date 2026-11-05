@@ -50,8 +50,14 @@ def _order(client: TestClient, h: dict[str, str], cid: str, aid: str,
 def _transition(client: TestClient, h: dict[str, str], order_id: str, to: str) -> None:
     # terminal_failure transitions (declined/unrepairable/cancelled) require
     # a reason; harmless to always send one.
-    r = client.post(f"/api/v1/orders/{order_id}/status", headers=h,
-                    json={"to": to, "reason": "Тест"})
+    body: dict[str, object] = {"to": to, "reason": "Тест"}
+    if to == "diagnostics":
+        # order-workflow-revamp WP-G (Q2a): a technician must already be on
+        # file to enter diagnostics — the Owner is itself a valid one (Q22).
+        body["technician_id"] = next(
+            u["id"] for u in client.get("/api/v1/users", headers=h).json() if u["is_owner"]
+        )
+    r = client.post(f"/api/v1/orders/{order_id}/status", headers=h, json=body)
     assert r.status_code == 200, r.text
 
 
@@ -97,6 +103,9 @@ def test_new_order_allowed_once_prior_is_terminal(client: TestClient, terminal_t
     h = _login(client)
     cid, aid = _customer_and_asset(client, h)
     first = _order(client, h, cid, aid)
+    if terminal_to == "unrepairable":
+        # order-workflow-revamp WP-G (Q4): reachable only from diagnostics now.
+        _transition(client, h, first["id"], "diagnostics")
     _transition(client, h, first["id"], terminal_to)
 
     r = client.post("/api/v1/orders", headers=h, json={

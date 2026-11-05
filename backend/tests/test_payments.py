@@ -44,9 +44,17 @@ def _catalog_item(client: TestClient, h: dict[str, str], *, kind: str = "labor",
     return str(r.json()["id"])
 
 
+def _technician_id(client: TestClient, h: dict[str, str]) -> str:
+    """order-workflow-revamp WP-G (Q2a): diagnostics now requires a
+    technician on file — the Owner is itself a valid one (Q22)."""
+    return str(next(u["id"] for u in client.get("/api/v1/users", headers=h).json()
+                    if u["is_owner"]))
+
+
 def _order_with_total(client: TestClient, h: dict[str, str], total: str) -> str:
     oid = _order(client, h)
-    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
+    client.post(f"/api/v1/orders/{oid}/status", headers=h,
+               json={"to": "diagnostics", "technician_id": _technician_id(client, h)})
     item_id = _catalog_item(client, h, sale_price=total)
     client.post(f"/api/v1/orders/{oid}/labor-lines", headers=h,
                json={"catalog_item_id": item_id})
@@ -138,7 +146,8 @@ def test_balance_reuses_canonical_order_total(client: TestClient) -> None:
     estimated_total (lines.order_totals) — not a second money formula."""
     h = _login(client)
     oid = _order(client, h)
-    client.post(f"/api/v1/orders/{oid}/status", headers=h, json={"to": "diagnostics"})
+    client.post(f"/api/v1/orders/{oid}/status", headers=h,
+               json={"to": "diagnostics", "technician_id": _technician_id(client, h)})
     part_id = _catalog_item(client, h, kind="part", name="Дисплей", sale_price="100")
     labor_id = _catalog_item(client, h, kind="labor", name="Труд", sale_price="50")
     client.post(f"/api/v1/orders/{oid}/part-lines", headers=h,
