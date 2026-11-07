@@ -82,6 +82,8 @@ export const bg = {
   "pin.locked_no_pin_hint": "За бързо превключване е нужен PIN. Задайте го сега или влезте отново с парола.",
   "pin.locked_set_action": "Задайте PIN",
   "pin.locked_login_with_password": "Влезте с парола",
+  "pin.session_expired_title": "Сесията е изтекла",
+  "pin.session_expired_hint": "Устройството е било неактивно твърде дълго. Влезте отново с парола, за да продължите.",
   "pin.switch_no_pin_hint": "Няма зададен PIN",
   "pin.setup_prompt_title": "Задайте PIN за бързо превключване",
   "pin.setup_prompt_hint": "С PIN можете бързо да сменяте активния потребител на това устройство, без да въвеждате парола всеки път.",

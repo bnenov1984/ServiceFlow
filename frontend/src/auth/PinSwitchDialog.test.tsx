@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PinSwitchDialog } from "./PinSwitchDialog";
 
@@ -19,16 +20,19 @@ vi.mock("../lib/api", async () => {
   };
 });
 
+const mockLogout = vi.fn().mockResolvedValue(undefined);
 vi.mock("./AuthContext", () => ({
-  useAuth: () => ({ me: { user_id: "u1", name: "Мария" } }),
+  useAuth: () => ({ me: { user_id: "u1", name: "Мария" }, logout: mockLogout }),
 }));
 
 function renderDialog() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
-    <QueryClientProvider client={queryClient}>
-      <PinSwitchDialog open onClose={() => {}} />
-    </QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider client={queryClient}>
+        <PinSwitchDialog open onClose={() => {}} />
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -53,9 +57,11 @@ function Harness() {
 function renderHarness() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <QueryClientProvider client={queryClient}>
-      <Harness />
-    </QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider client={queryClient}>
+        <Harness />
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -63,6 +69,7 @@ describe("PinSwitchDialog", () => {
   beforeEach(() => {
     mockGet.mockReset();
     mockPost.mockReset();
+    mockLogout.mockReset().mockResolvedValue(undefined);
   });
 
   it("disables a user with no PIN and shows a hint, instead of opening the PIN pad", async () => {
@@ -129,6 +136,7 @@ describe("PinSwitchDialog — resets on every close path, not just success", () 
   beforeEach(() => {
     mockGet.mockReset();
     mockPost.mockReset();
+    mockLogout.mockReset().mockResolvedValue(undefined);
   });
 
   it("enter partial PIN, close with X, reopen -> PIN empty", async () => {

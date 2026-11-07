@@ -13,6 +13,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { t } from "../i18n/bg";
 import { ApiError, api, setCsrfToken } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
@@ -30,17 +31,27 @@ interface UserItem {
 }
 
 export function PinSwitchDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { me } = useAuth();
+  const { me, logout } = useAuth();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [selected, setSelected] = useState<UserItem | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const { data: users } = useQuery({
+  // Same fix as AppShell.tsx's LockedPanel (07.11.2026 PO bug report): a
+  // session left open past its fixed 12h TTL dies silently while the
+  // device sleeps, so opening "switch user" from the account menu can hit
+  // this same 401 — skip retrying it (it will never succeed) so the
+  // explanatory state below shows immediately.
+  const { data: users, isError } = useQuery({
     queryKey: queryKeys.users,
     queryFn: () => api.get<UserItem[]>("/users"),
     enabled: open,
+    retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 2,
   });
+
+  const loginWithPassword = () =>
+    void logout().catch(() => {}).finally(() => navigate("/login"));
 
   // Dialog never unmounts its children just because `open` becomes false
   // (see Dialog.tsx) — only `selected` going back to null actually tears
@@ -82,6 +93,19 @@ export function PinSwitchDialog({ open, onClose }: { open: boolean; onClose: () 
   return (
     <Dialog open={open} onClose={handleClose} title={t("auth.pin_title")}>
       {!selected ? (
+        isError ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-center">
+            <p className="font-medium text-amber-900">{t("pin.session_expired_title")}</p>
+            <p className="mt-1 text-sm text-amber-800">{t("pin.session_expired_hint")}</p>
+            <button
+              type="button"
+              onClick={loginWithPassword}
+              className="mt-3 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 min-h-touch"
+            >
+              {t("pin.locked_login_with_password")}
+            </button>
+          </div>
+        ) : (
         <ul className="flex flex-col gap-2">
           {(users ?? [])
             .filter((u) => u.id !== me?.user_id)
@@ -105,6 +129,7 @@ export function PinSwitchDialog({ open, onClose }: { open: boolean; onClose: () 
               </li>
             ))}
         </ul>
+        )
       ) : (
         <div className="flex flex-col items-center gap-4">
           <div className="flex items-center gap-3">

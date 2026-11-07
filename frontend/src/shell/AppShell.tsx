@@ -508,9 +508,17 @@ export function LockedPanel({ onUnlocked }: { onUnlocked: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const { data: users } = useQuery({
+  // A session left open past its fixed 12h TTL (business_os.identity.
+  // service.SESSION_TTL) dies silently while the device sleeps — the next
+  // request 401s. Without reading `isError` here, that produced an empty,
+  // unexplained user list with no way forward (found via a live PO bug
+  // report, 07.11.2026): skip retrying a 401 (it will never succeed) so the
+  // explanatory state below shows immediately instead of after a few
+  // seconds of pointless retries.
+  const { data: users, isError } = useQuery({
     queryKey: queryKeys.users,
     queryFn: () => api.get<LockUser[]>("/users"),
+    retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 2,
   });
 
   const selectUser = (u: LockUser) => {
@@ -554,6 +562,19 @@ export function LockedPanel({ onUnlocked }: { onUnlocked: () => void }) {
   return (
     <div className="flex flex-col gap-3">
       {!selected ? (
+        isError ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-center">
+            <p className="font-medium text-amber-900">{t("pin.session_expired_title")}</p>
+            <p className="mt-1 text-sm text-amber-800">{t("pin.session_expired_hint")}</p>
+            <button
+              type="button"
+              onClick={loginWithPassword}
+              className="mt-3 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 min-h-touch"
+            >
+              {t("pin.locked_login_with_password")}
+            </button>
+          </div>
+        ) : (
         <ul className="flex flex-col gap-2">
           {(users ?? []).map((u) => {
             const self = u.id === me?.user_id;
@@ -583,6 +604,7 @@ export function LockedPanel({ onUnlocked }: { onUnlocked: () => void }) {
             );
           })}
         </ul>
+        )
       ) : isSelf && !selected.has_pin ? (
         <div className="flex flex-col items-center gap-4">
           <div className="flex items-center gap-3">
